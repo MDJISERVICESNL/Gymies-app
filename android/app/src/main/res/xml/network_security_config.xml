@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Gymies Network Security Config
+     - Blokkeert al het cleartext (HTTP) verkeer
+     - Staat alleen HTTPS toe
+     - Certificate pinning voor gymies.nl API -->
+<network-security-config>
+    <!-- Blokkeer cleartext verkeer globaal -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Gymies API: HTTPS + Certificate Pinning
+         Pin-set bevat de SHA-256 hash van de public key van het intermediate CA.
+         Dit beschermt tegen MITM attacks, zelfs als een attacker een root cert installeert.
+
+         BELANGRIJK: Update deze pins wanneer je SSL certificaat provider wijzigt.
+         Voer uit om de huidige pin te krijgen:
+           openssl s_client -connect www.gymies.nl:443 -servername www.gymies.nl 2>/dev/null | \
+           openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | \
+           openssl dgst -sha256 -binary | openssl enc -base64
+
+         De expiration date zorgt dat de app niet permanent breekt als de pin verandert.
+         Na deze datum valt de app terug op system certificates.
+    -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">gymies.nl</domain>
+        <pin-set expiration="2027-04-20">
+            <!-- Let's Encrypt R3 Intermediate (meest gebruikte CA voor gymies.nl) -->
+            <pin digest="SHA-256">jQJTbIh0grw0/1TkHSumWb+Fs0Ggogr621gT3PvPKG0=</pin>
+            <!-- ISRG Root X1 (Let's Encrypt root — backup pin) -->
+            <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
+        </pin-set>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+
+    <!-- Firebase/Google Services -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">googleapis.com</domain>
+        <domain includeSubdomains="true">google.com</domain>
+        <domain includeSubdomains="true">firebase.io</domain>
+        <domain includeSubdomains="true">firebaseio.com</domain>
+        <domain includeSubdomains="true">fcm.googleapis.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

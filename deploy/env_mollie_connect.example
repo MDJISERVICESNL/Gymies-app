@@ -1,0 +1,13 @@
+# Fragment voor .env — Mollie Connect (OAuth) voor trainer-koppeling.
+# Niet committen met echte waarden. Zet op server via:
+#   ./scripts/set_mollie_connect_env_on_server.sh
+# Of handmatig in /var/www/gymies/.env plakken.
+
+# Applicatie-ID uit Mollie Connect-app (begint meestal met app_)
+MOLLIE_CLIENT_ID=
+
+# Client secret uit hetzelfde Connect-scherm
+MOLLIE_CLIENT_SECRET=
+
+# Bestaande betaalpagina-key (payments) blijft nodig naast Connect:
+# MOLLIE_API_KEY=test_... of live_...

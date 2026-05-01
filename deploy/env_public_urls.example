@@ -1,0 +1,4 @@
+# Fragment voor Laravel .env op de server (mail-links, verificatie-URL's).
+# Zet dit handmatig of via: ./scripts/set_app_url_on_server.sh
+APP_URL=https://www.gymies.nl
+GYMIES_PUBLIC_URL=https://www.gymies.nl

@@ -1,0 +1,26 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "GYMIES – Nederland (vereenvoudigde dekking)",
+        "description": "Bounding box Nederland. Later uitbreiden: tweede polygon voor België in dezelfde MultiPolygon (zie README_GEOJSON.md)."
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [3.31, 50.75],
+              [7.22, 50.75],
+              [7.22, 53.55],
+              [3.31, 53.55],
+              [3.31, 50.75]
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

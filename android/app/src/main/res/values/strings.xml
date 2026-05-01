@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GYMIES</string>
+    <!-- App shortcuts -->
+    <string name="shortcut_search_short">Zoek trainer</string>
+    <string name="shortcut_search_long">Zoek een personal trainer</string>
+    <string name="shortcut_bookings_short">Boekingen</string>
+    <string name="shortcut_bookings_long">Bekijk mijn boekingen</string>
+    <string name="shortcut_messages_short">Berichten</string>
+    <string name="shortcut_messages_long">Open je berichten</string>
+    <string name="shortcut_qr_short">QR Check-in</string>
+    <string name="shortcut_qr_long">Scan QR code voor check-in</string>
+</resources>

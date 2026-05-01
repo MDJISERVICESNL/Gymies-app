@@ -1,0 +1,25 @@
+Gymies API controllers (namespace App\Http\Controllers\Gymies of root Gymies*):
+- GymiesAuthController
+- GymiesAvailabilityController
+- GymiesBookingController
+- GymiesCheckinController
+- GymiesClientConversationController
+- GymiesComplianceController
+- GymiesCronController
+- GymiesGroupSessionController
+- GymiesGymController
+- GymiesInvoiceController
+- GymiesNotificationController
+- GymiesOnboardingController
+- GymiesOpsController
+- GymiesPaymentController
+- GymiesReferralController
+- GymiesSubscriptionController
+- GymiesSupportController
+- GymiesTrainerController
+- GymiesTrainerOpsController
+- GymiesAdminController
+- GymiesStudioAnalyticsController
+- Gymies/GymiesPlanManager.php (plan limits)
+
+Locatie repo: backend/Controllers/ en backend/Controllers/Gymies/

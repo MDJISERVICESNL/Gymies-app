@@ -1,0 +1,85 @@
+# ============================================================
+# GYMIES — .gitignore
+# ============================================================
+
+# ── Secrets & credentials ──────────────────────────────────
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+.env
+.env.*
+!.env.example
+!.env.testing.example
+
+# ── Firebase config (contains API keys) ────────────────────
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+firebase_options.dart
+
+# ── Flutter / Dart ─────────────────────────────────────────
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+*.dart.js
+*.js_
+*.js.deps
+*.js.map
+
+# ── iOS ────────────────────────────────────────────────────
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/App.framework
+ios/Runner.xcworkspace/xcshareddata/xcschemes/
+**/DerivedData/
+**/xcuserdata/
+*.xcworkspace
+!ios/Runner.xcworkspace/
+Podfile.lock
+
+# ── Android ────────────────────────────────────────────────
+android/.gradle/
+android/captures/
+android/gradlew
+android/gradlew.bat
+android/local.properties
+**/GeneratedPluginRegistrant.java
+**/GeneratedPluginRegistrant.swift
+*.apk
+*.aab
+
+# ── IDE ────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# ── OS files ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+
+# ── Backend / Laravel ──────────────────────────────────────
+store/backend/.env
+store/backend/vendor/
+store/backend/node_modules/
+storage/logs/
+
+# ── Deploy scripts met credentials ────────────────────────
+# (scripts zelf mogen erin, maar output/logs niet)
+*.tar.gz
+deploy_*.log
+
+# ── Overige ────────────────────────────────────────────────
+node_modules/
+.flutter-plugins
+.flutter-plugins-dependencies

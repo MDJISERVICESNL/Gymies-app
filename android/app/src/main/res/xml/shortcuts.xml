@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="search_trainer"
+        android:enabled="true"
+        android:icon="@drawable/ic_search"
+        android:shortcutShortLabel="@string/shortcut_search_short"
+        android:shortcutLongLabel="@string/shortcut_search_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.Gymies.nl"
+            android:targetClass="com.Gymies.nl.MainActivity"
+            android:data="gymies://client/search" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="my_bookings"
+        android:enabled="true"
+        android:icon="@drawable/ic_calendar"
+        android:shortcutShortLabel="@string/shortcut_bookings_short"
+        android:shortcutLongLabel="@string/shortcut_bookings_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.Gymies.nl"
+            android:targetClass="com.Gymies.nl.MainActivity"
+            android:data="gymies://client/sessions" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="messages"
+        android:enabled="true"
+        android:icon="@drawable/ic_message"
+        android:shortcutShortLabel="@string/shortcut_messages_short"
+        android:shortcutLongLabel="@string/shortcut_messages_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.Gymies.nl"
+            android:targetClass="com.Gymies.nl.MainActivity"
+            android:data="gymies://client/messages" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="qr_checkin"
+        android:enabled="true"
+        android:icon="@drawable/ic_qr"
+        android:shortcutShortLabel="@string/shortcut_qr_short"
+        android:shortcutLongLabel="@string/shortcut_qr_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.Gymies.nl"
+            android:targetClass="com.Gymies.nl.MainActivity"
+            android:data="gymies://trainer/checkin" />
+    </shortcut>
+</shortcuts>

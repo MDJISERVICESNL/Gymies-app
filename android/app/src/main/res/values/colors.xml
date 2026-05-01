@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#000000</color>
+    <!-- Gymies brand gold voor splash screen -->
+    <color name="gymies_gold">#FEBE23</color>
+    <color name="gymies_navy">#0B1F3A</color>
+</resources>

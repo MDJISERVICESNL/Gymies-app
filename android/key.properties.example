@@ -1,0 +1,13 @@
+# Kopieer dit bestand naar key.properties en vul je upload signing gegevens in.
+# NOOIT key.properties committen naar git!
+#
+# Genereer een upload keystore met:
+#   keytool -genkey -v -keystore gymies-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias gymies-upload -dname "CN=Gymies, OU=Mobile, O=DriveToMD, L=Amsterdam, ST=Noord-Holland, C=NL"
+#
+# Google Play App Signing doet de uiteindelijke ondertekening.
+# Deze upload key is alleen om je AAB naar de Play Console te sturen.
+#
+storePassword=<jouw-keystore-wachtwoord>
+keyPassword=<jouw-key-wachtwoord>
+keyAlias=gymies-upload
+storeFile=gymies-upload.jks

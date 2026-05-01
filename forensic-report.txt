@@ -1,0 +1,392 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║         GYMIES SERVER — FORENSISCH ONDERZOEKSRAPPORT              ║
+║         Datum: 2026-04-18 21:44:09 UTC                         ║
+║         Server: GymiesNL (148.113.197.164)        ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+Onderzochte periode: 2026-03-09 tot heden
+Malware installatie: 2026-04-15 03:14 UTC
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  A. SSH TOEGANGSANALYSE — Was de SSH key gecompromitteerd?
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+────── A1. Alle succesvolle SSH logins (alle logbestanden) ──────
+
+--- auth.log (huidig) ---
+
+--- auth.log.1 (vorige week) ---
+
+--- auth.log.2.gz (2 weken geleden) ---
+
+--- auth.log.3.gz (3 weken geleden) ---
+
+--- auth.log.4.gz (4 weken geleden) ---
+
+────── A2. Unieke IP-adressen met succesvolle logins ──────
+
+Alle IP's die ooit succesvol hebben ingelogd:
+  IP: 178.230.154.84 (vermeldingen: 0)
+  IP: 178.230.27.35 (vermeldingen: 0)
+  IP: 62.163.72.25 (vermeldingen: 3252)
+  IP: 89.205.146.234 (vermeldingen: 18)
+  IP: 95.97.32.218 (vermeldingen: 0)
+  IP: 178.230.72.95 (uit auth.log.2.gz)
+  IP: 62.163.72.25 (uit auth.log.2.gz)
+  IP: 89.205.240.161 (uit auth.log.2.gz)
+  IP: 178.230.117.34 (uit auth.log.3.gz)
+  IP: 62.163.72.25 (uit auth.log.3.gz)
+  IP: 178.230.123.71 (uit auth.log.4.gz)
+  IP: 178.230.61.59 (uit auth.log.4.gz)
+  IP: 62.163.72.25 (uit auth.log.4.gz)
+
+────── A3. SSH key fingerprints gebruikt ──────
+
+Unieke key fingerprints uit alle logs:
+  Key: SHA256:PcewiGBmUa9wbrvKyNb2sdrsnTgTBWB8gqfviZ3Hh2o
+
+────── A4. SSH logins rond het tijdstip van infectie (14-15 april) ──────
+
+Logins tussen 14 april 18:00 en 15 april 06:00:
+
+────── A5. Huidige authorized_keys ──────
+
+Keys in /home/Gymiesagent/.ssh/authorized_keys:
+  Type: ssh-ed25519 | Comment: gymiesagent@cursor | Fingerprint: 
+  Type: ssh-ed25519 | Comment: gymiesagent@cursor | Fingerprint: SHA256:PcewiGBmUa9wbrvKyNb2sdrsnTgTBWB8gqfviZ3Hh2o
+
+Keys in /root/.ssh/authorized_keys:
+
+────── A6. SSH key bestanden — wanneer laatst gewijzigd? ──────
+
+Timestamps van SSH bestanden:
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  B. WEB EXPLOIT ANALYSE — Kwam de aanvaller via PHP/Laravel binnen?
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+────── B1. Nginx access logs rond infectie (15 april 00:00-06:00) ──────
+
+Verdachte requests rond infectietijdstip:
+
+--- access.log.2.gz ---
+
+--- access.log.3.gz ---
+
+────── B2. Alle POST requests naar verdachte endpoints ──────
+
+POST requests naar bekende exploit paden (alle logs):
+
+────── B3. PHP error logs rond infectie ──────
+
+PHP-FPM error log:
+
+Laravel log rond infectie:
+
+────── B4. Webshell detectie (diepgaand) ──────
+
+Zoeken naar bekende webshell patronen in alle PHP bestanden...
+  ⚠️  ALERT: Command execution met user input in: /var/www/gymies/app/Http/Controllers/Gymies/TrainerMediaValidationTrait.php
+
+────── B5. Recent gewijzigde PHP bestanden rond infectiedatum ──────
+
+PHP bestanden gewijzigd tussen 14-16 april:
+  [2026-04-15 17:01:22] /var/www/gymies/resources/views/errors/419.blade.php
+  [2026-04-15 17:01:22] /var/www/gymies/resources/views/errors/429.blade.php
+  [2026-04-15 17:01:22] /var/www/gymies/resources/views/errors/403.blade.php
+  [2026-04-15 17:01:22] /var/www/gymies/resources/views/errors/500.blade.php
+  [2026-04-15 17:01:22] /var/www/gymies/resources/views/errors/404.blade.php
+  [2026-04-15 19:21:58] /var/www/gymies/gymies_deploy/reset_pw.php
+
+────── B6. Laravel route exploits — onbeveiligde endpoints ──────
+
+Routes zonder auth middleware (potentieel misbruikt):
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  C. SYSTEMD JOURNAL — Wat gebeurde er op 15 april 03:14?
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+────── C1. Systemd journal rond infectietijdstip ──────
+
+Journal entries 15 april 03:00 - 03:30:
+
+────── C2. Wanneer werden de malware services aangemaakt? ──────
+
+Bestandstijd van malware-gerelateerde bestanden (als ze nog bestaan):
+  (Bestanden zijn al verwijderd tijdens cleanup)
+
+────── C3. Systemd service creatie events ──────
+
+Service-gerelateerde events op 15 april:
+
+Alle systemctl enable/start events op 15 april:
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  D. PRIVILEGE ESCALATION — Hoe kreeg de aanvaller root?
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+────── D1. Sudo configuratie ──────
+
+Sudo rechten voor Gymiesagent:
+
+Sudoers bestanden:
+--- /etc/sudoers.d/90-cloud-init-users ---
+--- /etc/sudoers.d/README ---
+--- /etc/sudoers.d/gymiesagent ---
+
+────── D2. SUID/SGID bestanden (privilege escalation vectors) ──────
+
+SUID bestanden (kunnen misbruikt worden voor privilege escalation):
+  [PACKAGE: passwd] /usr/bin/gpasswd
+  [PACKAGE: passwd] /usr/bin/chsh
+  [PACKAGE: passwd] /usr/bin/passwd
+  [PACKAGE: passwd] /usr/bin/chfn
+  [PACKAGE: util-linux] /usr/bin/su
+  [PACKAGE: ntfs-3g] /usr/bin/ntfs-3g
+  [PACKAGE: mount] /usr/bin/mount
+  [PACKAGE: login] /usr/bin/newgrp
+  [PACKAGE: fuse3] /usr/bin/fusermount3
+  [PACKAGE: mount] /usr/bin/umount
+  [PACKAGE: sudo] /usr/bin/sudo
+  [PACKAGE: openssh-client] /usr/lib/openssh/ssh-keysign
+  [PACKAGE: polkitd] /usr/lib/polkit-1/polkit-agent-helper-1
+  [PACKAGE: dbus] /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+
+────── D3. Schrijfbare directories door www-data ──────
+
+Directories schrijfbaar door www-data buiten /var/www:
+
+────── D4. www-data processen en mogelijke shell access ──────
+
+Processen van www-data:
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  E. NETWERK & EXPOSED SERVICES
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+────── E1. Luisterende services op het moment van infectie ──────
+
+Huidige luisterende poorten (indicatie van wat er draaide):
+
+────── E2. Was er een exposed service (Redis, Memcache, etc.)? ──────
+
+Check op exposed services:
+  MySQL bind-address: bind-address		= 127.0.0.1
+mysqlx-bind-address	= 127.0.0.1
+
+────── E3. Apache/andere webservers ──────
+
+Apache status:
+  Apache is niet actief
+
+Apache htcacheclean service:
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  F. PACKAGE & SOFTWARE SUPPLY CHAIN
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+────── F1. Recent geïnstalleerde packages rond infectie ──────
+
+APT history rond 15 april:
+
+DPKG log rond infectie:
+
+────── F2. npm/pip packages geïnstalleerd ──────
+
+Globaal geïnstalleerde npm packages:
+
+pip packages (niet-standaard):
+  Geen user pip packages
+
+────── F3. Composer packages (Laravel) ──────
+
+Recent gewijzigde composer bestanden:
+
+Composer.json modified time:
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  G. BESTANDSSYSTEEM FORENSICS
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+────── G1. Bestanden aangemaakt op 15 april (infectiedatum) ──────
+
+Alle bestanden aangemaakt op 15 april (excl. logs/cache):
+  [root:600] (398 bytes) /root/.ssh/authorized_keys
+  [root:644] (0 bytes) /var/backups/dpkg.arch.0
+  [root:600] (0 bytes) /var/spool/postfix/pid/unix.cleanup
+  [root:600] (0 bytes) /var/spool/postfix/pid/unix.local
+  [root:640] (2524 bytes) /var/www/gymies/.env.bak_20260415_175626
+  [root:640] (2518 bytes) /var/www/gymies/.env.bak_20260415_170122
+  [root:644] (548 bytes) /var/www/gymies/gymies_deploy/reset_pw.php
+  [root:755] (86003 bytes) /var/www/gymies/routes/web.php.bak_20260415_170122
+  [root:640] (2437 bytes) /var/www/gymies/.env.bak_20260415_180702
+  [mysql:640] (1359067 bytes) /var/lib/mysql/binlog.000041
+  [root:644] (0 bytes) /var/lib/systemd/timers/stamp-update-notifier-motd.timer
+  [root:600] (701 bytes) /var/mail/root
+  [root:644] (752 bytes) /tmp/pw_reset_final.php
+  [root:644] (455 bytes) /tmp/check_pw.php
+  [Gymiesagent:664] (1443 bytes) /tmp/node-jiti/gymies-next-tailwind.config.ts.21f42480.js
+  [Gymiesagent:664] (9540 bytes) /tmp/gymies_nginx.conf
+  [root:644] (4519 bytes) /tmp/nginx-default.backup-20260415164602
+  [Gymiesagent:600] (9592 bytes) /home/Gymiesagent/gymies-next/claude-backups/2026-04-15_zoeken-page-backup.tsx.bak
+  [Gymiesagent:600] (8920 bytes) /home/Gymiesagent/gymies-next/claude-backups/2026-04-15_contact-page-backup.tsx.bak
+  [Gymiesagent:644] (6047 bytes) /home/Gymiesagent/gymies-next/claude-backups/IMPROVEMENTS_SUMMARY.md
+  [Gymiesagent:600] (7135 bytes) /home/Gymiesagent/gymies-next/claude-backups/2026-04-15_faq-page-backup.tsx.bak
+  [Gymiesagent:644] (5384 bytes) /home/Gymiesagent/gymies-next/app/not-found.tsx
+  [Gymiesagent:644] (2909 bytes) /home/Gymiesagent/gymies-next/app/opengraph-image.tsx
+  [Gymiesagent:600] (688 bytes) /home/Gymiesagent/gymies-next/tsconfig.json
+  [Gymiesagent:644] (102471 bytes) /home/Gymiesagent/gymies-next/tsconfig.tsbuildinfo
+  [Gymiesagent:600] (8551 bytes) /home/Gymiesagent/gymies_deploy/web/sitemap.xml
+  [Gymiesagent:664] (185 bytes) /home/Gymiesagent/.config/nextjs-nodejs/config.json
+  [root:644] (7998 bytes) /etc/nginx/sites-available/gymiesapp.bak.20260415_214159
+  [root:644] (9616 bytes) /etc/nginx/sites-available/gymiesapp.bak.20260415_214727
+  [root:644] (4339 bytes) /etc/nginx/sites-available/gymies.bak_20260415_165902
+  [Gymiesagent:644] (6293 bytes) /etc/nginx/sites-available/gymies
+  [root:644] (7998 bytes) /etc/nginx/sites-available/gymiesapp.bak.20260415_214510
+  [root:644] (8318 bytes) /etc/nginx/sites-available/gymiesapp.bak.20260415_212838
+  [Gymiesagent:644] (4200 bytes) /etc/nginx/sites-enabled/default
+
+────── G2. Bestanden in /usr/bin/ en /usr/sbin/ niet van packages ──────
+
+Binaries die niet van een dpkg package komen:
+  [2025-01-10 17:31:46] /usr/bin/setupcon —  POSIX shell script, Unicode text, UTF-8 text executable
+  [2026-03-09 00:40:24] /usr/local/bin/composer —  PHP phar archive with SHA512 signature
+
+────── G3. Hidden directories en bestanden ──────
+
+Verborgen bestanden in /var/www/gymies/ (excl. standaard):
+  /var/www/gymies/.env.bak_20260312_194443
+  /var/www/gymies/.env.bak_20260415_175626
+  /var/www/gymies/.env.bak_20260415_170122
+  /var/www/gymies/.env.bak_20260312_194429
+  /var/www/gymies/.env.example
+  /var/www/gymies/.env.bak_20260415_180702
+
+────── G4. World-writable bestanden buiten /tmp ──────
+
+World-writable bestanden (iedereen kan schrijven):
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  H. BASH HISTORY DEEP DIVE
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+────── H1. Volledige Gymiesagent history analyse ──────
+
+Commando's met downloads/netwerk/executie:
+
+────── H2. Root bash history ──────
+
+Root history (alles):
+  Leeg of niet toegankelijk
+
+────── H3. www-data shell history ──────
+
+www-data history:
+  Geen www-data history
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  I. CLOUD-INIT & VPS PROVIDER ANALYSE
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+────── I1. Cloud-init configuratie en logs ──────
+
+Cloud-init status:
+  Cloud-init niet beschikbaar
+
+Cloud-init log rond server setup:
+
+Cloud-init output log:
+
+────── I2. User-data script (wat werd er bij setup uitgevoerd?) ──────
+
+Cloud-init user-data:
+
+Cloud-init scripts:
+
+────── I3. VPS provider metadata ──────
+
+Server metadata:
+  Hostname: GymiesNL
+  OS: "Ubuntu 25.04"
+  Kernel: 6.14.0-37-generic
+  Uptime:  21:46:03 up 40 days, 21:26,  3 users,  load average: 0.86, 0.33, 0.12
+  Server aangemaakt: 2025-10-24 19:56:38.000000000 +0000
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  J. SYSLOG DEEP DIVE — 14-15 APRIL
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+────── J1. Syslog rond infectie ──────
+
+Syslog 15 april 02:00-04:00 (gefilterd op relevante events):
+
+Syslog: alle 'defunct' en 'gs-dbus' vermeldingen:
+
+────── J2. Kern.log — kernel events rond infectie ──────
+
+Kern.log 15 april:
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  K. FAIL2BAN & BRUTE FORCE ANALYSE
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+────── K1. Fail2ban log rond infectie ──────
+
+Fail2ban events 14-15 april:
+
+────── K2. Top 20 brute force IP-adressen (alle logs) ──────
+
+Top 20 aanvallende IP's:
+
+────── K3. Geslaagde brute force (password auth)? ──────
+
+Succesvolle PASSWORD logins (niet publickey):
+  GEEN succesvolle password logins gevonden (goed)
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  L. TIJDLIJN RECONSTRUCTIE
+╚══════════════════════════════════════════════════════════════════════╝
+
+Gereconstrueerde tijdlijn gebaseerd op alle verzamelde gegevens:
+
+  2026-03-09        Server opgezet (hostname aangemaakt)
+  2026-03-09        Eerste SSH key toegevoegd
+  ...               Regulier gebruik door eigenaar
+  2026-04-15 03:14  gs-dbus.service gestart (GSocket backdoor)
+  2026-04-15 03:14  defunct.service gestart (cryptominer)
+  2026-04-15 03:14  snake.sh dropper aanwezig in /dev/shm (45KB)
+  2026-04-16 00:05  Lynis detecteert beide services als UNSAFE (score 9.6)
+  2026-04-17 00:00  Lynis herhaalt waarschuwing
+  2026-04-18 00:29  Lynis herhaalt waarschuwing (3e keer)
+  2026-04-18 19:xx  Eigenaar ontdekt probleem (login 'File Not Found')
+  2026-04-18 19:33  Cleanup gestart — malware verwijderd
+  2026-04-18 20:17  Server hardening uitgevoerd
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  M. CONCLUSIE & AANBEVELINGEN
+╚══════════════════════════════════════════════════════════════════════╝
+
+
+Dit rapport bevat alle verzamelde forensische data.
+Analyseer de output hierboven om de exacte entry vector te bepalen.
+
+Rapport opgeslagen in: /tmp/gymies-forensic-report-20260418_214409.txt
+Grootte: 217754 bytes, 1645 regels
+
+════════════════════════════════════════════════════════════════
+  FORENSISCH RAPPORT VOLTOOID
+  Opgeslagen in: /tmp/gymies-forensic-report-20260418_214409.txt
+  Download met: scp gymies:/tmp/gymies-forensic-report-20260418_214409.txt .
+════════════════════════════════════════════════════════════════

@@ -1,0 +1,14 @@
+ALTER TABLE gymies_subscriptions DROP FOREIGN KEY gymies_subscriptions_user_fk;
+ALTER TABLE gymies_subscriptions CHANGE COLUMN client_user_id trainer_user_id BIGINT UNSIGNED NOT NULL COMMENT 'Trainer die het abonnement heeft';
+ALTER TABLE gymies_subscriptions ADD COLUMN mollie_customer_id VARCHAR(64) DEFAULT NULL;
+ALTER TABLE gymies_subscriptions ADD COLUMN mollie_subscription_id VARCHAR(64) DEFAULT NULL;
+ALTER TABLE gymies_subscriptions ADD COLUMN mollie_mandate_id VARCHAR(64) DEFAULT NULL;
+ALTER TABLE gymies_subscriptions ADD COLUMN current_period_start DATE DEFAULT NULL;
+ALTER TABLE gymies_subscriptions ADD COLUMN current_period_end DATE DEFAULT NULL;
+ALTER TABLE gymies_subscriptions ADD COLUMN trial_ends_at TIMESTAMP NULL DEFAULT NULL;
+ALTER TABLE gymies_subscriptions ADD COLUMN cancelled_at TIMESTAMP NULL DEFAULT NULL;
+ALTER TABLE gymies_subscriptions ADD COLUMN cancel_reason VARCHAR(500) DEFAULT NULL;
+ALTER TABLE gymies_subscriptions DROP INDEX gymies_subscriptions_client;
+CREATE INDEX gymies_subscriptions_trainer ON gymies_subscriptions (trainer_user_id);
+CREATE INDEX gymies_subscriptions_mollie ON gymies_subscriptions (mollie_subscription_id);
+ALTER TABLE gymies_subscriptions ADD CONSTRAINT gymies_subscriptions_trainer_user_fk FOREIGN KEY (trainer_user_id) REFERENCES gymies_users (id) ON DELETE CASCADE;

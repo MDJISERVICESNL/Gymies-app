@@ -1,0 +1,43 @@
+WAT IS GYMIES?
+Gymies verbindt sporters, personal trainers en sportscholen. Je plant sessies, volgt voortgang, beheert je agenda en communiceert — in één app. Planning, relaties en zichtbaarheid op één plek, minder schakelen tussen losse tools. De app is bedoeld voor het Nederlandse fitnessveld: helder taalgebruik, focus op afspraken en vertrouwen tussen coach en cliënt, en ruimte om als ondernemer te groeien zonder je stack steeds uit te breiden.
+
+VOOR SPORTERS EN KLANTEN
+Filters: regio, specialisatie, afstand, tariefindicatie, beoordeling, lesvorm; optioneel alleen geverifieerde profielen. Zoek op naam of stad. Met toestemming gebruikt de app locatie voor nabije trainers en logische sortering.
+
+Favorieten voor snelle toegang tot favoriete coaches. Profielen tonen beeldmateriaal, specialisaties en werkwijze; met het juiste trainerplan ook video en stories vóór je boekt.
+
+Boekingen overzichtelijk: planning, status, praktische info. Groepslessen en wachtlijsten als de trainer die gebruikt. Dossier en doelen waar beschikbaar.
+
+Check-in met QR: toon code, trainer scant. Tussen sessies: 1-op-1 berichten. Meldingen voor wijzigingen en herinneringen. Facturen/documenten waar van toepassing. Profiel, voorkeuren, support en instellingen.
+
+VOOR TRAINERS
+Dashboard: sessies, agenda, inkomsten, berichten, meldingen, klanten, pakketten, groepslessen, profiel, instellingen; bij gekoppelde locatie ook sportschool-dashboard.
+
+Sessies en agenda: bevestigen, tijden aanpassen, annuleren, no-shows; beschikbaarheid en uitzonderingen instellen.
+
+Klanten en pakketten: bestand, aanbod, verkoop. Pro voegt dossiers met notities en voortgang, doelen, tags, bulkberichten, health score, upsell- en herboeksuggesties, priority support en rijkere profielmedia (video en stories) toe. Elite voegt o.a. geavanceerde rapportage, promoted profiel in zoekresultaten en organisatiemodus voor teams toe — minder administratie, meer ruimte om te groeien.
+
+Chat en meldingen; met realtime waar beschikbaar sneller zicht op open gesprekken. Inkomsten met filters en rapportages. Facturen en bedrijfsdocumenten volgens platformvereisten in dezelfde omgeving.
+
+Check-inscanner (QR), wachtlijst/standby. Profiel, studio, vitrine met tekst en beeld; op Pro/Elite meer video en stories. Promotiecodes voor campagnes binnen je plan.
+
+ABONNEMENTEN (TRAINERS)
+Starter, Pro en Elite: van sessie- en klantadministratie tot diepere analyses, geavanceerde rapportage, promoted profiel in zoekresultaten en organisatiemodus voor teams. Ook prioriteit bij support, bulkberichten en rijkere profielmedia op hogere niveaus. Het abonnementenscherm vergelijkt plannen.
+
+Start of wijzig in de app. Betaling via beveiligde online betaalstroom in de browser; daarna terug in Gymies. Voorwaarden staan in de app en op het platform.
+
+VEILIGHEID EN PRIVACY
+Accountlogin; locatie, camera of fotobibliotheek alleen als een functie dat vereist (zoeken in de buurt, profielmedia). iOS toont de standaard uitleg; jij bepaalt wat je deelt.
+
+VOOR WIE?
+• Sporters en leden die structuur, duidelijke afspraken en directe lijn met hun coach willen.
+• Zelfstandige trainers en kleine studio’s die administratie willen bundelen zonder aan professionaliteit in te leveren.
+• Sportscholen en organisaties die meerdere trainers en leden op één platform willen laten samenwerken.
+
+HOE BEGIN JE?
+Installeer Gymies, registreer als sporter of trainer en volg de onboarding. Trainers kiezen een passend abonnement; sporters beginnen met zoeken, favorieten en boeken.
+
+TECHNISCH EN PRAKTISCH
+Gymies werkt samen met je account op het platform: inloggen, gegevens synchroniseren en meldingen (waar ingeschakeld) zorgen dat je niet hoeft te gissen of een afspraak nog geldt. Een stabiele internetverbinding is nodig voor zoeken, boeken en synchronisatie; offline-first functionaliteit kan per onderdeel verschillen.
+
+Download Gymies — trainen, plannen en ondernemen samen. We verbeteren op basis van feedback; jij focust op vooruitgang en community.

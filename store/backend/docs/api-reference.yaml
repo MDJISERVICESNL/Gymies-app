@@ -1,0 +1,574 @@
+openapi: 3.1.0
+info:
+  title: GYMIES API
+  version: 1.0.0
+  description: |
+    REST API voor de GYMIES fitness marketplace.
+    Base URL: https://gymies.nl/api/gymies
+
+    ## Authenticatie
+    Bearer token via `Authorization: Bearer <token>` header.
+    Token wordt verkregen via `POST /login` of `POST /register`.
+    Tokens verlopen na 30 dagen (configureerbaar).
+
+    ## Rate Limiting
+    - Publieke endpoints: 60 requests/minuut per IP
+    - Authenticated endpoints: 120 requests/minuut per user
+    - Auth endpoints (login/register): 10 requests/minuut per IP
+
+    ## Response Format
+    Alle responses zijn JSON. Succesvolle responses:
+    ```json
+    { "data": { ... } }
+    ```
+    Foutmeldingen:
+    ```json
+    { "message": "Foutmelding", "errors": { "field": ["validatie fout"] } }
+    ```
+  contact:
+    name: GYMIES
+    url: https://gymies.nl
+servers:
+  - url: https://gymies.nl/api/gymies
+    description: Production
+tags:
+  - name: Auth
+    description: Registratie, login, wachtwoord reset
+  - name: Public
+    description: Publieke endpoints (geen auth vereist)
+  - name: Profile
+    description: Gebruikersprofiel beheren
+  - name: Bookings
+    description: Boekingen aanmaken en beheren
+  - name: Chat
+    description: Berichten en gesprekken
+  - name: Payments
+    description: Betalingen via Mollie
+  - name: Trainer
+    description: Trainer-specifieke endpoints
+  - name: Ops
+    description: Operationele endpoints (admin only)
+
+paths:
+  # ══════════════════════════════════════════════════════════════
+  # AUTH
+  # ══════════════════════════════════════════════════════════════
+  /register:
+    post:
+      tags: [Auth]
+      summary: Nieuw account registreren
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, display_name, role]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                display_name: { type: string }
+                role: { type: string, enum: [klant, trainer] }
+      responses:
+        '200': { description: Account aangemaakt, token retourneert }
+        '422': { description: Validatiefout }
+
+  /login:
+    post:
+      tags: [Auth]
+      summary: Inloggen met email en wachtwoord
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                device_name: { type: string, description: "Optioneel device naam voor session tracking" }
+      responses:
+        '200':
+          description: Login succesvol
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      email: { type: string }
+                      display_name: { type: string }
+                      role: { type: string }
+        '401': { description: Ongeldige credentials }
+        '429': { description: Te veel pogingen }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Wachtwoord reset aanvragen
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200': { description: Reset email verstuurd (altijd 200 voor privacy) }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Uitloggen (huidige sessie)
+      security: [{ bearer: [] }]
+      responses:
+        '200': { description: Uitgelogd }
+
+  # ══════════════════════════════════════════════════════════════
+  # PUBLIC
+  # ══════════════════════════════════════════════════════════════
+  /health:
+    get:
+      tags: [Public]
+      summary: Health check
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+                  timestamp: { type: string, format: date-time }
+
+  /app-version:
+    get:
+      tags: [Public]
+      summary: App versie check (force update detectie)
+      parameters:
+        - name: version
+          in: query
+          schema: { type: string }
+          description: Huidige app versie (bijv. "1.2.1")
+        - name: platform
+          in: query
+          schema: { type: string, enum: [ios, android] }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  min_version: { type: string }
+                  latest_version: { type: string }
+                  force_update: { type: boolean }
+                  update_url_ios: { type: string }
+                  update_url_android: { type: string }
+                  message: { type: string, nullable: true }
+
+  /feature-flags:
+    get:
+      tags: [Public]
+      summary: Feature flags ophalen
+      description: |
+        Retourneert alle feature flags. Optioneel: stuur Bearer token mee
+        voor user-specifieke rollout percentages.
+      parameters:
+        - name: access_token
+          in: query
+          schema: { type: string }
+          description: Optioneel access token (alternatief voor Bearer header)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flags:
+                    type: object
+                    additionalProperties: { type: boolean }
+                    example:
+                      buddy_bookings: false
+                      queue_emails: true
+                      advanced_analytics: true
+
+  /trainers:
+    get:
+      tags: [Public]
+      summary: Trainers zoeken
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Zoekterm (naam, specialisme, stad)
+        - name: specialty
+          in: query
+          schema: { type: string }
+        - name: lat
+          in: query
+          schema: { type: number }
+          description: Latitude voor afstandsberekening
+        - name: lng
+          in: query
+          schema: { type: number }
+          description: Longitude voor afstandsberekening
+        - name: radius_km
+          in: query
+          schema: { type: integer, default: 25 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: Lijst trainers met publieke profieldata
+
+  /trainers/by-slug/{slug}:
+    get:
+      tags: [Public]
+      summary: Trainer profiel via slug
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Trainer profieldata }
+        '404': { description: Trainer niet gevonden }
+
+  /specialties:
+    get:
+      tags: [Public]
+      summary: Alle specialismen ophalen
+      responses:
+        '200': { description: Lijst specialismen }
+
+  # ══════════════════════════════════════════════════════════════
+  # PROFILE (authenticated)
+  # ══════════════════════════════════════════════════════════════
+  /me:
+    get:
+      tags: [Profile]
+      summary: Eigen profiel ophalen
+      security: [{ bearer: [] }]
+      responses:
+        '200':
+          description: Profieldata (geen gevoelige velden)
+        '401': { description: Niet ingelogd }
+    put:
+      tags: [Profile]
+      summary: Profiel bijwerken
+      security: [{ bearer: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name: { type: string }
+                bio: { type: string }
+                phone: { type: string }
+      responses:
+        '200': { description: Profiel bijgewerkt }
+
+  # ══════════════════════════════════════════════════════════════
+  # BOOKINGS (authenticated)
+  # ══════════════════════════════════════════════════════════════
+  /bookings:
+    get:
+      tags: [Bookings]
+      summary: Mijn boekingen ophalen
+      security: [{ bearer: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, confirmed, cancelled, completed] }
+        - name: upcoming
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200': { description: Lijst boekingen }
+    post:
+      tags: [Bookings]
+      summary: Nieuwe boeking aanmaken
+      security: [{ bearer: [] }]
+      description: |
+        Alleen klanten (role=klant) kunnen boekingen aanmaken.
+        Feature flag `buddy_bookings` activeert de buddy_user_id parameter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trainer_user_id, scheduled_at]
+              properties:
+                trainer_user_id: { type: integer }
+                scheduled_at: { type: string, format: date-time }
+                duration_minutes: { type: integer, default: 60, enum: [45, 60, 90, 120] }
+                amount_cents: { type: integer, minimum: 0 }
+                package_id: { type: integer, nullable: true }
+                gym_location_id: { type: integer, nullable: true }
+                buddy_user_id:
+                  type: integer
+                  nullable: true
+                  description: "Alleen beschikbaar als feature flag 'buddy_bookings' aan staat"
+      responses:
+        '201': { description: Boeking aangemaakt }
+        '403': { description: Alleen klanten mogen boeken }
+        '409': { description: Tijdslot al bezet }
+        '422': { description: Validatiefout }
+
+  /bookings/{id}:
+    get:
+      tags: [Bookings]
+      summary: Boeking details ophalen
+      security: [{ bearer: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: Boeking details }
+        '404': { description: Niet gevonden }
+
+  /bookings/{id}/cancel:
+    post:
+      tags: [Bookings]
+      summary: Boeking annuleren
+      security: [{ bearer: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: Boeking geannuleerd }
+
+  /bookings/{id}/confirm-cash:
+    post:
+      tags: [Bookings]
+      summary: Cash betaling bevestigen (trainer only)
+      security: [{ bearer: [] }]
+      description: Idempotent — dubbele calls met zelfde X-Idempotency-Key worden genegeerd.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: X-Idempotency-Key
+          in: header
+          schema: { type: string }
+          description: Optionele idempotency key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirmed: { type: boolean }
+      responses:
+        '200': { description: Cash betaling bevestigd }
+        '422': { description: Al bevestigd }
+
+  # ══════════════════════════════════════════════════════════════
+  # CHAT (authenticated)
+  # ══════════════════════════════════════════════════════════════
+  /conversations:
+    get:
+      tags: [Chat]
+      summary: Alle gesprekken ophalen
+      security: [{ bearer: [] }]
+      responses:
+        '200': { description: Lijst gesprekken met laatste bericht }
+
+  /conversations/{id}/messages:
+    get:
+      tags: [Chat]
+      summary: Berichten in gesprek ophalen
+      security: [{ bearer: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: before_id
+          in: query
+          schema: { type: integer }
+          description: Paginatie — berichten voor dit ID
+      responses:
+        '200': { description: Lijst berichten }
+    post:
+      tags: [Chat]
+      summary: Bericht versturen
+      security: [{ bearer: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, maxLength: 5000 }
+      responses:
+        '201': { description: Bericht verstuurd }
+
+  # ══════════════════════════════════════════════════════════════
+  # PAYMENTS
+  # ══════════════════════════════════════════════════════════════
+  /payments/create:
+    post:
+      tags: [Payments]
+      summary: Mollie betaling starten
+      security: [{ bearer: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [booking_id]
+              properties:
+                booking_id: { type: integer }
+      responses:
+        '200':
+          description: Mollie checkout URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkout_url: { type: string, format: uri }
+                  payment_id: { type: string }
+
+  /payments/webhook:
+    post:
+      tags: [Payments]
+      summary: Mollie webhook (extern)
+      description: |
+        Wordt aangeroepen door Mollie bij statuswijziging.
+        Retourneert altijd 200 (Mollie vereiste).
+        Valideert payment ID format (tr_XXXXX).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: string, description: "Mollie payment ID (tr_xxxxx)" }
+      responses:
+        '200': { description: Webhook ontvangen }
+
+  # ══════════════════════════════════════════════════════════════
+  # NOTIFICATIONS
+  # ══════════════════════════════════════════════════════════════
+  /notifications:
+    get:
+      tags: [Profile]
+      summary: Meldingen ophalen
+      security: [{ bearer: [] }]
+      responses:
+        '200': { description: Lijst meldingen }
+
+  /notifications/{id}/read:
+    post:
+      tags: [Profile]
+      summary: Melding als gelezen markeren
+      security: [{ bearer: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: Melding gelezen }
+
+  # ══════════════════════════════════════════════════════════════
+  # OPS (admin only, authenticated)
+  # ══════════════════════════════════════════════════════════════
+  /ops/health:
+    get:
+      tags: [Ops]
+      summary: Uitgebreide health check
+      security: [{ bearer: [] }]
+      description: |
+        Controleert: database, cache, queue, storage, Mollie, Reverb, mail, Sentry.
+        Retourneert per-check status + alerts.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok, degraded, down] }
+                  checks: { type: object }
+
+  /ops/queue:
+    get:
+      tags: [Ops]
+      summary: Queue metrics
+      security: [{ bearer: [] }]
+      description: Pending jobs, failed jobs, oldest job age, throughput.
+      responses:
+        '200': { description: Queue metrics }
+
+  /feature-flags/toggle:
+    post:
+      tags: [Ops]
+      summary: Feature flag aan/uit zetten
+      security: [{ bearer: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, enabled]
+              properties:
+                key: { type: string }
+                enabled: { type: boolean }
+      responses:
+        '200': { description: Flag status bijgewerkt }
+        '404': { description: Flag niet gevonden }
+
+  /feature-flags/rollout:
+    post:
+      tags: [Ops]
+      summary: Feature flag rollout percentage aanpassen
+      security: [{ bearer: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, percentage]
+              properties:
+                key: { type: string }
+                percentage: { type: number, minimum: 0, maximum: 100 }
+      responses:
+        '200': { description: Rollout percentage bijgewerkt }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+      description: |
+        Token verkregen via POST /login.
+        Stuur mee als: `Authorization: Bearer <token>`

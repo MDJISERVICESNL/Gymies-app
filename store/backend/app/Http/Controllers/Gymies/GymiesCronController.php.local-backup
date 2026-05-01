@@ -1,0 +1,402 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Gymies;
+
+use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+
+/**
+ * Cron endpoints – periodieke taken die via scheduler of webhook aangeroepen worden.
+ *
+ * Routes (prefix api/gymies, geen auth nodig, beveiligd via cron-token):
+ *   GET|POST cron/safe-session-overdue
+ *   GET|POST cron/expire-group-session-payment-deadline
+ *   GET|POST cron/expire-substitute-requests
+ */
+class GymiesCronController
+{
+    // ──────────────────────────────────────────────────────────────
+    // cron/safe-session-overdue
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Detecteert safe sessions die langer duren dan verwacht.
+     *
+     * Escalatie-niveaus:
+     * 1. Sessie duurt langer dan verwacht + 30 min → waarschuwing naar trainer + klant
+     * 2. Sessie duurt langer dan verwacht + 60 min → alert naar noodcontact + admin
+     * 3. Sessie duurt langer dan verwacht + 120 min → kritiek alert naar admin
+     *
+     * Draait elke 5 minuten via scheduler.
+     */
+    public function checkSafeSessionOverdue(Request $request): JsonResponse
+    {
+        $bookingsTable = $this->resolveTable(['gymies_bookings', 'bookings']);
+        if (!$bookingsTable) {
+            return response()->json(['message' => 'Geen bookings tabel.', 'processed' => 0]);
+        }
+
+        if (!Schema::hasColumn($bookingsTable, 'safe_session_active')) {
+            return response()->json(['message' => 'Safe session kolommen ontbreken.', 'processed' => 0]);
+        }
+
+        $now = now();
+        $processed = 0;
+        $alerts = [];
+
+        try {
+            // Zoek alle actieve safe sessions
+            $query = DB::table($bookingsTable)
+                ->where('safe_session_active', true)
+                ->limit(100);
+
+            $bookings = $query->get();
+
+            foreach ($bookings as $booking) {
+                $startedAt = $booking->safe_session_started_at ?? null;
+                if (!$startedAt) continue;
+
+                $started = Carbon::parse($startedAt);
+
+                // Verwachte sessieduur
+                $durationMinutes = 60; // default
+                if (Schema::hasColumn($bookingsTable, 'duration_minutes') && $booking->duration_minutes) {
+                    $durationMinutes = (int) $booking->duration_minutes;
+                } elseif (Schema::hasColumn($bookingsTable, 'duration') && $booking->duration) {
+                    $durationMinutes = (int) $booking->duration;
+                }
+
+                // Bereken hoe lang de sessie al duurt
+                $minutesElapsed = (int) $started->diffInMinutes($now);
+                $expectedEnd = $durationMinutes + 30; // +30 min standaard marge
+
+                // Bepaal escalatie-niveau
+                $escalation = null;
+                if ($minutesElapsed > $durationMinutes + 120) {
+                    $escalation = 'critical'; // > 2 uur over tijd
+                } elseif ($minutesElapsed > $durationMinutes + 60) {
+                    $escalation = 'emergency'; // > 1 uur over tijd
+                } elseif ($minutesElapsed > $expectedEnd) {
+                    $escalation = 'warning'; // > 30 min over verwachte einde
+                }
+
+                if ($escalation === null) continue;
+
+                // Check of we al een alert hebben gestuurd voor dit niveau
+                $auditTable = $this->resolveTable(['gymies_audit_logs', 'audit_logs']);
+                $alreadySent = false;
+                if ($auditTable) {
+                    $existing = DB::table($auditTable)
+                        ->where('type', "safe_session_{$escalation}")
+                        ->where('booking_id', $booking->id)
+                        ->where('created_at', '>=', $started)
+                        ->exists();
+                    if ($existing) {
+                        $alreadySent = true;
+                    }
+                }
+
+                if ($alreadySent) continue;
+
+                // Log in audit trail
+                if ($auditTable) {
+                    $insert = ['type' => "safe_session_{$escalation}", 'created_at' => $now];
+                    if (Schema::hasColumn($auditTable, 'booking_id')) {
+                        $insert['booking_id'] = $booking->id;
+                    }
+                    if (Schema::hasColumn($auditTable, 'details')) {
+                        $insert['details'] = json_encode([
+                            'minutes_elapsed' => $minutesElapsed,
+                            'expected_duration' => $durationMinutes,
+                            'escalation' => $escalation,
+                        ]);
+                    }
+                    if (Schema::hasColumn($auditTable, 'data')) {
+                        $insert['data'] = json_encode([
+                            'minutes_elapsed' => $minutesElapsed,
+                            'expected_duration' => $durationMinutes,
+                            'escalation' => $escalation,
+                        ]);
+                    }
+                    try {
+                        DB::table($auditTable)->insert($insert);
+                    } catch (\Throwable) {}
+                }
+
+                // Stuur notificaties op basis van escalatie-niveau
+                $this->sendSafeSessionAlerts($booking, $bookingsTable, $escalation, $minutesElapsed, $durationMinutes);
+
+                $alerts[] = [
+                    'booking_id' => (string) $booking->id,
+                    'escalation' => $escalation,
+                    'minutes_elapsed' => $minutesElapsed,
+                ];
+                $processed++;
+            }
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Fout bij verwerking.',
+                'error' => $e->getMessage(),
+                'processed' => $processed,
+            ], 500);
+        }
+
+        return response()->json([
+            'message' => "Safe session overdue check voltooid.",
+            'processed' => $processed,
+            'alerts' => $alerts,
+        ]);
+    }
+
+    /**
+     * Stuur alerts op basis van escalatie-niveau.
+     */
+    private function sendSafeSessionAlerts(
+        object $booking,
+        string $bookingsTable,
+        string $escalation,
+        int $minutesElapsed,
+        int $durationMinutes
+    ): void {
+        $usersTable = $this->resolveTable(['gymies_users', 'users']);
+        $notificationsTable = $this->resolveTable(['notifications']);
+        $trainerCol = $this->resolveColumn($bookingsTable, ['trainer_user_id', 'trainer_id']);
+        $clientCol = $this->resolveColumn($bookingsTable, ['client_user_id', 'client_id', 'user_id']);
+
+        $trainerId = $trainerCol ? ($booking->{$trainerCol} ?? null) : null;
+        $clientId = $clientCol ? ($booking->{$clientCol} ?? null) : null;
+
+        $trainerName = 'Trainer';
+        $clientName = 'Klant';
+        $clientUser = null;
+
+        if ($usersTable) {
+            if ($trainerId) {
+                $trainer = DB::table($usersTable)->where('id', $trainerId)->first();
+                $trainerName = $trainer->display_name ?? $trainer->name ?? 'Trainer';
+            }
+            if ($clientId) {
+                $clientUser = DB::table($usersTable)->where('id', $clientId)->first();
+                $clientName = $clientUser->display_name ?? $clientUser->name ?? 'Klant';
+            }
+        }
+
+        $notifiableType = ($usersTable === 'gymies_users')
+            ? 'App\\Models\\GymiesUser'
+            : 'App\\Models\\User';
+
+        $overMinutes = $minutesElapsed - $durationMinutes;
+
+        // ── Niveau 1: Warning (> 30 min over) → Trainer + Klant
+        if ($escalation === 'warning' || $escalation === 'emergency' || $escalation === 'critical') {
+            // Push naar trainer
+            if ($trainerId && $notificationsTable) {
+                try {
+                    DB::table($notificationsTable)->insert([
+                        'id' => Str::uuid()->toString(),
+                        'type' => 'App\\Notifications\\GymiesSafetyAlert',
+                        'notifiable_type' => $notifiableType,
+                        'notifiable_id' => (int) $trainerId,
+                        'data' => json_encode([
+                            'notification_type' => 'safe_session_overdue',
+                            'title' => 'Sessie duurt langer dan gepland',
+                            'body' => "Je sessie met {$clientName} duurt al {$overMinutes} minuten langer dan gepland. Vergeet niet uit te checken.",
+                            'booking_id' => (string) $booking->id,
+                            'escalation' => $escalation,
+                        ]),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                } catch (\Throwable) {}
+            }
+
+            // Push naar klant
+            if ($clientId && $notificationsTable) {
+                try {
+                    DB::table($notificationsTable)->insert([
+                        'id' => Str::uuid()->toString(),
+                        'type' => 'App\\Notifications\\GymiesSafetyAlert',
+                        'notifiable_type' => $notifiableType,
+                        'notifiable_id' => (int) $clientId,
+                        'data' => json_encode([
+                            'notification_type' => 'safe_session_overdue',
+                            'title' => 'Alles goed?',
+                            'body' => "Je sessie duurt langer dan verwacht. Tik op 'Ik ben OK' als alles goed gaat, of gebruik de SOS-knop als je hulp nodig hebt.",
+                            'booking_id' => (string) $booking->id,
+                            'escalation' => $escalation,
+                        ]),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                } catch (\Throwable) {}
+            }
+
+            // FCM push
+            if (class_exists(FcmPushHelper::class)) {
+                if ($trainerId) {
+                    try {
+                        FcmPushHelper::sendToUser((int) $trainerId, 'Sessie duurt langer dan gepland', "Vergeet niet uit te checken na je sessie met {$clientName}.", [
+                            'type' => 'safe_session_overdue',
+                            'booking_id' => (string) $booking->id,
+                        ]);
+                    } catch (\Throwable) {}
+                }
+                if ($clientId) {
+                    try {
+                        FcmPushHelper::sendToUser((int) $clientId, 'Alles goed?', 'Je sessie duurt langer dan verwacht. Open de app om te bevestigen dat alles OK is.', [
+                            'type' => 'safe_session_overdue',
+                            'booking_id' => (string) $booking->id,
+                        ]);
+                    } catch (\Throwable) {}
+                }
+            }
+        }
+
+        // ── Niveau 2: Emergency (> 60 min over) → Noodcontact + Admin
+        if ($escalation === 'emergency' || $escalation === 'critical') {
+            // Noodcontact e-mail
+            if ($clientUser && $usersTable) {
+                $emergencyEmail = null;
+                $emergencyName = null;
+
+                if (Schema::hasColumn($usersTable, 'emergency_contact_email')) {
+                    $emergencyEmail = $clientUser->emergency_contact_email ?? null;
+                    $emergencyName = $clientUser->emergency_contact_name ?? 'Noodcontact';
+                }
+
+                if ($emergencyEmail) {
+                    try {
+                        Mail::raw(
+                            "Dit is een automatisch veiligheidsbericht van Gymies.\n\n"
+                            . "{$clientName} heeft een trainingssessie die al {$overMinutes} minuten langer duurt dan gepland.\n\n"
+                            . "Sessie met: {$trainerName}\n"
+                            . "Gestart om: " . Carbon::parse($booking->safe_session_started_at)->format('H:i') . "\n"
+                            . "Verwachte duur: {$durationMinutes} minuten\n\n"
+                            . "Dit kan normaal zijn, maar we willen je op de hoogte stellen voor de zekerheid.\n"
+                            . "Neem contact op met {$clientName} als je je zorgen maakt.\n\n"
+                            . "– Gymies Veiligheidssysteem",
+                            function ($message) use ($emergencyEmail, $emergencyName, $clientName) {
+                                $message->to($emergencyEmail, $emergencyName);
+                                $message->subject("Gymies: Sessie van {$clientName} duurt langer dan verwacht");
+                            }
+                        );
+                    } catch (\Throwable) {}
+                }
+            }
+
+            // Admin notificatie
+            $adminEmail = config('gymies.admin_email', env('GYMIES_ADMIN_EMAIL', 'safety@gymies.nl'));
+            if ($adminEmail) {
+                try {
+                    Mail::raw(
+                        "[Safe Session Overdue - {$escalation}]\n\n"
+                        . "Booking ID: {$booking->id}\n"
+                        . "Klant: {$clientName} (ID: {$clientId})\n"
+                        . "Trainer: {$trainerName} (ID: {$trainerId})\n"
+                        . "Gestart: " . ($booking->safe_session_started_at ?? '?') . "\n"
+                        . "Verstreken: {$minutesElapsed} minuten (verwacht: {$durationMinutes})\n"
+                        . "Over tijd: {$overMinutes} minuten\n"
+                        . "Escalatie: {$escalation}\n",
+                        function ($message) use ($adminEmail, $escalation) {
+                            $message->to($adminEmail);
+                            $message->subject("[Gymies Safety] Safe Session Overdue ({$escalation})");
+                        }
+                    );
+                } catch (\Throwable) {}
+            }
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // cron/expire-group-session-payment-deadline
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Markeer groepssessie-boekingen als 'expired' als de betaaldeadline verstreken is.
+     */
+    public function expireGroupSessionPaymentDeadline(Request $request): JsonResponse
+    {
+        $bookingsTable = $this->resolveTable(['gymies_bookings', 'bookings']);
+        if (!$bookingsTable) {
+            return response()->json(['processed' => 0]);
+        }
+
+        $statusCol = $this->resolveColumn($bookingsTable, ['status', 'booking_status', 'state']);
+        if (!$statusCol || !Schema::hasColumn($bookingsTable, 'payment_deadline_at')) {
+            return response()->json(['processed' => 0]);
+        }
+
+        $count = DB::table($bookingsTable)
+            ->where($statusCol, 'pending_payment')
+            ->where('payment_deadline_at', '<', now())
+            ->update([
+                $statusCol => 'expired',
+                'updated_at' => now(),
+            ]);
+
+        return response()->json(['processed' => $count]);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // cron/expire-substitute-requests
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Verloop onbeantwoorde vervangingsverzoeken na 48 uur.
+     */
+    public function expireSubstituteRequests(Request $request): JsonResponse
+    {
+        $table = $this->resolveTable(['gymies_substitute_requests', 'substitute_requests']);
+        if (!$table) {
+            return response()->json(['processed' => 0]);
+        }
+
+        $statusCol = $this->resolveColumn($table, ['status', 'state']);
+        if (!$statusCol) {
+            return response()->json(['processed' => 0]);
+        }
+
+        $cutoff = now()->subHours(48);
+
+        $count = DB::table($table)
+            ->where($statusCol, 'pending')
+            ->where('created_at', '<', $cutoff)
+            ->update([
+                $statusCol => 'expired',
+                'updated_at' => now(),
+            ]);
+
+        return response()->json(['processed' => $count]);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Helpers
+    // ──────────────────────────────────────────────────────────────
+
+    private function resolveTable(array $candidates): ?string
+    {
+        foreach ($candidates as $t) {
+            if (Schema::hasTable($t)) {
+                return $t;
+            }
+        }
+        return null;
+    }
+
+    private function resolveColumn(string $table, array $candidates): ?string
+    {
+        foreach ($candidates as $c) {
+            if (Schema::hasColumn($table, $c)) {
+                return $c;
+            }
+        }
+        return null;
+    }
+}

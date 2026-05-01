@@ -1,0 +1,27 @@
+{
+    "features": [
+        {"key": "sessions", "label": "Sessiebeheer", "enabled_from": "starter", "type": "boolean"},
+        {"key": "messages", "label": "Berichten (1-op-1 chat)", "enabled_from": "starter", "type": "boolean"},
+        {"key": "agenda", "label": "Agenda", "enabled_from": "starter", "type": "boolean"},
+        {"key": "invoice", "label": "Factuur opstellen", "enabled_from": "starter", "type": "boolean"},
+        {"key": "documents", "label": "Documenten", "enabled_from": "starter", "type": "boolean"},
+        {"key": "income", "label": "Inkomstenoverzicht", "enabled_from": "starter", "type": "boolean"},
+        {"key": "checkin", "label": "Check-in scanner", "enabled_from": "starter", "type": "boolean"},
+        {"key": "waitlist", "label": "Wachtlijst / standby", "enabled_from": "starter", "type": "boolean"},
+        {"key": "dossier", "label": "Dossier opstellen per klant", "enabled_from": "pro", "type": "boolean"},
+        {"key": "goals", "label": "Doelen instellen per klant", "enabled_from": "pro", "type": "boolean"},
+        {"key": "health_score", "label": "Client health score", "enabled_from": "pro", "type": "boolean"},
+        {"key": "upsell", "label": "Upsell suggesties", "enabled_from": "pro", "type": "boolean"},
+        {"key": "rebook", "label": "Herboek suggesties", "enabled_from": "pro", "type": "boolean"},
+        {"key": "priority_support", "label": "Priority support lane", "enabled_from": "pro", "type": "boolean"},
+        {"key": "bulk_message", "label": "Bulk bericht naar klanten", "enabled_from": "pro", "type": "boolean"},
+        {"key": "client_tags", "label": "Klanttags/labels", "enabled_from": "pro", "type": "boolean"},
+        {"key": "advanced_reporting", "label": "Geavanceerde rapportage", "enabled_from": "elite", "type": "boolean"},
+        {"key": "suite_tools", "label": "Organisatie Elite mode", "enabled_from": "elite", "type": "boolean"},
+        {"key": "promoted_profile", "label": "Promoted profiel", "enabled_from": "elite", "type": "boolean"},
+        {"key": "profile_videos", "label": "Videos op profiel", "enabled_from": "pro", "type": "limit", "limit_pro": 1, "limit_elite": -1},
+        {"key": "profile_stories", "label": "Story-achtig op profiel", "enabled_from": "pro", "type": "limit", "limit_pro": 1, "limit_elite": -1},
+        {"key": "max_clients", "label": "Aantal actieve klanten", "enabled_from": "starter", "type": "limit", "limit_starter": -1, "limit_pro": -1, "limit_elite": -1}
+    ],
+    "tiers": ["starter", "pro", "elite"]
+}

@@ -1,0 +1,469 @@
+GymiesAdminController.php - COMPREHENSIVE SECURITY & CODE ANALYSIS
+==================================================================
+
+FILE: /Users/sara/Desktop/GYMIES - APP/backend/Controllers/GymiesAdminController.php
+SIZE: ~4300 lines, 100+ methods
+TYPE: Laravel Admin Controller with raw DB queries (no Eloquent models)
+AUTH: Custom Bearer token in gymies_sessions table via GymiesRequireAdminTrait
+
+
+CRITICAL BUGS & SECURITY ISSUES
+================================
+
+1. RACE CONDITIONS IN FINANCIAL TRANSACTIONS (CRITICAL)
+   Location: waiveTrainerPenalty (line 1323), refundOrCredit (line 1360),
+             bulkRefundToWallet (line 1491), resolveIncident (line 1745)
+
+   Issue: Non-atomic read-modify-write operations on user balances:
+   - Line 1342-1345 (waiveTrainerPenalty):
+     $current = DB::table('gymies_users')->where('id', $trainerId)->value('trainer_balance_cents');
+     $newBalance = $current + $addCents;
+     DB::table('gymies_users')->where('id', $trainerId)->update(['trainer_balance_cents' => $newBalance]);
+
+   - Line 1433-1435 (refundOrCredit):
+     $currentBalance = DB::table('gymies_users')->where('id', $clientUserId)->value('wallet_balance_cents');
+     $newBalance = $currentBalance + $amountCents;
+     DB::table('gymies_users')->where('id', $clientUserId)->update(['wallet_balance_cents' => $newBalance]);
+
+   - Line 1522-1524 (bulkRefundToWallet):
+     Same pattern in loop - multiple concurrent admins could lose data
+
+   - Line 1788-1790 (resolveIncident):
+     Same pattern - balance += amountCents
+
+   IMPACT: Two simultaneous balance updates could result in losing one transaction.
+           Example: Balance = 100. Admin1 adds 50 (reads 100, writes 150).
+           Admin2 adds 25 (reads 100, writes 125). Result: 125 instead of 175.
+
+   FIX: Use atomic DB::increment() / DB::decrement() or DB::transaction() with pessimistic locking
+
+   SEVERITY: CRITICAL (financial data loss)
+
+
+2. MISSING VALIDATION ON FINANCIAL AMOUNTS (CRITICAL)
+   Location: refundOrCredit (line 1360), cancelBooking (line 1278)
+
+   Issue: Insufficient validation on amount_cents:
+   - Line 1400: amount_cents can be null, defaults to booking amount
+   - Line 1408-1409: Only validates amount_cents > 0 for 'partial_refund' type
+   - Line 1414-1415: Caps to booking amount but no minimum validation
+   - No check for negative amounts in request
+   - Line 1419: getSetting('bank_refund_admin_fee_cents') is unchecked string
+
+   Example attack:
+   - Send amount_cents: -100000 (negative)
+   - System accepts it if validation is weak
+   - Trainer balance could be subtracted instead of added
+
+   FIX: Add explicit validation:
+        $request->validate(['amount_cents' => 'required|integer|min:1|max:5000000']);
+
+   SEVERITY: CRITICAL (financial manipulation)
+
+
+3. MISSING BOOKING VALIDATION IN REFUND OPERATIONS (CRITICAL)
+   Location: refundOrCredit (line 1360)
+
+   Issue: No verification that refund amount <= original booking amount
+   - Line 1414: Only caps to bookingAmountCents but doesn't validate against intent
+   - Line 1392-1394: Checks booking status but not amount integrity
+   - Admin could refund more than booked if booking amount is null
+
+   FIX: Add before line 1399:
+        if ($amountCents > $bookingAmountCents) {
+            return response()->json(['amount exceeds booking'], 422);
+        }
+
+   SEVERITY: CRITICAL
+
+
+4. UNVALIDATED STRTOTIME() IN RED FLAG DETECTION (HIGH)
+   Location: inboxRedFlags (line 2954)
+
+   Issue: Non-strict date comparison:
+   - Line 2954: (strtotime($d) - strtotime($prev)) <= 86400 * 2
+   - $d and $prev come from database cancelled_at fields
+   - If date format is inconsistent, strtotime() could fail silently (returns false)
+   - false - false = 0, could match <= 86400*2 (true) unexpectedly
+
+   FIX: Use Carbon parsing instead:
+        Carbon::parse($d)->diffInSeconds(Carbon::parse($prev)) <= 86400 * 2
+
+   SEVERITY: HIGH (logic bug in flag detection)
+
+
+5. SQL INJECTION VIA LIKE QUERIES (MEDIUM - MITIGATED)
+   Location: users() line 135-145, search() line 338-340, audits() line 475-477
+
+   Analysis: LIKE queries with user input:
+   - Line 135: $w->where('email', 'like', "%{$q}%")
+   - Input $q is from $request->query('q', '') - trimmed but not parameterized
+
+   Status: Laravel's query builder parameterizes the % wildcards, so injection is
+           actually prevented. The pattern "%{$q}%" is safe because Laravel escapes
+           the variable before passing to DB driver. However, code style suggests
+           developer may not realize this.
+
+   Better style would be explicit parameterization:
+        ->where('email', 'like', DB::raw('?'), ["%{$q}%"])
+
+   SEVERITY: MEDIUM (mitigated by framework but poor practice)
+
+
+6. NO IDEMPOTENCY PROTECTION (HIGH)
+   Location: All refund/credit/payment operations
+
+   Issue: POST requests modifying balances are not idempotent
+   - refundOrCredit (line 1360): No check if refund already exists
+   - waiveTrainerPenalty (line 1323): Could add penalty multiple times
+   - bulkRefundToWallet (line 1491): No deduplication
+   - If request is retried (network timeout), duplicate credits occur
+
+   FIX: Add idempotency key validation or unique constraint on (booking_id, admin_id, action)
+
+   SEVERITY: HIGH
+
+
+7. MISSING RATE LIMITING ON BULK OPERATIONS (HIGH)
+   Location: bulkRefundToWallet (line 1491), bulkUsersStatus (line 3120),
+             bulkTickets (line 3174), bulkPayoutsStatus (line 3224)
+
+   Issue: 100+ entities per request allowed, but no rate limiting check
+   - Line 1503: Limits to 100 bookings per request - OK
+   - Line 3134: Limits to 100 users - OK
+   - Line 3192: Limits to 100 tickets - OK
+   - Line 3240: Limits to 50 payouts - OK
+
+   But no global rate limiting across requests. Admin could spam:
+   - 100 refunds * 10 requests/second = 1000 refunds/sec
+
+   Each audit log entry is created separately (line 1556, 3167)
+   - Could cause audit log spam/DOS
+
+   FIX: Add rate limiting middleware or check audit log frequency
+
+   SEVERITY: HIGH (DOS potential)
+
+
+8. UNCHECKED BALANCE MODIFICATION (HIGH)
+   Location: updatePackageAdmin (line 2028)
+
+   Issue: No limits on sessions_used delta
+   - Line 2053: delta = (int) $request->input('sessions_used_delta')
+   - No validation that delta is reasonable
+   - Could set to 1000000 and max out all sessions
+   - No max/min constraint in request validation
+
+   FIX: Add validation:
+        'sessions_used_delta' => 'nullable|integer|min:-1000|max:1000'
+
+   SEVERITY: HIGH
+
+
+9. MISSING PERMISSION CHECK ON DISPUTE RESOLUTION (HIGH)
+   Location: resolveDispute (line 1912)
+
+   Issue: Admin can resolve disputes in 'client' favor (refund) without
+           verifying they have proper authority level
+   - Line 1948-1954: If resolution_type='client', cancels booking and refunds
+   - Only checks 'admin.bookings.manage' permission (line 1914)
+   - No additional approval needed for disputes with high amounts
+
+   Real impact depends on permission structure, but this could be IDOR-adjacent
+   if different admin levels exist
+
+   SEVERITY: HIGH
+
+
+10. IMPERSONATION NOT TIME-LIMITED PROPERLY (MEDIUM)
+    Location: impersonate (line 270)
+
+    Issue: Impersonation token expires in 2 hours
+    - Line 290: $expiresAt = now()->addHours(2)
+    - No session refresh or activity timeout
+    - Admin could impersonate user for 2 hours straight
+    - No way to invalidate early
+
+    Better practice: 30 minutes with refresh, or immediate revocation button
+
+    SEVERITY: MEDIUM
+
+
+11. MISSING TRANSACTION BOUNDARIES (MEDIUM)
+    Location: bulkRefundToWallet (line 1491)
+
+    Issue: Loop inserts multiple records but not atomic
+    - Line 1513-1558: Loop through booking IDs
+    - Each iteration inserts to gymies_admin_refunds and gymies_wallet_transactions
+    - If one fails (DB error), previous iterations are committed
+    - Leaves inconsistent state
+
+    FIX: Wrap entire loop in DB::transaction()
+
+    SEVERITY: MEDIUM
+
+
+12. IP ADDRESS LOOKUP WITH EXTERNAL API (MEDIUM-LOW)
+    Location: ipToCountryCode (line 2240)
+
+    Issue: Blocking external API call in synchronous response path
+    - Line 2245-2247: Calls http://ip-api.com/json/$ip
+    - 1.5 second timeout (line 2246)
+    - Used in securityEvents (line 2204) which is user-facing
+    - Could timeout and slow down dashboard
+
+    Better: Cache results or use async/queue
+
+    SEVERITY: MEDIUM-LOW (performance, not security)
+
+
+IMPORTANT SECURITY VALIDATIONS PASSED
+======================================
+
+✓ Auth checks: All methods properly check requireAdmin() with capabilities
+✓ Input validation: Most endpoints have request->validate()
+✓ CSRF: Laravel middleware (implicit)
+✓ Mass assignment: Using explicit DB::table()->insert/update (not Eloquent)
+✓ Soft deletes: Properly handling deleted_at checks
+✓ Sensitive data: Generally not logged in plain text (except audit log)
+
+
+PERFORMANCE ISSUES
+==================
+
+1. N+1 QUERIES IN INBOX (HIGH)
+   Location: inboxRetentionAlerts (line 3023)
+
+   Issue: Line 3087 loads trainer for each alert in loop
+   - foreach ($trainerCancels as $row) {
+   -   $trainer = DB::table('gymies_users')->where('id', $row->trainer_user_id)->first();
+
+   FIX: Batch load trainers before loop using whereIn()
+
+   SEVERITY: HIGH
+
+
+2. N+1 IN RED FLAGS DETECTION (HIGH)
+   Location: inboxRedFlags (line 2961)
+
+   Issue: Line 2961 loads trainer in loop
+   - foreach ($byTrainer as $tid => $dates) {
+   -   if ($consecutive >= 3) {
+   -     $trainer = DB::table('gymies_users')->where('id', $tid)->first();
+
+   FIX: Batch preload trainers
+
+   SEVERITY: HIGH
+
+
+3. MISSING DATABASE INDEXES (MEDIUM)
+   Location: Multiple queries on date ranges
+
+   Issue: Queries like:
+   - Line 2087-2089: whereRaw('DATE(created_at) = ?')
+   - Line 3057: where('scheduled_at', '>=', now()->subDays(30))
+   - Line 2836-2850: date filtering on tickets
+
+   These won't use indexes effectively. Recommend:
+   - CREATE INDEX idx_created_at ON gymies_support_tickets(created_at);
+   - CREATE INDEX idx_scheduled_at ON gymies_bookings(scheduled_at);
+   - CREATE INDEX idx_user_status ON gymies_users(user_id, status);
+
+   SEVERITY: MEDIUM
+
+
+4. UNINDEXED SEARCH (HIGH)
+   Location: search() (line 2323)
+
+   Issue: Global search uses LIKE on email/display_name
+   - Line 2336-2345: No full-text index
+   - Line 2373-2378: organisations search also LIKE
+
+   FIX: Add FULLTEXT index or use dedicated search service
+
+   SEVERITY: HIGH (impacts search performance)
+
+
+5. REPEATED SCHEMA CHECKS (LOW)
+   Location: Throughout controller
+
+   Issue: Schema::hasTable() and Schema::hasColumn() called repeatedly
+   - Line 101-107: 6 hasColumn checks in users()
+   - Line 339-342: 3 hasTable checks in moderationProfiles()
+   - Line 532-558: 5 hasTable checks in organisations()
+
+   These are cached by Laravel but repeated calls still have overhead.
+
+   FIX: Cache results once per request
+
+   SEVERITY: LOW
+
+
+CODE QUALITY ISSUES
+===================
+
+1. DUPLICATED CODE - BALANCE UPDATE PATTERN
+   Lines 1342-1345, 1433-1435, 1522-1524, 1788-1790
+
+   All use same vulnerable pattern:
+   $current = DB::table('table')->value('balance_column');
+   $newBalance = $current + $amount;
+   DB::table('table')->update(['balance_column' => $newBalance]);
+
+   FIX: Extract to helper method or use DB::increment()
+
+   SEVERITY: MEDIUM (code reuse + consistency)
+
+
+2. DUPLICATED CODE - WALLET TRANSACTION PATTERN
+   Lines 1436-1449, 1525-1538, 1791-1804, 1812-1825
+
+   Same pattern repeated for wallet inserts with nearly identical code
+
+   FIX: Extract to insertWalletTransaction() helper
+
+   SEVERITY: LOW (maintainability)
+
+
+3. OVERLY LONG METHODS (MEDIUM)
+   - refundOrCredit (line 1360-1488): 128 lines
+   - organisationSettlementReport (line 2750-2815): 65 lines
+   - organisations (line 2529-2598): 69 lines
+   - inbox (line 2818-2929): 111 lines
+
+   Consider breaking into smaller methods
+
+   SEVERITY: MEDIUM (readability)
+
+
+4. INCONSISTENT ERROR HANDLING
+   Location: Various methods
+
+   Issue: Some methods use try-catch (sendTicketReplyNotificationEmail line 1115),
+          others don't. Inconsistent error responses.
+
+   FIX: Standardize error handling pattern
+
+   SEVERITY: LOW
+
+
+5. MAGIC STRINGS & NUMBERS
+   Location: Throughout
+
+   Examples:
+   - Line 1321: 2500 (penalty amount, hardcoded)
+   - Line 1404: floor($bookingAmountCents / 2) (split logic)
+   - Line 2732: 0.12 (platform fee percentage)
+   - Line 3375: 21 (BTW percentage)
+
+   These should be constants or settings
+
+   SEVERITY: LOW
+
+
+6. MISSING JAVADOC/COMMENTS
+   Location: Many methods lack documentation
+
+   Examples:
+   - Line 1191: bookingsMonitor() - what does it monitor?
+   - Line 2204: securityEvents() - what events?
+   - Line 3653: trainerDropoffAlerts() - what threshold?
+
+   SEVERITY: LOW
+
+
+MISSING SECURITY CHECKS
+=======================
+
+1. No rate limiting on admin API
+2. No request size limits (could upload massive files via uploadSiteMedia)
+3. No signature verification for critical operations
+4. No 2FA re-verification for sensitive actions (impersonate, refund)
+5. No audit trail for who changed what settings (updateSiteMedia line 3568)
+6. No webhook signature verification (if webhooks exist)
+
+
+DATA LEAK RISKS
+===============
+
+1. Audit log contains full old_values/new_values (line 4064)
+   - Could expose passwords if accidentally set
+   - Consider hashing sensitive fields
+
+2. Security events (line 2204) returns auth attempt IPs to admin
+   - Useful but could reveal patterns
+   - OK with audit logging
+
+3. Export CSV methods don't sanitize output
+   - Line 671-682: usersExport() sanitizes ; and newlines - OK
+   - Line 2512-2526: auditsExport() does same - OK
+
+
+IDOR VULNERABILITIES CHECK
+==========================
+
+✓ updateUserStatus: Checks userId parameter
+✓ userDetail: Checks userId parameter
+✓ updateOrganisationMember: Checks orgId and userId separately
+✓ bookingDetail: Checks bookingId parameter
+✓ refundOrCredit: Checks bookingId parameter
+✓ updatePackageAdmin: Checks packageId parameter
+
+No obvious IDOR issues found. Parameters are properly validated.
+
+
+PRIVILEGE ESCALATION RISKS
+===========================
+
+1. No check preventing user from granting themselves higher privileges
+   - updateOrganisationMember (line 2669) could self-promote?
+   - Actually OK - checks member exists first, requires admin.organisations.manage
+
+2. No protection against admin capability elevation
+   - Capabilities come from request->attributes (set by middleware)
+   - Appears to be centrally managed, not user-editable
+
+No obvious privilege escalation risks.
+
+
+RECOMMENDATIONS (PRIORITY ORDER)
+=================================
+
+CRITICAL (fix immediately):
+1. Race conditions in balance updates - use DB::increment() or transactions
+2. Missing amount validation in refund operations
+3. Add idempotency checks to financial operations
+4. Fix N+1 queries in inbox/red flags (impacting all admins)
+
+HIGH (fix this sprint):
+5. Add rate limiting to bulk operations
+6. Add transaction boundaries to bulk operations
+7. Fix unvalidated strtotime() logic
+8. Add database indexes for common queries
+9. Extract duplicated balance update code
+
+MEDIUM (fix soon):
+10. Time-limit impersonation tokens to 30 min with manual revocation
+11. Add validation limits to package delta updates
+12. Add dispute resolution authorization checks
+13. Cache schema checks
+
+LOW (refactor):
+14. Extract wallet transaction helper methods
+15. Break up overly long methods
+16. Add method documentation
+17. Replace magic numbers with constants
+
+
+TESTING RECOMMENDATIONS
+=======================
+
+1. Unit tests for balance updates with concurrent requests
+2. Fuzz tests on refund/credit amounts
+3. Load tests on bulk operations
+4. Integration tests for audit trail consistency
+5. Boundary tests (0, negative, max amounts)
+6. Permission matrix tests (admin levels vs operations)
+
+
+EOF

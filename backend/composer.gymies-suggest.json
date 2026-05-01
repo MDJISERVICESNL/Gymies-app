@@ -1,0 +1,7 @@
+{
+  "name": "gymies/backend-suggest",
+  "description": "Voeg toe aan je Laravel app composer.json require voor PDF-facturen",
+  "require": {
+    "dompdf/dompdf": "^2.0"
+  }
+}

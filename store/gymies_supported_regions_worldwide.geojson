@@ -1,0 +1,26 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "GYMIES – wereldwijd (vereenvoudigde dekking)",
+        "description": "Gebruik dit als de app in alle landen/regio’s wordt aangeboden. Poolgebieden licht ingekort voor geldige polygonen."
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [-180.0, -85.0],
+              [180.0, -85.0],
+              [180.0, 85.0],
+              [-180.0, 85.0],
+              [-180.0, -85.0]
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "GYMIES – Benelux (vereenvoudigde dekking)",
+        "description": "Benadering van ondersteunde regio: Nederland, België en Luxemburg. Vervang door exacte landgrenzen indien vereist."
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [2.49, 49.47],
+              [7.35, 49.47],
+              [7.35, 53.73],
+              [2.49, 53.73],
+              [2.49, 49.47]
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
