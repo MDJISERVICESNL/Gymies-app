@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -196,10 +197,15 @@ class GymiesCheckinController
             return response()->json(['message' => 'Niet ingelogd.'], 401);
         }
 
+        // Validate required fields
+        $request->validate([
+            'token' => 'required|string|size:48',
+            'trainer_lat' => 'nullable|numeric|min:-90|max:90',
+            'trainer_lng' => 'nullable|numeric|min:-180|max:180',
+            'payload' => 'nullable|string|max:1000',
+        ]);
+
         $token = trim($request->input('token', ''));
-        if (empty($token)) {
-            return response()->json(['message' => 'QR token ontbreekt.'], 422);
-        }
 
         $bookingsTable = $this->resolveTable(['gymies_bookings', 'bookings']);
         $usersTable = $this->resolveTable(['gymies_users', 'users']);
@@ -573,8 +579,9 @@ class GymiesCheckinController
                     ]);
                 }
                 DB::table($auditTable)->insert($insert);
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
                 // Audit log insert faalde, maar melding moet doorgaan
+                Log::warning('Failed to insert fraud audit log: ' . $e->getMessage());
             }
         }
 
@@ -669,8 +676,9 @@ class GymiesCheckinController
                 if (!empty($filtered)) {
                     DB::table($sosTable)->insert($filtered);
                 }
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
                 // SOS tabel insert faalde, log in audit
+                Log::warning('Failed to insert SOS alert into sos_alerts table: ' . $e->getMessage());
             }
         }
 
@@ -696,8 +704,9 @@ class GymiesCheckinController
                     $insert['booking_id'] = $bookingId;
                 }
                 DB::table($auditTable)->insert($insert);
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
                 // Audit faalde maar SOS moet doorgaan
+                Log::warning('Failed to insert SOS alert into audit_logs table: ' . $e->getMessage());
             }
         }
 
@@ -1148,8 +1157,9 @@ class GymiesCheckinController
                     'booking_id' => (string) $booking->id,
                 ]);
             }
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Notificatie faalde, maar check-in flow mag niet breken
+            Log::warning('Failed to notify client for booking ' . $booking->id . ': ' . $e->getMessage());
         }
     }
 
@@ -1197,12 +1207,14 @@ class GymiesCheckinController
                             $message->subject("NOODMELDING: {$userName} heeft hulp nodig");
                         }
                     );
-                } catch (\Throwable) {
+                } catch (\Throwable $e) {
                     // E-mail faalde, maar alert is al opgeslagen
+                    Log::warning('Failed to send emergency contact email to ' . $emergencyEmail . ': ' . $e->getMessage());
                 }
             }
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Noodcontact notificatie faalde
+            Log::warning('Failed to notify emergency contact for user ' . $user->id . ': ' . $e->getMessage());
         }
     }
 

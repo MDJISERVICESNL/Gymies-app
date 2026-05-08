@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../services/storefront_cms_provider.dart';
@@ -77,7 +78,7 @@ class _TrainerStorefrontRatesScreenState
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon tarieven niet laden.';
+        _error = S.of(context).konTarievenNietLaden;
         _loading = false;
       });
     }
@@ -86,25 +87,33 @@ class _TrainerStorefrontRatesScreenState
   Future<void> _save() async {
     Haptics.light();
     if (_saving) return;
+    FocusScope.of(context).unfocus();
 
-    setState(() => _saving = true);
-    try {
-      final api = context.read<GymiesApi>();
+    final rateText = _hourlyRateController.text.trim();
+    if (rateText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(S.of(context).vulEenTarieveIn), backgroundColor: Colors.orange),
+      );
+      return;
+    }
 
-      // Convert euros to cents
-      int? rateCents;
-      final rateText = _hourlyRateController.text.trim();
-      if (rateText.isNotEmpty) {
-        final parsed = double.tryParse(rateText);
-        if (parsed != null && parsed > 0) {
-          rateCents = (parsed * 100).round();
-        }
+    final parsed = double.tryParse(rateText);
+      if (parsed == null || parsed <= 0 || parsed > 50000) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Tarief moet tussen €1 en €500 liggen'), backgroundColor: Colors.orange),
+        );
+        return;
       }
 
+    final api = context.read<GymiesApi>();
+    setState(() => _saving = true);
+    try {
+      final rateCents = (parsed * 100).round();
       await api.updateTrainerStorefrontCms({
         'hourly_rate_cents': rateCents,
         'payment_method': _paymentMethod,
       });
+      if (!mounted) return;
       context.read<StorefrontCmsProvider>().invalidate();
 
       if (!mounted) return;
@@ -116,7 +125,7 @@ class _TrainerStorefrontRatesScreenState
               const Icon(Icons.check_circle_rounded,
                   color: Colors.white, size: 20),
               const SizedBox(width: 8),
-              Text('Tarieven opgeslagen',
+              Text(S.of(context).tarievenOpgeslagen,
                   style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
             ],
           ),
@@ -140,7 +149,7 @@ class _TrainerStorefrontRatesScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
-      appBar: const GymiesAppBar(title: 'Tarieven & Betaling'),
+      appBar: const GymiesAppBar(title: S.of(context).tarievenEnBetaling),
       body: GymiesListBody(
         loading: _loading,
         error: _error,
@@ -156,7 +165,7 @@ class _TrainerStorefrontRatesScreenState
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -166,7 +175,7 @@ class _TrainerStorefrontRatesScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Uurtarief',
+                    S.of(context).uurtarief,
                     style: GoogleFonts.sora(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
@@ -175,7 +184,7 @@ class _TrainerStorefrontRatesScreenState
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Stel je uurtarief in voor individuele sessies',
+                    S.of(context).stelJeUurtariefInVoorIndividueleSessies,
                     style: GoogleFonts.sora(
                       fontSize: 13,
                       color: Colors.grey.shade600,
@@ -245,7 +254,7 @@ class _TrainerStorefrontRatesScreenState
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -255,7 +264,7 @@ class _TrainerStorefrontRatesScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Betaalmethode',
+                    S.of(context).betaalmethode,
                     style: GoogleFonts.sora(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
@@ -264,7 +273,7 @@ class _TrainerStorefrontRatesScreenState
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Kies hoe klanten je kunnen betalen',
+                    S.of(context).kiesHoeKlantenJeKunnenBetalen,
                     style: GoogleFonts.sora(
                       fontSize: 13,
                       color: Colors.grey.shade600,
@@ -274,19 +283,19 @@ class _TrainerStorefrontRatesScreenState
                   const SizedBox(height: 16),
                   _paymentMethodCard(
                     value: 'transfer_and_cash',
-                    label: 'Overboekingen & cash',
+                    label: S.of(context).overboekingenCash,
                     icon: Icons.account_balance_wallet_outlined,
                   ),
                   const SizedBox(height: 12),
                   _paymentMethodCard(
                     value: 'transfer_only',
-                    label: 'Alleen overboekingen',
+                    label: S.of(context).alleenOverboekingen,
                     icon: Icons.account_balance_outlined,
                   ),
                   const SizedBox(height: 12),
                   _paymentMethodCard(
                     value: 'cash_only',
-                    label: 'Alleen cash',
+                    label: S.of(context).alleenCash,
                     icon: Icons.payments_outlined,
                   ),
                 ],
@@ -321,7 +330,7 @@ class _TrainerStorefrontRatesScreenState
                         const Icon(Icons.save_rounded, size: 20),
                         const SizedBox(width: 8),
                         Text(
-                          'Opslaan',
+                          S.of(context).opslaan,
                           style: GoogleFonts.sora(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,

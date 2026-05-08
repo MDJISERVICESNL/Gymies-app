@@ -7,12 +7,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
 import 'widgets/gymies_app_bar.dart';
-import 'widgets/gymies_section_header.dart';
 import 'widgets/trainer_state_views.dart';
 
 /// Mijn Branding – Pro+ trainers kunnen hun profiel personaliseren:
@@ -97,7 +97,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon branding-instellingen niet laden.';
+        _error = S.of(context).konBrandinginstellingenNietLaden;
         _loading = false;
       });
     }
@@ -108,7 +108,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
     final slug = _slugController.text.trim().toLowerCase();
     if (slug.isNotEmpty && slug.length >= 3 && !_slugRegex.hasMatch(slug)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ongeldige slug. Gebruik kleine letters, cijfers en streepjes.')),
+        const SnackBar(content: Text('Invalid slug')),
       );
       return;
     }
@@ -116,7 +116,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
     final videoUrl = _videoController.text.trim();
     if (videoUrl.isNotEmpty && !_urlRegex.hasMatch(videoUrl)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Voer een geldige YouTube of Vimeo URL in.')),
+        const SnackBar(content: Text('Enter a valid YouTube or Vimeo URL')),
       );
       return;
     }
@@ -147,9 +147,11 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
       });
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Branding opgeslagen!')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Branding saved')),
+        );
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -159,9 +161,11 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Opslaan mislukt. Probeer het opnieuw.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Save failed, try again')),
+        );
+      }
     }
   }
 
@@ -187,9 +191,10 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
   Future<void> _requestVerification() async {
     Haptics.light();
     if (_saving) return;
+    final api = context.read<GymiesApi>();
     setState(() => _saving = true);
     try {
-      await context.read<GymiesApi>().updateProPlusSettings({
+      await api.updateProPlusSettings({
         'verified_badge': true,
       });
       if (!mounted) return;
@@ -197,12 +202,14 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
         _verifiedBadge = true;
         _saving = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Verificatie-aanvraag verstuurd! Gymies beoordeelt je profiel.'),
-          backgroundColor: GymiesColors.darkBlue,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Verification request sent'),
+            backgroundColor: GymiesColors.darkBlue,
+          ),
+        );
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -212,12 +219,14 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Verificatie aanvragen mislukt. Probeer het later opnieuw.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Request failed, try again later'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -231,7 +240,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
-      appBar: const GymiesAppBar(title: 'Mijn Branding'),
+      appBar: const GymiesAppBar(title: S.of(context).mijnBranding),
       body: GymiesListBody(
         loading: _loading,
         error: _error,
@@ -240,13 +249,13 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                   padding: const EdgeInsets.all(16),
                   children: [
                     // ── Custom Slug ────────────────────────────────��─
-                    _sectionHeader(Icons.link_rounded, 'Profiel URL'),
+                    _sectionHeader(Icons.link_rounded, S.of(context).profielUrl),
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                       ),
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -254,8 +263,8 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                             TextFormField(
                               controller: _slugController,
                               decoration: const InputDecoration(
-                                labelText: 'Jouw slug',
-                                hintText: 'bijv. john-fitness',
+                                labelText: S.of(context).jouwSlug,
+                                hintText: S.of(context).bijvJohnfitness,
                                 prefixText: 'gymies.nl/t/',
                                 border: OutlineInputBorder(),
                               ),
@@ -263,7 +272,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Min. 3 tekens. Kleine letters, cijfers en streepjes.',
+                              S.of(context).min3TekensKleineLettersCijfersEnStreepjes,
                               style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600),
                             ),
                           ],
@@ -278,7 +287,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,7 +342,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'Of voer je eigen kleur in:',
+                              S.of(context).ofVoerJeEigenKleurIn,
                               style: GoogleFonts.sora(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
@@ -348,7 +357,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                                     controller: _hexColorController,
                                     decoration: const InputDecoration(
                                       prefixText: '#',
-                                      hintText: 'e.g. FF6B6B',
+                                      hintText: S.of(context).egFf6b6b,
                                       border: OutlineInputBorder(),
                                       contentPadding: EdgeInsets.symmetric(
                                         horizontal: 12,
@@ -394,7 +403,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                       ),
                       child: Column(
                         children: [
@@ -403,7 +412,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                               child: _newLogoPath != null
                                   ? Image.file(File(_newLogoPath!),
                                       width: 120, height: 120, fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) =>
+                                      errorBuilder: (_, _, _) =>
                                           _imagePlaceholder(120, Icons.image))
                                   : _logoUrl != null && _logoUrl!.isNotEmpty
                                       ? CachedNetworkImage(
@@ -411,9 +420,11 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                                           width: 120,
                                           height: 120,
                                           fit: BoxFit.cover,
-                                          placeholder: (_, __) =>
+                                          cacheWidth: 240,
+                                          cacheHeight: 240,
+                                          placeholder: (_, _) =>
                                               _imagePlaceholder(120, Icons.image),
-                                          errorWidget: (_, __, ___) =>
+                                          errorWidget: (_, _, _) =>
                                               _imagePlaceholder(120, Icons.broken_image),
                                         )
                                       : _imagePlaceholder(120, Icons.add_photo_alternate),
@@ -425,7 +436,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                               label: Text(_logoUrl != null ? 'Wijzig logo' : 'Upload logo'),
                             ),
                             const SizedBox(height: 4),
-                            Text('Max 10MB · JPG, PNG, GIF, WebP',
+                            Text(S.of(context).max10mbJpgPngGifWebp,
                                 style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500)),
                           ],
                         ),
@@ -439,7 +450,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                       ),
                       child: Column(
                         children: [
@@ -450,7 +461,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                                       width: double.infinity,
                                       height: 160,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) =>
+                                      errorBuilder: (_, _, _) =>
                                           _bannerPlaceholder())
                                   : _bannerUrl != null && _bannerUrl!.isNotEmpty
                                       ? CachedNetworkImage(
@@ -458,8 +469,10 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                                           width: double.infinity,
                                           height: 160,
                                           fit: BoxFit.cover,
-                                          placeholder: (_, __) => _bannerPlaceholder(),
-                                          errorWidget: (_, __, ___) => _bannerPlaceholder(),
+                                          cacheWidth: 800,
+                                          cacheHeight: 320,
+                                          placeholder: (_, _) => _bannerPlaceholder(),
+                                          errorWidget: (_, _, _) => _bannerPlaceholder(),
                                         )
                                       : _bannerPlaceholder(),
                             ),
@@ -470,7 +483,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                               label: Text(_bannerUrl != null ? 'Wijzig banner' : 'Upload banner'),
                             ),
                             const SizedBox(height: 4),
-                            Text('Max 20MB · JPG, PNG, GIF, WebP',
+                            Text(S.of(context).max20mbJpgPngGifWebp,
                                 style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500)),
                           ],
                         ),
@@ -484,7 +497,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -495,7 +508,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                                     color: GymiesColors.darkBlue, size: 22),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'YouTube of Vimeo URL',
+                                  S.of(context).youtubeOfVimeoUrl,
                                   style: GoogleFonts.sora(
                                     fontSize: 13,
                                     color: Colors.grey.shade600,
@@ -507,7 +520,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                             TextFormField(
                               controller: _videoController,
                               decoration: const InputDecoration(
-                                hintText: 'https://youtube.com/watch?v=...',
+                                hintText: S.of(context).httpsyoutubecomwatchv,
                                 border: OutlineInputBorder(),
                                 prefixIcon: Icon(Icons.link_rounded),
                               ),
@@ -516,7 +529,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Toon een introductievideo op je profiel. Ondersteunt YouTube en Vimeo.',
+                              S.of(context).toonEenIntroductievideoOpJeProfielOndersteuntYoutubeEnVimeo,
                               style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600),
                             ),
                           ],
@@ -531,7 +544,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                       ),
                       child: Row(
                           children: [
@@ -562,7 +575,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                                   Text(
                                     _verifiedBadge
                                         ? 'Geverifieerd'
-                                        : 'Nog niet geverifieerd',
+                                        : S.of(context).nogNietGeverifieerd,
                                     style: GoogleFonts.sora(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 15,
@@ -574,8 +587,8 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                                   const SizedBox(height: 4),
                                   Text(
                                     _verifiedBadge
-                                        ? 'Je profiel heeft een blauw verificatievinkje.'
-                                        : 'Vraag verificatie aan om een blauw vinkje op je profiel te krijgen. Gymies beoordeelt je aanvraag.',
+                                        ? S.of(context).jeProfielHeeftEenBlauwVerificatievinkje
+                                        : S.of(context).vraagVerificatieAanOmEenBlauw,
                                     style: GoogleFonts.sora(
                                       fontSize: 12,
                                       color: Colors.grey.shade600,
@@ -594,7 +607,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 16, vertical: 10),
                                 ),
-                                child: Text('Aanvragen',
+                                child: Text(S.of(context).aanvragen,
                                     style: GoogleFonts.sora(
                                         fontSize: 13, fontWeight: FontWeight.w600)),
                               ),
@@ -619,7 +632,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
                                 height: 22,
                                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                               )
-                            : Text('Opslaan', style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w600)),
+                            : Text(S.of(context).opslaan, style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w600)),
                       ),
                     ),
                     const SizedBox(height: 32),
@@ -648,7 +661,7 @@ class _TrainerBrandingScreenState extends State<TrainerBrandingScreen> {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.12),
+              color: GymiesColors.primary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(7),
             ),
             child: Icon(icon, size: 14, color: GymiesColors.darkBlue),

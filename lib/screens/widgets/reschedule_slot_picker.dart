@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../services/gymies_api.dart';
 import '../../theme/gymies_theme.dart';
 
@@ -69,7 +70,7 @@ class _RescheduleSlotPickerState extends State<RescheduleSlotPicker> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon beschikbaarheid niet laden';
+        _error = S.of(context).konBeschikbaarheidNietLaden;
         _loading = false;
       });
     }
@@ -218,7 +219,7 @@ class _RescheduleSlotPickerState extends State<RescheduleSlotPicker> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Text(
-                  'Sessie verplaatsen',
+                  S.of(context).rescheduleSession,
                   style: GoogleFonts.sora(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -288,7 +289,7 @@ class _RescheduleSlotPickerState extends State<RescheduleSlotPicker> {
                 size: 40, color: Colors.grey.shade400),
             const SizedBox(height: 12),
             Text(
-              'Geen beschikbare momenten gevonden',
+              S.of(context).noAvailableMoments,
               style:
                   GoogleFonts.sora(fontSize: 14, color: Colors.grey.shade600),
               textAlign: TextAlign.center,
@@ -303,7 +304,7 @@ class _RescheduleSlotPickerState extends State<RescheduleSlotPicker> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         itemCount: dates.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (_, i) {
           final date = dates[i];
           final isSelected = _selectedDate != null &&
@@ -372,7 +373,7 @@ class _RescheduleSlotPickerState extends State<RescheduleSlotPicker> {
       return Padding(
         padding: const EdgeInsets.all(20),
         child: Text(
-          'Geen tijden beschikbaar op deze dag',
+          S.of(context).noTimesAvailable,
           style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade500),
         ),
       );
@@ -382,7 +383,7 @@ class _RescheduleSlotPickerState extends State<RescheduleSlotPicker> {
         shrinkWrap: true,
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
         itemCount: blocks.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
         itemBuilder: (_, i) {
           final block = blocks[i];
           final label = '${block.label} - ${block.endLabel}';
@@ -404,11 +405,11 @@ class _RescheduleSlotPickerState extends State<RescheduleSlotPicker> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: GymiesColors.primary.withValues(alpha: 0.3),
+                  color: GymiesColors.primary.withOpacity(0.3),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),

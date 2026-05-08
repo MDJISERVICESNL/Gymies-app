@@ -344,21 +344,32 @@ final class GymiesSpoedInvalController extends Controller
 
                 // Boekingen overdragen naar invaller + badge "Inval-docent"
                 $originalTrainerId = (int) $offer->original_trainer_user_id;
-                foreach ($bookings as $b) {
-                    $updatePayload = [
+                $bookingIds = $bookings->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+                // Batch update: transfer trainer_user_id for all bookings
+                DB::table('gymies_bookings')
+                    ->whereIn('id', $bookingIds)
+                    ->update([
                         'trainer_user_id' => (int) $user->id,
                         'updated_at' => now(),
-                    ];
-                    if (Schema::hasColumn('gymies_bookings', 'trainer_notes')) {
-                        $origNote = $b->trainer_notes ?? '';
-                        $updatePayload['trainer_notes'] = trim(
-                            "[Spoed inval overgenomen van trainer #{$originalTrainerId}] " . $origNote
-                        );
+                    ]);
+
+                // Update trainer_notes and spoed_inval_original_trainer_id for each booking individually if needed
+                if (Schema::hasColumn('gymies_bookings', 'trainer_notes') ||
+                    Schema::hasColumn('gymies_bookings', 'spoed_inval_original_trainer_id')) {
+                    foreach ($bookings as $b) {
+                        $updatePayload = ['updated_at' => now()];
+                        if (Schema::hasColumn('gymies_bookings', 'trainer_notes')) {
+                            $origNote = $b->trainer_notes ?? '';
+                            $updatePayload['trainer_notes'] = trim(
+                                "[Spoed inval overgenomen van trainer #{$originalTrainerId}] " . $origNote
+                            );
+                        }
+                        if (Schema::hasColumn('gymies_bookings', 'spoed_inval_original_trainer_id')) {
+                            $updatePayload['spoed_inval_original_trainer_id'] = $originalTrainerId;
+                        }
+                        DB::table('gymies_bookings')->where('id', (int) $b->id)->update($updatePayload);
                     }
-                    if (Schema::hasColumn('gymies_bookings', 'spoed_inval_original_trainer_id')) {
-                        $updatePayload['spoed_inval_original_trainer_id'] = $originalTrainerId;
-                    }
-                    DB::table('gymies_bookings')->where('id', (int) $b->id)->update($updatePayload);
                 }
 
                 // Automatische Klant-Update: notify alle deelnemers

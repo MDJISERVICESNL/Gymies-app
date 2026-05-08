@@ -105,51 +105,62 @@ final class GymiesRefundController extends Controller
             return response()->json(['message' => 'Deze boeking is niet betaald. Gebruik annuleren.'], 422);
         }
 
-        // Check of er al een refund loopt
         GymiesSchemaEnsure::refundsTable();
-        if ($this->tableExists('gymies_refunds')) {
-            $existingRefund = DB::table('gymies_refunds')
-                ->where('booking_id', (int) $bookingId)
-                ->whereIn('status', ['pending', 'processing', 'completed'])
-                ->first();
-            if ($existingRefund) {
-                return response()->json(['message' => 'Er loopt al een terugbetaling voor deze boeking.'], 422);
-            }
-        }
-
-        $amountCents = (int) ($booking->amount_cents ?? 0);
-        $outcome = $this->calculateRefundOutcome($booking, $isTrainer);
-        $refundAmountCents = (int) round($amountCents * $outcome['refund_percent'] / 100);
-        $cancellationFeeCents = $amountCents - $refundAmountCents;
-
-        if ($refundAmountCents <= 0) {
-            return response()->json([
-                'message' => 'Geen terugbetaling mogelijk volgens het annuleringsbeleid.',
-                'policy_message' => $outcome['cancellation_policy_message'],
-            ], 422);
-        }
-
-        // Bepaal refund methode
-        $refundMethod = $request->input('refund_method', $outcome['refund_method']);
-        if ($refundMethod === 'mollie' && $outcome['refund_method'] === 'wallet') {
-            $refundMethod = 'wallet'; // kan niet naar Mollie als beleid wallet zegt
-        }
-
-        // Zoek originele Mollie transactie
-        $transaction = null;
-        if ($this->tableExists('gymies_payment_transactions')) {
-            $transaction = DB::table('gymies_payment_transactions')
-                ->where('booking_id', (int) $bookingId)
-                ->where('status', 'paid')
-                ->where('provider', 'mollie')
-                ->first();
-        }
-
-        $mollieRefundId = null;
-        $refundStatus = 'pending';
 
         DB::beginTransaction();
         try {
+            // Lock booking row to prevent concurrent refund race conditions
+            $booking = DB::table('gymies_bookings')->where('id', (int) $bookingId)->lockForUpdate()->first();
+            if (!$booking) {
+                DB::rollBack();
+                return response()->json(['message' => 'Boeking niet gevonden.'], 404);
+            }
+
+            // Check of er al een refund loopt (inside transaction with lock)
+            if ($this->tableExists('gymies_refunds')) {
+                $existingRefund = DB::table('gymies_refunds')
+                    ->where('booking_id', (int) $bookingId)
+                    ->whereIn('status', ['pending', 'processing', 'completed'])
+                    ->lockForUpdate()
+                    ->first();
+                if ($existingRefund) {
+                    DB::rollBack();
+                    return response()->json(['message' => 'Er loopt al een terugbetaling voor deze boeking.'], 422);
+                }
+            }
+
+            $amountCents = (int) ($booking->amount_cents ?? 0);
+            $outcome = $this->calculateRefundOutcome($booking, $isTrainer);
+            $refundAmountCents = (int) round($amountCents * $outcome['refund_percent'] / 100);
+            $cancellationFeeCents = $amountCents - $refundAmountCents;
+
+            if ($refundAmountCents <= 0) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Geen terugbetaling mogelijk volgens het annuleringsbeleid.',
+                    'policy_message' => $outcome['cancellation_policy_message'],
+                ], 422);
+            }
+
+            // Bepaal refund methode
+            $refundMethod = $request->input('refund_method', $outcome['refund_method']);
+            if ($refundMethod === 'mollie' && $outcome['refund_method'] === 'wallet') {
+                $refundMethod = 'wallet'; // kan niet naar Mollie als beleid wallet zegt
+            }
+
+            // Zoek originele Mollie transactie
+            $transaction = null;
+            if ($this->tableExists('gymies_payment_transactions')) {
+                $transaction = DB::table('gymies_payment_transactions')
+                    ->where('booking_id', (int) $bookingId)
+                    ->where('status', 'paid')
+                    ->where('provider', 'mollie')
+                    ->first();
+            }
+
+            $mollieRefundId = null;
+            $refundStatus = 'pending';
+            // TODO: Wrap Mollie refund + DB insert in saga pattern with compensation on failure
             // Mollie refund aanmaken als betaald via Mollie
             if ($refundMethod === 'mollie' && $transaction && $transaction->provider_transaction_id) {
                 $mollieResult = $this->createMollieRefund(
@@ -615,6 +626,7 @@ final class GymiesRefundController extends Controller
             $policies = DB::table('gymies_cancellation_policies')
                 ->where('trainer_user_id', $trainerUserId)
                 ->orderBy('hours_before', 'desc')
+                ->limit(50)
                 ->get();
         }
 

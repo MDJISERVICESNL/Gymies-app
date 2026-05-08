@@ -1,16 +1,17 @@
+
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../config/app_config.dart';
 import '../utils/haptics.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
-
 /// SharedPreferences key: true als client onboarding is voltooid/overgeslagen.
 const _kClientOnboardingDoneKey = 'gymies_client_onboarding_done';
 
@@ -27,7 +28,10 @@ Future<bool> isClientOnboardingDone([GymiesApi? api]) async {
         await prefs.setBool(_kClientOnboardingDoneKey, true);
         return true;
       }
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Server check failed, fall back to local preferences
+      if (kDebugMode) debugPrint('[ClientOnboarding] Server check failed: $e');
+    }
   }
   return prefs.getBool(_kClientOnboardingDoneKey) ?? false;
 }
@@ -43,7 +47,10 @@ Future<void> markClientOnboardingDone([GymiesApi? api]) async {
       await api.updateMe(
         onboardingCompletedAt: DateTime.now().toUtc().toIso8601String(),
       );
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Server sync optional, local preference already saved
+      if (kDebugMode) debugPrint('[ClientOnboarding] Server sync failed: $e');
+    }
   }
 }
 
@@ -127,13 +134,15 @@ class _ClientOnboardingScreenState extends State<ClientOnboardingScreen>
   }
 
   Future<void> _complete() async {
+    // BUG FIX: Prevent multiple clicks by checking _saving state
+    if (_saving) return;
+    final api = context.read<GymiesApi>();
     // Sla optioneel profiel op als er iets is ingevuld
     final name = _nameController.text.trim();
     final city = _cityController.text.trim();
     if (name.isNotEmpty || city.isNotEmpty) {
       setState(() => _saving = true);
       try {
-        final api = context.read<GymiesApi>();
         await api.updateMe(
           displayName: name.isNotEmpty ? name : null,
           city: city.isNotEmpty ? city : null,
@@ -145,15 +154,22 @@ class _ClientOnboardingScreenState extends State<ClientOnboardingScreen>
       }
       if (mounted) setState(() => _saving = false);
     }
-    final api = context.read<GymiesApi>();
+    if (!mounted) return;
     await markClientOnboardingDone(api);
     widget.onComplete();
   }
 
   Future<void> _skip() async {
+    // BUG FIX: Prevent multiple clicks by checking _saving state
+    if (_saving) return;
     final api = context.read<GymiesApi>();
-    await markClientOnboardingDone(api);
-    widget.onComplete();
+    setState(() => _saving = true);
+    try {
+      await markClientOnboardingDone(api);
+      widget.onComplete();
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -187,14 +203,14 @@ class _ClientOnboardingScreenState extends State<ClientOnboardingScreen>
                     _PageIndicator(currentPage: _currentPage, totalPages: 3),
                     // Skip knop
                     TextButton(
-                      onPressed: () {
+                      onPressed: _saving ? null : () {
                         Haptics.selection();
                         _skip();
                       },
                       style: TextButton.styleFrom(
                         foregroundColor: Colors.white60,
                       ),
-                      child: const Text('Overslaan'),
+                      child: Text(S.of(context).skipLabel),
                     ),
                   ],
                 ),
@@ -249,7 +265,7 @@ class _PageIndicator extends StatelessWidget {
           decoration: BoxDecoration(
             color: isActive
                 ? GymiesColors.primary
-                : GymiesColors.primary.withValues(alpha: 0.3),
+                : GymiesColors.primary.withOpacity(0.3),
             borderRadius: BorderRadius.circular(4),
           ),
         );
@@ -299,11 +315,10 @@ class _WelcomePage extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'Jouw persoonlijke fitness journey begint hier.\n'
-            'In 3 simpele stappen:',
+            '${S.of(context).jouwPersoonlijkeFitnessJourneyBegintHiern} In 3 simpele stappen:',
             style: GoogleFonts.sora(
               fontSize: 16,
-              color: Colors.white.withValues(alpha: 0.8),
+              color: Colors.white.withOpacity(0.8),
               height: 1.5,
             ),
             textAlign: TextAlign.center,
@@ -312,20 +327,20 @@ class _WelcomePage extends StatelessWidget {
           // 3 stappen uitleg
           _StepExplainer(
             icon: Icons.search_rounded,
-            title: 'Zoek',
-            subtitle: 'Vind de perfecte trainer bij jou in de buurt',
+            title: S.of(context).zoek2,
+            subtitle: S.of(context).vindDePerfecteTrainerBijJou,
           ),
           const SizedBox(height: 16),
           _StepExplainer(
             icon: Icons.event_available_rounded,
             title: 'Boek',
-            subtitle: 'Plan een sessie op het moment dat jou uitkomt',
+            subtitle: S.of(context).planEenSessieOpHetMoment,
           ),
           const SizedBox(height: 16),
           _StepExplainer(
             icon: Icons.emoji_events_rounded,
             title: 'Train',
-            subtitle: 'Bereik je doelen met persoonlijke begeleiding',
+            subtitle: S.of(context).bereikJeDoelenMetPersoonlijkeBegeleiding,
           ),
           const Spacer(flex: 3),
           // Volgende knop
@@ -345,7 +360,7 @@ class _WelcomePage extends StatelessWidget {
                 ),
               ),
               child: Text(
-                'Aan de slag',
+                S.of(context).getStarted,
                 style: GoogleFonts.sora(fontSize: 16),
               ),
             ),
@@ -376,7 +391,7 @@ class _StepExplainer extends StatelessWidget {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: GymiesColors.primary.withValues(alpha: 0.15),
+            color: GymiesColors.primary.withOpacity(0.15),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(icon, color: GymiesColors.primary, size: 24),
@@ -399,7 +414,7 @@ class _StepExplainer extends StatelessWidget {
                 subtitle,
                 style: GoogleFonts.sora(
                   fontSize: 13,
-                  color: Colors.white.withValues(alpha: 0.7),
+                  color: Colors.white.withOpacity(0.7),
                 ),
               ),
             ],
@@ -433,11 +448,11 @@ class _ProfilePage extends StatelessWidget {
           Icon(
             Icons.person_rounded,
             size: 64,
-            color: GymiesColors.primary.withValues(alpha: 0.8),
+            color: GymiesColors.primary.withOpacity(0.8),
           ),
           const SizedBox(height: 20),
           Text(
-            'Vertel iets over jezelf',
+            S.of(context).tellAboutYourself,
             style: GoogleFonts.sora(
               fontSize: 24,
               fontWeight: FontWeight.w700,
@@ -447,10 +462,10 @@ class _ProfilePage extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Zo kunnen trainers je beter vinden.\nDit is optioneel — je kunt het later aanpassen.',
+            S.of(context).zoKunnenTrainersJeBeterVindennditIsOptioneelJeKuntHetLaterAanpassen,
             style: GoogleFonts.sora(
               fontSize: 14,
-              color: Colors.white.withValues(alpha: 0.7),
+              color: Colors.white.withOpacity(0.7),
               height: 1.5,
             ),
             textAlign: TextAlign.center,
@@ -459,7 +474,7 @@ class _ProfilePage extends StatelessWidget {
           // Naam veld
           _OnboardingTextField(
             controller: nameController,
-            label: 'Hoe mogen we je noemen?',
+            label: S.of(context).hoeMogenWeJeNoemen,
             hint: 'Bijv. Sara',
             icon: Icons.badge_outlined,
             textCapitalization: TextCapitalization.words,
@@ -490,7 +505,7 @@ class _ProfilePage extends StatelessWidget {
                 ),
               ),
               child: Text(
-                'Volgende',
+                S.of(context).nextAction,
                 style: GoogleFonts.sora(fontSize: 16),
               ),
             ),
@@ -527,7 +542,7 @@ class _OnboardingTextField extends StatelessWidget {
           style: GoogleFonts.sora(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: Colors.white.withValues(alpha: 0.8),
+            color: Colors.white.withOpacity(0.8),
           ),
         ),
         const SizedBox(height: 8),
@@ -538,24 +553,24 @@ class _OnboardingTextField extends StatelessWidget {
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: TextStyle(
-              color: Colors.white.withValues(alpha: 0.35),
+              color: Colors.white.withOpacity(0.35),
             ),
             prefixIcon: Icon(
               icon,
-              color: GymiesColors.primary.withValues(alpha: 0.7),
+              color: GymiesColors.primary.withOpacity(0.7),
             ),
             filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.08),
+            fillColor: Colors.white.withOpacity(0.08),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
-                color: Colors.white.withValues(alpha: 0.15),
+                color: Colors.white.withOpacity(0.15),
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
-                color: Colors.white.withValues(alpha: 0.15),
+                color: Colors.white.withOpacity(0.15),
               ),
             ),
             focusedBorder: OutlineInputBorder(
@@ -596,7 +611,7 @@ class _ReadyPage extends StatelessWidget {
             width: 96,
             height: 96,
             decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.2),
+              color: GymiesColors.primary.withOpacity(0.2),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -607,7 +622,7 @@ class _ReadyPage extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            'Je bent klaar!',
+            S.of(context).youAreReady,
             style: GoogleFonts.sora(
               fontSize: 28,
               fontWeight: FontWeight.w700,
@@ -617,10 +632,10 @@ class _ReadyPage extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'Ontdek trainers in jouw buurt en boek\nje eerste sessie. Let\'s go!',
+            '${S.of(context).ontdekTrainersInJouwBuurtEnBoeknjeEersteSessie} Lets go!',
             style: GoogleFonts.sora(
               fontSize: 16,
-              color: Colors.white.withValues(alpha: 0.8),
+              color: Colors.white.withOpacity(0.8),
               height: 1.5,
             ),
             textAlign: TextAlign.center,
@@ -629,7 +644,7 @@ class _ReadyPage extends StatelessWidget {
           // Drie voordelen
           _BenefitChip(
             icon: Icons.verified_rounded,
-            text: 'Gecertificeerde trainers',
+            text: S.of(context).gecertificeerdeTrainers,
           ),
           const SizedBox(height: 10),
           _BenefitChip(
@@ -654,7 +669,7 @@ class _ReadyPage extends StatelessWidget {
                 backgroundColor: GymiesColors.primary,
                 foregroundColor: GymiesColors.darkBlue,
                 disabledBackgroundColor:
-                    GymiesColors.primary.withValues(alpha: 0.5),
+                    GymiesColors.primary.withOpacity(0.5),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
@@ -670,7 +685,7 @@ class _ReadyPage extends StatelessWidget {
                     )
                   : const Icon(Icons.explore_rounded),
               label: Text(
-                saving ? 'Even geduld...' : 'Ontdek trainers',
+                saving ? S.of(context).trainersCanFindYou : S.of(context).discoverTrainers,
                 style: GoogleFonts.sora(fontSize: 16),
               ),
             ),
@@ -693,10 +708,10 @@ class _BenefitChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
+        color: Colors.white.withOpacity(0.06),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: GymiesColors.primary.withValues(alpha: 0.2),
+          color: GymiesColors.primary.withOpacity(0.2),
         ),
       ),
       child: Row(
@@ -706,7 +721,7 @@ class _BenefitChip extends StatelessWidget {
           Text(
             text,
             style: GoogleFonts.sora(
-              color: Colors.white.withValues(alpha: 0.85),
+              color: Colors.white.withOpacity(0.85),
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),

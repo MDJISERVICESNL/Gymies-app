@@ -32,6 +32,9 @@ class GymiesDeviceTokenController
             return response()->json(['message' => 'Niet ingelogd.'], 401);
         }
 
+        // Self-healing: maak tabel aan als die nog niet bestaat
+        GymiesSchemaEnsure::deviceTokensTable();
+
         if (!Schema::hasTable($this->table())) {
             return response()->json(['message' => 'Device tokens niet geconfigureerd.'], 503);
         }

@@ -1,7 +1,9 @@
+
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../utils/haptics.dart';
 import '../services/gymies_api.dart';
@@ -9,7 +11,6 @@ import '../theme/gymies_theme.dart';
 import '../utils/map_utils.dart';
 import 'client_group_session_detail_screen.dart';
 import 'widgets/trainer_state_views.dart';
-
 /// Mijn inschrijvingen groepslessen – voor ingelogde klanten.
 class ClientMyGroupSessionsScreen extends StatefulWidget {
   const ClientMyGroupSessionsScreen({super.key});
@@ -23,11 +24,20 @@ class _ClientMyGroupSessionsScreenState extends State<ClientMyGroupSessionsScree
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _registrations = [];
+  bool _didFirstLoad = false;
 
   @override
   void initState() {
     super.initState();
-    _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_didFirstLoad) {
+      _didFirstLoad = true;
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -51,7 +61,7 @@ class _ClientMyGroupSessionsScreenState extends State<ClientMyGroupSessionsScree
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon inschrijvingen niet laden.';
+        _error = S.of(context).konInschrijvingenNietLaden;
         _loading = false;
       });
     }
@@ -96,7 +106,7 @@ class _ClientMyGroupSessionsScreenState extends State<ClientMyGroupSessionsScree
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Mijn groepslessen',
+                        S.of(context).mijnGroepslessen,
                         style: GoogleFonts.sora(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -124,7 +134,7 @@ class _ClientMyGroupSessionsScreenState extends State<ClientMyGroupSessionsScree
                                   width: 72,
                                   height: 72,
                                   decoration: BoxDecoration(
-                                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                                    color: GymiesColors.primary.withOpacity(0.15),
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: const Icon(
@@ -136,7 +146,7 @@ class _ClientMyGroupSessionsScreenState extends State<ClientMyGroupSessionsScree
                               ),
                               const SizedBox(height: 20),
                               Text(
-                                'Geen inschrijvingen',
+                                S.of(context).geenInschrijvingen,
                                 style: GoogleFonts.sora(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w700,
@@ -146,7 +156,7 @@ class _ClientMyGroupSessionsScreenState extends State<ClientMyGroupSessionsScree
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Je hebt je nog niet ingeschreven voor een groepsles.',
+                                S.of(context).jeHebtJeNogNietIngeschrevenVoorEenGroepsles,
                                 style: GoogleFonts.sora(
                                   fontSize: 14,
                                   color: Colors.grey.shade600,
@@ -165,13 +175,16 @@ class _ClientMyGroupSessionsScreenState extends State<ClientMyGroupSessionsScree
                                 'group_session_id',
                                 'groupSessionId',
                               ]);
+                              final key = ValueKey<String>(id.isNotEmpty ? id : 'reg_$i');
                               final rawTitle = mapStr(r, [
                                 'group_session_title',
                                 'title',
                                 'name',
                               ]);
-                              final displayTitle = rawTitle.isEmpty ? 'Groepsles' : rawTitle;
+                              final displayTitle = rawTitle.isEmpty ? S.of(context).groepsles : rawTitle;
                               final startsAt = DateTime.tryParse(mapStr(r, [
+                                'scheduled_at',
+                                'scheduledAt',
                                 'starts_at',
                                 'startsAt',
                                 'start_at',
@@ -184,6 +197,7 @@ class _ClientMyGroupSessionsScreenState extends State<ClientMyGroupSessionsScree
                               final isPast = startsAt != null && startsAt.isBefore(DateTime.now());
 
                               return Padding(
+                                key: key,
                                 padding: const EdgeInsets.only(bottom: 10),
                                 child: Material(
                                   color: Colors.white,
@@ -209,7 +223,7 @@ class _ClientMyGroupSessionsScreenState extends State<ClientMyGroupSessionsScree
                                         borderRadius: BorderRadius.circular(16),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.05),
+                                            color: Colors.black.withOpacity(0.05),
                                             blurRadius: 12,
                                             offset: const Offset(0, 3),
                                           ),
@@ -292,8 +306,8 @@ class _ClientMyGroupSessionsScreenState extends State<ClientMyGroupSessionsScree
                                                       ),
                                                       decoration: BoxDecoration(
                                                         color: isConfirmed
-                                                            ? Colors.green.withValues(alpha: 0.12)
-                                                            : Colors.orange.withValues(alpha: 0.12),
+                                                            ? Colors.green.withOpacity(0.12)
+                                                            : Colors.orange.withOpacity(0.12),
                                                         borderRadius: BorderRadius.circular(8),
                                                       ),
                                                       child: Text(

@@ -1678,7 +1678,7 @@ final class GymiesBookingController extends Controller
         }
 
         $rating = (int) $request->input('rating');
-        $reviewText = $request->input('review_text') ? trim((string) $request->input('review_text')) : null;
+        $reviewText = $request->input('review_text') ? strip_tags(trim((string) $request->input('review_text'))) : null;
         DB::table('gymies_reviews')->insert([
             'booking_id' => (int) $id,
             'client_user_id' => (int) $user->id,

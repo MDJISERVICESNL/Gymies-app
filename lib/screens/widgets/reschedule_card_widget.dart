@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../theme/gymies_theme.dart';
 
 /// Prefix dat de server gebruikt voor interactieve kaarten in chat-berichten.
@@ -101,7 +103,10 @@ class RescheduleCardWidget extends StatelessWidget {
       try {
         final parsed = jsonDecode(raw);
         if (parsed is Map<String, dynamic>) return parsed;
-      } catch (_) {}
+      } catch (e) {
+        // Fail-open: Card parsing failed, return null
+        if (kDebugMode) debugPrint('[RescheduleCard] Parse card data failed: $e');
+      }
       return null;
     }
 
@@ -144,14 +149,14 @@ class RescheduleCardWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: _isPending
-              ? GymiesColors.primary.withValues(alpha: 0.4)
+              ? GymiesColors.primary.withOpacity(0.4)
               : _isAccepted
-                  ? Colors.green.withValues(alpha: 0.4)
+                  ? Colors.green.withOpacity(0.4)
                   : Colors.grey.shade300,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -165,9 +170,9 @@ class RescheduleCardWidget extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: _isPending
-                  ? GymiesColors.primary.withValues(alpha: 0.08)
+                  ? GymiesColors.primary.withOpacity(0.08)
                   : _isAccepted
-                      ? Colors.green.withValues(alpha: 0.08)
+                      ? Colors.green.withOpacity(0.08)
                       : Colors.grey.shade50,
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(15)),
@@ -190,10 +195,10 @@ class RescheduleCardWidget extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   _isPending
-                      ? 'Verplaatsingsverzoek'
+                      ? S.of(context).verplaatsingsverzoek
                       : _isAccepted
-                          ? 'Sessie verplaatst'
-                          : 'Verzoek afgewezen',
+                          ? S.of(context).sessieVerplaatst
+                          : S.of(context).verzoekAfgewezen,
                   style: GoogleFonts.sora(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -246,8 +251,8 @@ class RescheduleCardWidget extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: _isAccepted
-                      ? Colors.green.withValues(alpha: 0.1)
-                      : Colors.red.withValues(alpha: 0.1),
+                      ? Colors.green.withOpacity(0.1)
+                      : Colors.red.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -287,7 +292,7 @@ class RescheduleCardWidget extends StatelessWidget {
                       size: 14, color: Colors.grey.shade400),
                   const SizedBox(width: 6),
                   Text(
-                    'Wacht op reactie van de trainer...',
+                    S.of(context).waitingForTrainerReply,
                     style: GoogleFonts.sora(
                       fontSize: 12,
                       color: Colors.grey.shade500,
@@ -368,7 +373,7 @@ class _DateRow extends StatelessWidget {
           decoration: BoxDecoration(
             color: isOld
                 ? Colors.grey.shade100
-                : GymiesColors.primary.withValues(alpha: 0.12),
+                : GymiesColors.primary.withOpacity(0.12),
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
@@ -434,7 +439,7 @@ class _CardButton extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
             border:
-                filled ? null : Border.all(color: color.withValues(alpha: 0.4)),
+                filled ? null : Border.all(color: color.withOpacity(0.4)),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,

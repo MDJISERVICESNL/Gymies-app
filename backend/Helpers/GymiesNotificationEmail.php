@@ -163,6 +163,9 @@ final class GymiesNotificationEmail
     /**
      * Gymies thema: navy #0B1F3A, oranje #FF8A00.
      * Zelfde footer-stijl als verificatiemail.
+     *
+     * For branded emails with trainer logos and colors, use GymiesMailTemplates::brandedHtmlWrapper().
+     * This method returns standard Gymies branding (for auth, trainer notifications, admin emails).
      */
     public static function htmlWrapper(string $title, string $innerHtml, ?string $appName = null): string
     {

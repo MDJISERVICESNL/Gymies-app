@@ -114,8 +114,8 @@ class GymiesNewsletterController
             return response()->json(['message' => 'Niet ingelogd.'], 401);
         }
 
-        $subject = trim($request->input('subject', ''));
-        $body = trim($request->input('body', ''));
+        $subject = strip_tags(trim($request->input('subject', '')));
+        $body = strip_tags(trim($request->input('body', '')));
 
         if (empty($subject)) {
             return response()->json(['message' => 'Onderwerp is verplicht.'], 422);

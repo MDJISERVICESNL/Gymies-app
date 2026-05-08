@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/gymies_api.dart';
 import '../services/storefront_cms_provider.dart';
 import '../services/subscription_entitlements_service.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
-import '../utils/map_utils.dart';
 import 'trainer_storefront_profile_screen.dart';
 import 'trainer_storefront_rates_screen.dart';
 import 'trainer_storefront_logistics_screen.dart';
@@ -39,7 +39,9 @@ class _TrainerStorefrontHubScreenState
   bool _offersDuo = false;
   int? _cancellationHours;
   int _socialsCount = 0;
+  // ignore: unused_field
   bool _hasGallery = false;
+  // ignore: unused_field
   String _brandColor = '#FEBE23';
   bool _hasLogo = false;
   bool _hasBanner = false;
@@ -128,9 +130,9 @@ class _TrainerStorefrontHubScreenState
 
   String _paymentMethodLabel(String pm) {
     switch (pm) {
-      case 'transfer_and_cash': return 'Overboekingen & cash';
-      case 'transfer_only': return 'Alleen overboekingen';
-      case 'cash_only': return 'Alleen cash';
+      case 'transfer_and_cash': return S.of(context).overboekingenCash;
+      case 'transfer_only': return S.of(context).alleenOverboekingen;
+      case 'cash_only': return S.of(context).alleenCash;
       default: return '';
     }
   }
@@ -153,7 +155,7 @@ class _TrainerStorefrontHubScreenState
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
-      appBar: const GymiesAppBar(title: 'Mijn Etalage'),
+      appBar: const GymiesAppBar(title: S.of(context).mijnEtalage),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -174,7 +176,7 @@ class _TrainerStorefrontHubScreenState
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: GymiesColors.primary.withValues(alpha: 0.2),
+                            color: GymiesColors.primary.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: const Icon(Icons.storefront_rounded,
@@ -186,7 +188,7 @@ class _TrainerStorefrontHubScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Jouw publieke profiel',
+                                S.of(context).jouwPubliekeProfiel,
                                 style: GoogleFonts.sora(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
@@ -195,7 +197,7 @@ class _TrainerStorefrontHubScreenState
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Beheer hoe klanten jou zien op Gymies',
+                                S.of(context).beheerHoeKlantenJouZienOpGymies,
                                 style: GoogleFonts.sora(
                                   fontSize: 12,
                                   color: Colors.white60,
@@ -212,9 +214,9 @@ class _TrainerStorefrontHubScreenState
                   // ── 1. Profiel & Bio ──
                   _buildCategoryCard(
                     icon: Icons.person_outline,
-                    title: 'Profiel & Bio',
+                    title: S.of(context).profileAndBio,
                     statusLines: [
-                      if (_bioSnippet.isNotEmpty) _bioSnippet else 'Nog geen bio ingesteld',
+                      if (_bioSnippet.isNotEmpty) _bioSnippet else S.of(context).nogGeenBioIngesteld,
                       if (_specCount > 0) '$_specCount specialisaties',
                     ],
                     onTap: () => _pushAndRefresh(const TrainerStorefrontProfileScreen()),
@@ -224,9 +226,9 @@ class _TrainerStorefrontHubScreenState
                   // ── 2. Tarieven & Betaling ──
                   _buildCategoryCard(
                     icon: Icons.euro_outlined,
-                    title: 'Tarieven & Betaling',
+                    title: S.of(context).tarievenEnBetaling,
                     statusLines: [
-                      if (_rateDisplay.isNotEmpty) _rateDisplay else 'Nog geen tarief ingesteld',
+                      if (_rateDisplay.isNotEmpty) _rateDisplay else S.of(context).nogGeenTariefIngesteld,
                       if (_paymentLabel.isNotEmpty) _paymentLabel,
                     ],
                     onTap: () => _pushAndRefresh(const TrainerStorefrontRatesScreen()),
@@ -246,7 +248,7 @@ class _TrainerStorefrontHubScreenState
                               if (_hasOwnLocation) 'Eigen locatie',
                               if (_offersDuo) 'Duo-training',
                             ].join(' \u2022 ')
-                          : 'Geen opties ingesteld',
+                          : S.of(context).geenOptiesIngesteld,
                       if (_cancellationHours != null)
                         'Annulering: ${_cancellationHours}u van tevoren',
                     ],
@@ -272,7 +274,7 @@ class _TrainerStorefrontHubScreenState
                   // ── 5. Branding (Pro+) ──
                   _buildCategoryCard(
                     icon: Icons.palette_outlined,
-                    title: 'Branding',
+                    title: S.of(context).branding,
                     statusLines: [
                       [
                         if (_hasLogo) 'Logo',
@@ -282,7 +284,7 @@ class _TrainerStorefrontHubScreenState
                               if (_hasLogo) 'Logo',
                               if (_hasBanner) 'Banner',
                             ].join(' \u2022 ')
-                          : 'Nog niet geconfigureerd',
+                          : S.of(context).nogNietGeconfigureerd,
                     ],
                     locked: !isProPlus,
                     lockLabel: 'Pro+',
@@ -332,7 +334,7 @@ class _TrainerStorefrontHubScreenState
               ? null
               : [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
@@ -346,7 +348,7 @@ class _TrainerStorefrontHubScreenState
               decoration: BoxDecoration(
                 color: locked
                     ? Colors.grey.shade300
-                    : GymiesColors.primary.withValues(alpha: 0.12),
+                    : GymiesColors.primary.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
@@ -378,7 +380,7 @@ class _TrainerStorefrontHubScreenState
                           padding: const EdgeInsets.symmetric(
                               horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(
-                            color: GymiesColors.primary.withValues(alpha: 0.85),
+                            color: GymiesColors.primary.withOpacity(0.85),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(

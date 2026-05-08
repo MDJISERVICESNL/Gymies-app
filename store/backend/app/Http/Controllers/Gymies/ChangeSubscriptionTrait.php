@@ -80,29 +80,32 @@ trait ChangeSubscriptionTrait
             ];
         }
 
-        if ($profile) {
-            if (Schema::hasColumn('gymies_trainer_profiles', 'subscription_pending_downgrade')) {
-                DB::table('gymies_trainer_profiles')
-                    ->where('user_id', $userId)
-                    ->update($updateData);
+        // Wrap profile update in transaction
+        DB::transaction(function() use ($profile, $userId, $updateData, $nextBillingDate, $planLabel, $currentPlan) {
+            if ($profile) {
+                if (Schema::hasColumn('gymies_trainer_profiles', 'subscription_pending_downgrade')) {
+                    DB::table('gymies_trainer_profiles')
+                        ->where('user_id', $userId)
+                        ->update($updateData);
+                } else {
+                    DB::table('gymies_trainer_profiles')
+                        ->where('user_id', $userId)
+                        ->update($updateData);
+                }
             } else {
-                DB::table('gymies_trainer_profiles')
-                    ->where('user_id', $userId)
-                    ->update($updateData);
+                $insertData = $updateData;
+                $insertData['user_id'] = $userId;
+                $insertData['created_at'] = now();
+                $insertData['subscription_plan'] = $currentPlan;
+                $insertData['subscription_tier'] = $currentPlan;
+                if (Schema::hasColumn('gymies_trainer_profiles', 'subscription_pending_downgrade')) {
+                    $insertData['subscription_pending_downgrade'] = true;
+                    $insertData['subscription_downgrades_at'] = $nextBillingDate;
+                    $insertData['subscription_downgrade_to'] = $planLabel;
+                }
+                DB::table('gymies_trainer_profiles')->insert($insertData);
             }
-        } else {
-            $updateData['user_id'] = $userId;
-            $updateData['created_at'] = now();
-            $currentPlan = $profile ? ($profile->subscription_plan ?? $profile->subscription_tier ?? 'Starter') : 'Starter';
-            $updateData['subscription_plan'] = $currentPlan;
-            $updateData['subscription_tier'] = $currentPlan;
-            if (Schema::hasColumn('gymies_trainer_profiles', 'subscription_pending_downgrade')) {
-                $updateData['subscription_pending_downgrade'] = true;
-                $updateData['subscription_downgrades_at'] = $nextBillingDate;
-                $updateData['subscription_downgrade_to'] = $planLabel;
-            }
-            DB::table('gymies_trainer_profiles')->insert($updateData);
-        }
+        });
 
         return response()->json([
             'message' => 'Abonnement wijzigt naar ' . $planLabel . ' op ' . $nextBillingDate,

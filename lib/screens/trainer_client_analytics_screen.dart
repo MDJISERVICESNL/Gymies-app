@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../services/subscription_entitlements_service.dart';
@@ -81,13 +82,11 @@ class _TrainerClientAnalyticsScreenState
       final trends = data['trends'] as Map<String, dynamic>? ?? {};
       final revenueBreakdown = data['revenue_breakdown'] as Map<String, dynamic>? ?? {};
       final topClientsRaw = data['top_clients'] as List? ?? [];
-      final topClients = (topClientsRaw is List)
-          ? List<Map<String, dynamic>>.from(
-              topClientsRaw.map((c) => c is Map<String, dynamic>
-                  ? c
-                  : (c is Map ? Map<String, dynamic>.from(c) : <String, dynamic>{})),
-            )
-          : <Map<String, dynamic>>[];
+      final topClients = List<Map<String, dynamic>>.from(
+        topClientsRaw.map((c) => c is Map<String, dynamic>
+            ? c
+            : (c is Map ? Map<String, dynamic>.from(c) : <String, dynamic>{})),
+      );
 
       setState(() {
         _activeCount = (summary['active'] as num?)?.toInt() ??
@@ -122,7 +121,7 @@ class _TrainerClientAnalyticsScreenState
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon klant analytics niet laden.';
+        _error = S.of(context).konKlantAnalyticsNietLaden;
         _loading = false;
       });
     }
@@ -134,12 +133,12 @@ class _TrainerClientAnalyticsScreenState
     } else {
       _filteredClients = _clients.where((c) {
         final status = mapStr(c, ['status', 'client_status']).toLowerCase();
-        if (_activeFilter == 'active') return status == 'active' || status == 'actief';
+        if (_activeFilter == 'active') return status == 'active' || status == S.of(context).actiefLower;
         if (_activeFilter == 'risk') {
           return status == 'risk' || status == 'at_risk' || status == 'risico';
         }
         if (_activeFilter == 'inactive') {
-          return status == 'inactive' || status == 'inactief';
+          return status == 'inactive' || status == S.of(context).inactiefLower;
         }
         return true;
       }).toList();
@@ -165,13 +164,14 @@ class _TrainerClientAnalyticsScreenState
     setState(() => _exporting = true);
     try {
       final api = context.read<GymiesApi>();
+      // ignore: unused_local_variable
       final csv = await api.exportClientAnalyticsCsv();
       if (!mounted) return;
 
       // Show success snackbar
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('CSV geëxporteerd'),
+          content: const Text(S.of(context).csvGexporteerd),
           backgroundColor: Colors.green.shade700,
           duration: const Duration(seconds: 2),
         ),
@@ -182,7 +182,7 @@ class _TrainerClientAnalyticsScreenState
       Haptics.error();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Export mislukt: $e'),
+          content: Text(S.of(context).exportMisluktMsg(e.toString())),
           backgroundColor: Colors.red.shade700,
         ),
       );
@@ -193,7 +193,7 @@ class _TrainerClientAnalyticsScreenState
 
   Color _statusColor(String status) {
     final s = status.toLowerCase();
-    if (s == 'active' || s == 'actief') return Colors.green.shade700;
+    if (s == 'active' || s == S.of(context).actiefLower) return Colors.green.shade700;
     if (s == 'risk' || s == 'at_risk' || s == 'risico') {
       return Colors.orange.shade800;
     }
@@ -202,9 +202,9 @@ class _TrainerClientAnalyticsScreenState
 
   String _statusLabel(String status) {
     final s = status.toLowerCase();
-    if (s == 'active' || s == 'actief') return 'Actief';
+    if (s == 'active' || s == S.of(context).actiefLower) return S.of(context).actief;
     if (s == 'risk' || s == 'at_risk' || s == 'risico') return 'Risico';
-    if (s == 'inactive' || s == 'inactief') return 'Inactief';
+    if (s == 'inactive' || s == S.of(context).inactiefLower) return S.of(context).inactief;
     return status;
   }
 
@@ -219,12 +219,12 @@ class _TrainerClientAnalyticsScreenState
     if (!isProPlus) {
       return Scaffold(
         backgroundColor: const Color(0xFFF7F8FA),
-        appBar: const GymiesAppBar(title: 'Klant Analytics'),
+        appBar: const GymiesAppBar(title: S.of(context).klantAnalytics2),
         body: const GymiesUpgradePrompt(
           icon: Icons.analytics_outlined,
-          feature: 'Klant Analytics',
+          feature: S.of(context).klantAnalytics2,
           tier: 'Pro+',
-          description: 'Bekijk trends, omzetverdeling en exporteer data.',
+          description: S.of(context).bekijkTrendsOmzetverdelingEnExporteerData,
         ),
       );
     }
@@ -232,14 +232,14 @@ class _TrainerClientAnalyticsScreenState
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: GymiesAppBar(
-        title: 'Klant Analytics',
+        title: S.of(context).klantAnalytics2,
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 12),
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
+              color: Colors.white.withOpacity(0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -266,12 +266,12 @@ class _TrainerClientAnalyticsScreenState
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
+              color: Colors.white.withOpacity(0.12),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Row(
-              children: ['7d', '30d', '90d', 'Alles'].map((label) {
-                final value = label == 'Alles' ? 'all' : label;
+              children: ['7d', '30d', '90d', S.of(context).allLabel].map((label) {
+                final value = label == S.of(context).allLabel ? 'all' : label;
                 final selected = _trendPeriod == value;
                 return Expanded(
                   child: GestureDetector(
@@ -293,7 +293,7 @@ class _TrainerClientAnalyticsScreenState
                                 selected ? FontWeight.w600 : FontWeight.w500,
                             color: selected
                                 ? GymiesColors.darkBlue
-                                : Colors.white.withValues(alpha: 0.7),
+                                : Colors.white.withOpacity(0.7),
                           ),
                         ),
                       ),
@@ -317,7 +317,7 @@ class _TrainerClientAnalyticsScreenState
                         children: [
                           Expanded(
                             child: _SummaryCard(
-                              label: 'Actief',
+                              label: S.of(context).actief,
                               value: '$_activeCount',
                               color: Colors.green.shade700,
                               icon: Icons.person_rounded,
@@ -335,7 +335,7 @@ class _TrainerClientAnalyticsScreenState
                           const SizedBox(width: 10),
                           Expanded(
                             child: _SummaryCard(
-                              label: 'Inactief',
+                              label: S.of(context).inactief,
                               value: '$_inactiveCount',
                               color: Colors.red.shade700,
                               icon: Icons.person_off_rounded,
@@ -348,7 +348,7 @@ class _TrainerClientAnalyticsScreenState
                         children: [
                           Expanded(
                             child: _SummaryCard(
-                              label: 'Sessies',
+                              label: S.of(context).sessionsCountLabel,
                               value: '$_totalSessions',
                               color: GymiesColors.darkBlue,
                               icon: Icons.fitness_center_rounded,
@@ -386,11 +386,11 @@ class _TrainerClientAnalyticsScreenState
                           children: [
                             _filterChip('Alle', 'all'),
                             const SizedBox(width: 8),
-                            _filterChip('Actief', 'active'),
+                            _filterChip(S.of(context).actief, 'active'),
                             const SizedBox(width: 8),
                             _filterChip('Risico', 'risk'),
                             const SizedBox(width: 8),
-                            _filterChip('Inactief', 'inactive'),
+                            _filterChip(S.of(context).inactief, 'inactive'),
                           ],
                         ),
                       ),
@@ -413,7 +413,7 @@ class _TrainerClientAnalyticsScreenState
                           padding: const EdgeInsets.symmetric(vertical: 32),
                           child: Center(
                             child: Text(
-                              'Geen klanten gevonden voor dit filter.',
+                              S.of(context).geenKlantenGevondenVoorDitFilter,
                               style: TextStyle(
                                 color: Colors.grey.shade500,
                                 fontSize: 14,
@@ -442,7 +442,7 @@ class _TrainerClientAnalyticsScreenState
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.04),
+                                  color: Colors.black.withOpacity(0.04),
                                   blurRadius: 10,
                                   offset: const Offset(0, 2),
                                 ),
@@ -458,7 +458,7 @@ class _TrainerClientAnalyticsScreenState
                                     height: 40,
                                     decoration: BoxDecoration(
                                       color: _statusColor(status)
-                                          .withValues(alpha: 0.12),
+                                          .withOpacity(0.12),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Center(
@@ -485,7 +485,7 @@ class _TrainerClientAnalyticsScreenState
                                           children: [
                                             Flexible(
                                               child: Text(
-                                                name.isNotEmpty ? name : 'Klant',
+                                                name.isNotEmpty ? name : S.of(context).clientSingle,
                                                 style: const TextStyle(
                                                   fontWeight: FontWeight.w600,
                                                   fontSize: 14,
@@ -502,7 +502,7 @@ class _TrainerClientAnalyticsScreenState
                                               ),
                                               decoration: BoxDecoration(
                                                 color: _statusColor(status)
-                                                    .withValues(alpha: 0.12),
+                                                    .withOpacity(0.12),
                                                 borderRadius:
                                                     BorderRadius.circular(6),
                                               ),
@@ -558,7 +558,7 @@ class _TrainerClientAnalyticsScreenState
       label: Text(label),
       selected: selected,
       onSelected: (_) => _setFilter(value),
-      selectedColor: GymiesColors.primary.withValues(alpha: 0.25),
+      selectedColor: GymiesColors.primary.withOpacity(0.25),
       checkmarkColor: GymiesColors.darkBlue,
       labelStyle: TextStyle(
         fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
@@ -593,14 +593,14 @@ class _TrainerClientAnalyticsScreenState
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: GymiesColors.darkBlue.withValues(alpha: 0.1),
+                color: GymiesColors.darkBlue.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(Icons.trending_up_rounded, size: 16, color: GymiesColors.darkBlue),
             ),
             const SizedBox(width: 10),
             Text(
-              'Trends',
+              S.of(context).trends,
               style: GoogleFonts.sora(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -614,7 +614,7 @@ class _TrainerClientAnalyticsScreenState
           children: [
             Expanded(
               child: _TrendCard(
-                label: 'Nieuwe klanten',
+                label: S.of(context).nieuweKlanten,
                 value: '$newCustomers',
                 delta: newCustomersDelta,
                 icon: Icons.person_add_rounded,
@@ -623,7 +623,7 @@ class _TrainerClientAnalyticsScreenState
             const SizedBox(width: 10),
             Expanded(
               child: _TrendCard(
-                label: 'Sessies',
+                label: S.of(context).sessionsCountLabel,
                 value: '$sessions',
                 delta: sessionsDelta,
                 icon: Icons.fitness_center_rounded,
@@ -646,10 +646,9 @@ class _TrainerClientAnalyticsScreenState
   }
 
   Widget _buildRevenueBreakdownSection() {
-    final total = (_revenueBreakdown.values
-            .map((v) => (v as num?)?.toDouble() ?? 0)
-            .fold(0.0, (a, b) => a + b)) ??
-        0;
+    final total = _revenueBreakdown.values
+        .map((v) => (v as num?)?.toDouble() ?? 0)
+        .fold(0.0, (a, b) => a + b);
 
     if (total == 0) return const SizedBox.shrink();
 
@@ -662,14 +661,14 @@ class _TrainerClientAnalyticsScreenState
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: Colors.green.shade700.withValues(alpha: 0.1),
+                color: Colors.green.shade700.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(Icons.pie_chart_rounded, size: 16, color: Colors.green.shade700),
             ),
             const SizedBox(width: 10),
             Text(
-              'Omzet verdeling',
+              S.of(context).omzetVerdeling,
               style: GoogleFonts.sora(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -685,7 +684,7 @@ class _TrainerClientAnalyticsScreenState
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
+                color: Colors.black.withOpacity(0.04),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
@@ -772,14 +771,14 @@ class _TrainerClientAnalyticsScreenState
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.15),
+                color: GymiesColors.primary.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(Icons.emoji_events_rounded, size: 16, color: GymiesColors.darkBlue),
             ),
             const SizedBox(width: 10),
             Text(
-              'Top klanten',
+              S.of(context).topKlanten,
               style: GoogleFonts.sora(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -806,7 +805,7 @@ class _TrainerClientAnalyticsScreenState
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
@@ -823,7 +822,7 @@ class _TrainerClientAnalyticsScreenState
                           width: 32,
                           height: 32,
                           decoration: BoxDecoration(
-                            color: GymiesColors.primary.withValues(alpha: 0.15),
+                            color: GymiesColors.primary.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Center(
@@ -843,7 +842,7 @@ class _TrainerClientAnalyticsScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                name.isNotEmpty ? name : 'Klant',
+                                name.isNotEmpty ? name : S.of(context).clientSingle,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
@@ -867,7 +866,7 @@ class _TrainerClientAnalyticsScreenState
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: LinearProgressIndicator(
-                        value: progress,
+                        value: progress.toDouble(),
                         minHeight: 6,
                         backgroundColor: Colors.grey.shade200,
                         valueColor: AlwaysStoppedAnimation<Color>(
@@ -908,7 +907,7 @@ class _SummaryCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -925,7 +924,7 @@ class _SummaryCard extends StatelessWidget {
                   width: 24,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
+                    color: color.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(7),
                   ),
                   child: Icon(icon, color: color, size: 13),
@@ -982,7 +981,7 @@ class _TrendCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -1000,7 +999,7 @@ class _TrendCard extends StatelessWidget {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: GymiesColors.darkBlue.withValues(alpha: 0.1),
+                    color: GymiesColors.darkBlue.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(icon, color: GymiesColors.darkBlue, size: 15),
@@ -1008,7 +1007,7 @@ class _TrendCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: deltaColor.withValues(alpha: 0.12),
+                    color: deltaColor.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(

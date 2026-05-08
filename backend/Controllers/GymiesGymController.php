@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class GymiesGymController extends Controller
 {
@@ -2246,4 +2248,237 @@ class GymiesGymController extends Controller
 
         return $out;
     }
+
+    // ══════════════════════════════════════════════════════
+    // GYM MOLLIE & PAYOUT METHODS
+    // ══════════════════════════════════════════════════════
+
+    /**
+     * GET gym/mollie-status — Mollie Connect status voor deze gym.
+     */
+    public function mollieStatus(Request $request): JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner', 'manager']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        $this->ensureGymMollieSchema();
+
+        $org = DB::table('gymies_organisations')->where('id', $orgId)->first();
+        $hasToken = false;
+        $mollieOrgId = null;
+        if ($org) {
+            if (!empty($org->mollie_access_token ?? null)) {
+                try {
+                    $token = decrypt($org->mollie_access_token);
+                    $hasToken = is_string($token) && $token !== '';
+                } catch (\Throwable $e) {
+                    $hasToken = false;
+                }
+            }
+            $mollieOrgId = $org->mollie_organization_id ?? null;
+        }
+
+        return response()->json([
+            'connected' => $hasToken,
+            'mollie_organization_id' => $mollieOrgId,
+            'can_receive_payments' => $hasToken,
+        ]);
+    }
+
+    /**
+     * POST gym/mollie-disconnect — Verwijder Mollie koppeling.
+     */
+    public function mollieDisconnect(Request $request): JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        $update = ['updated_at' => now()];
+        $columns = Schema::getColumnListing('gymies_organisations');
+        if (in_array('mollie_access_token', $columns)) $update['mollie_access_token'] = null;
+        if (in_array('mollie_refresh_token', $columns)) $update['mollie_refresh_token'] = null;
+        if (in_array('mollie_organization_id', $columns)) $update['mollie_organization_id'] = null;
+        if (in_array('mollie_token_expires_at', $columns)) $update['mollie_token_expires_at'] = null;
+
+        DB::table('gymies_organisations')->where('id', $orgId)->update($update);
+
+        return response()->json(['message' => 'Mollie koppeling verwijderd.']);
+    }
+
+    /**
+     * GET gym/payout-settings — IBAN, frequentie, modus.
+     */
+    public function payoutSettings(Request $request): JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner', 'manager']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        $org = DB::table('gymies_organisations')->where('id', $orgId)->first();
+
+        return response()->json([
+            'iban' => $org->payout_iban ?? '',
+            'iban_name' => $org->payout_iban_name ?? '',
+            'payout_frequency' => $org->payout_frequency ?? 'monthly',
+            'payout_minimum_cents' => (int) ($org->payout_minimum_cents ?? 5000),
+            'payout_mode' => $org->payout_mode ?? 'platform',
+            'mollie_connected' => !empty($org->mollie_access_token ?? null),
+        ]);
+    }
+
+    /**
+     * PUT gym/payout-settings — Update IBAN, frequentie.
+     */
+    public function updatePayoutSettings(Request $request): JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        $update = ['updated_at' => now()];
+        $columns = Schema::getColumnListing('gymies_organisations');
+        
+        $iban = trim($request->input('iban', ''));
+        if ($iban !== '' && in_array('payout_iban', $columns)) $update['payout_iban'] = $iban;
+        
+        $ibanName = trim($request->input('iban_name', ''));
+        if ($ibanName !== '' && in_array('payout_iban_name', $columns)) $update['payout_iban_name'] = $ibanName;
+        
+        $freq = $request->input('payout_frequency');
+        if (in_array($freq, ['monthly', 'weekly', 'daily'], true) && in_array('payout_frequency', $columns)) {
+            $update['payout_frequency'] = $freq;
+        }
+        
+        $mode = $request->input('payout_mode');
+        if (in_array($mode, ['platform', 'mollie_connect'], true) && in_array('payout_mode', $columns)) {
+            $update['payout_mode'] = $mode;
+        }
+
+        DB::table('gymies_organisations')->where('id', $orgId)->update($update);
+
+        return response()->json(['message' => 'Instellingen bijgewerkt.']);
+    }
+
+    /**
+     * GET gym/settlements — Alle uitbetalingen/settlements.
+     */
+    public function gymPayouts(Request $request): JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner', 'manager']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        if (!Schema::hasTable('gymies_organisation_settlements')) {
+            return response()->json(['settlements' => []]);
+        }
+
+        $settlements = DB::table('gymies_organisation_settlements')
+            ->where('organisation_id', $orgId)
+            ->orderByDesc('created_at')
+            ->limit(100)
+            ->get();
+
+        return response()->json([
+            'settlements' => $settlements->map(fn ($s) => [
+                'id' => $s->id,
+                'status' => $s->status ?? 'draft',
+                'gross_cents' => (int) ($s->gross_cents ?? 0),
+                'fee_cents' => (int) ($s->fee_cents ?? 0),
+                'net_cents' => (int) ($s->net_cents ?? 0),
+                'net_formatted' => '€' . number_format((int) ($s->net_cents ?? 0) / 100, 2, ',', '.'),
+                'period_start' => $s->period_start ?? null,
+                'period_end' => $s->period_end ?? null,
+                'invoice_number' => $s->invoice_number ?? null,
+                'invoice_path' => $s->invoice_path ?? null,
+                'has_pdf' => !empty($s->invoice_path),
+                'paid_at' => $s->paid_at ?? null,
+                'created_at' => $s->created_at ?? null,
+            ])->values(),
+        ]);
+    }
+
+    /**
+     * GET gym/settlements/{id}/download — Download settlement factuur PDF.
+     */
+    public function downloadSettlementInvoice(Request $request, string $id): \Illuminate\Http\Response|JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner', 'manager']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        if (!Schema::hasTable('gymies_organisation_settlements')) {
+            return response()->json(['message' => 'Settlements niet beschikbaar.'], 404);
+        }
+
+        $settlement = DB::table('gymies_organisation_settlements')
+            ->where('id', (int) $id)
+            ->where('organisation_id', $orgId)
+            ->first();
+
+        if (!$settlement) {
+            return response()->json(['message' => 'Settlement niet gevonden.'], 404);
+        }
+
+        try {
+            if (empty($settlement->invoice_path)) {
+                return response()->json(['message' => 'Factuur-PDF nog niet beschikbaar.'], 404);
+            }
+
+            if (!\Illuminate\Support\Facades\Storage::disk('local')->exists($settlement->invoice_path)) {
+                return response()->json(['message' => 'PDF niet gevonden op schijf.'], 404);
+            }
+
+            $content = \Illuminate\Support\Facades\Storage::disk('local')->get($settlement->invoice_path);
+            $filename = ($settlement->invoice_number ?? 'settlement-' . $id) . '.pdf';
+
+            $contentType = str_starts_with(trim($content), '<!DOCTYPE') || str_starts_with(trim($content), '<html')
+                ? 'text/html' : 'application/pdf';
+            if ($contentType === 'text/html') {
+                $filename = str_replace('.pdf', '.html', $filename);
+            }
+
+            return response($content, 200)
+                ->header('Content-Type', $contentType)
+                ->header('Content-Disposition', "attachment; filename=\"{$filename}\"");
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Gym settlement invoice download failed', [
+                'org_id' => $orgId,
+                'settlement_id' => (int) $id,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['message' => 'Fout bij downloaden.'], 500);
+        }
+    }
+
+    /**
+     * Ensure gym organisations table has the Mollie + payout columns.
+     */
+    public static function ensureGymMollieSchema(): void
+    {
+        if (!Schema::hasTable('gymies_organisations')) return;
+
+        $columns = Schema::getColumnListing('gymies_organisations');
+        $needed = [
+            'mollie_access_token' => 'TEXT NULL',
+            'mollie_refresh_token' => 'TEXT NULL',
+            'mollie_organization_id' => 'VARCHAR(50) NULL',
+            'mollie_token_expires_at' => 'TIMESTAMP NULL',
+            'payout_iban' => 'VARCHAR(40) NULL',
+            'payout_iban_name' => 'VARCHAR(255) NULL',
+            'payout_mode' => "VARCHAR(20) DEFAULT 'platform'",
+        ];
+
+        foreach ($needed as $col => $definition) {
+            if (!in_array($col, $columns)) {
+                try {
+                    DB::statement("ALTER TABLE gymies_organisations ADD COLUMN {$col} {$definition}");
+                } catch (\Throwable $e) {
+                    // Column might already exist via concurrent request
+                }
+            }
+        }
+    }
+
 }

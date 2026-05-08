@@ -125,7 +125,7 @@ class GymiesHmacMiddleware
 
         // ── Body hash validatie ─────────────────────────────────────
         $rawBody = $request->getContent();
-        $expectedBodyHash = hash('sha256', $rawBody !== '' ? $rawBody : '');
+        $expectedBodyHash = hash('sha256', $rawBody);
 
         if (!hash_equals($expectedBodyHash, $bodyHash)) {
             Log::channel('single')->warning('[HMAC 403] Body hash mismatch', [
@@ -202,7 +202,11 @@ class GymiesHmacMiddleware
             return substr($fullPath, strlen($prefix));
         }
 
-        // Fallback: als de route anders is gemount
+        // Fallback: als de route anders is gemount — log warning
+        Log::warning('[HMAC] Path does not start with api/gymies/ prefix', [
+            'path' => $fullPath,
+            'ip' => request()->ip(),
+        ]);
         return $fullPath;
     }
 }

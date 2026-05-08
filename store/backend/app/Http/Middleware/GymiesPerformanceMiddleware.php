@@ -42,8 +42,11 @@ class GymiesPerformanceMiddleware
             $response->headers->set('X-Instance-Id', (string) $instanceId);
         }
 
-        // Check tegen performance budget
-        $budget = config('gymies_performance.response_time', []);
+        // Check against performance budget (with defaults if config missing)
+        $budget = config('gymies_performance.response_time');
+        if (!is_array($budget)) {
+            $budget = [];
+        }
         $p95    = (int) ($budget['p95'] ?? 500);
         $p99    = (int) ($budget['p99'] ?? 1500);
 

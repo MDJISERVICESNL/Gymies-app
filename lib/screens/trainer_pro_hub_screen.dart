@@ -11,6 +11,7 @@ import 'widgets/gymies_dialog.dart';
 import 'widgets/gymies_segment_tab_bar.dart';
 import 'widgets/trainer_state_views.dart';
 import '../utils/haptics.dart';
+import '../l10n/generated/app_localizations.dart';
 
 class TrainerProHubScreen extends StatefulWidget {
   const TrainerProHubScreen({super.key});
@@ -56,15 +57,9 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
       ]);
       if (!mounted) return;
       setState(() {
-        _health = (results[0] is List)
-            ? List<Map<String, dynamic>>.from(results[0] as List)
-            : <Map<String, dynamic>>[];
-        _upsell = (results[1] is List)
-            ? List<Map<String, dynamic>>.from(results[1] as List)
-            : <Map<String, dynamic>>[];
-        _rebook = (results[2] is List)
-            ? List<Map<String, dynamic>>.from(results[2] as List)
-            : <Map<String, dynamic>>[];
+        _health = List<Map<String, dynamic>>.from(results[0] as List);
+        _upsell = List<Map<String, dynamic>>.from(results[1] as List);
+        _rebook = List<Map<String, dynamic>>.from(results[2] as List);
         _loading = false;
       });
     } on ApiException catch (e) {
@@ -76,7 +71,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon Pro Hub niet laden.';
+        _error = S.of(context).konProHubNietLaden;
         _loading = false;
       });
     }
@@ -107,7 +102,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Upsell voorstel verstuurd'),
+          content: Text(S.of(context).upsellVoorstelVerstuurd),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -135,12 +130,12 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
       await context.read<GymiesApi>().sendTrainerBulkMessage(
         clientUserIds: [clientUserId],
         body:
-            'We missen je! Plan je volgende sessie via Mijn afspraken in de app.',
+            S.of(context).weMissenJePlanJeVolgende,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('We missen je-bericht verstuurd'),
+          content: Text(S.of(context).weMissenJeberichtVerstuurd),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -161,7 +156,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
     final bookingCtrl = TextEditingController();
     final submit = await GymiesDialog.custom<bool>(
       context,
-      title: 'Priority support lane',
+      title: S.of(context).prioritySupportLane,
       icon: Icons.priority_high_rounded,
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -170,26 +165,26 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
             controller: issueCtrl,
             maxLines: 3,
             decoration: const InputDecoration(
-              labelText: 'Issue',
-              hintText: 'Beschrijf kort het urgente probleem',
+              labelText: S.of(context).issue,
+              hintText: S.of(context).beschrijfKortHetUrgenteProbleem,
             ),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: bookingCtrl,
             decoration: const InputDecoration(
-              labelText: 'Booking reference (optioneel)',
+              labelText: S.of(context).bookingReferenceoptioneel,
             ),
           ),
         ],
       ),
       actions: [
         GymiesDialogAction(
-          label: 'Annuleren',
+          label: S.of(context).annuleren,
           returnValue: false,
         ),
         GymiesDialogAction(
-          label: 'Verstuur',
+          label: S.of(context).verstuur,
           isPrimary: true,
           returnValue: true,
         ),
@@ -200,7 +195,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
     try {
       await context.read<GymiesApi>().createSupportTicket(
         type: 'incident',
-        subject: 'Priority support lane',
+        subject: S.of(context).prioritySupportLane,
         message:
             'Priority issue: ${issueCtrl.text.trim()}\nBookingRef: ${bookingCtrl.text.trim().isEmpty ? '-' : bookingCtrl.text.trim()}\nSource: TrainerProHub',
         bookingId: bookingCtrl.text.trim(),
@@ -208,7 +203,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Priority support ticket verstuurd'),
+          content: Text(S.of(context).prioritySupportTicketVerstuurd),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -223,7 +218,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
   Widget _healthTab() {
     if (_health.isEmpty) {
       return const Center(
-        child: Text('Nog geen health score data beschikbaar.'),
+        child: Text(S.of(context).nogGeenHealthScoreDataBeschikbaar),
       );
     }
     return ListView.builder(
@@ -232,7 +227,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
       itemBuilder: (_, i) {
         final item = _health[i];
         final name = mapStr(item, ['client_name', 'name', 'full_name']).isEmpty
-            ? 'Klant'
+            ? S.of(context).clientSingle
             : mapStr(item, ['client_name', 'name', 'full_name']);
         final score = mapInt(item, ['health_score', 'score']);
         final retentionRisk = mapStr(item, [
@@ -248,7 +243,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
             ),
             child: Row(
               children: [
@@ -256,7 +251,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: _healthColor(score).withValues(alpha: 0.15),
+                    color: _healthColor(score).withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Center(
@@ -294,7 +289,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
   Widget _upsellTab() {
     if (_upsell.isEmpty) {
       return const Center(
-        child: Text('Nog geen upsell suggesties beschikbaar.'),
+        child: Text(S.of(context).nogGeenUpsellSuggestiesBeschikbaar),
       );
     }
     return ListView.builder(
@@ -303,7 +298,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
       itemBuilder: (_, i) {
         final item = _upsell[i];
         final name = mapStr(item, ['client_name', 'name']).isEmpty
-            ? 'Klant'
+            ? S.of(context).clientSingle
             : mapStr(item, ['client_name', 'name']);
         final reason = mapStr(item, ['reason', 'explanation']);
         final packageName = mapStr(item, [
@@ -315,7 +310,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
           padding: const EdgeInsets.only(bottom: 10),
           child: Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))]),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))]),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -340,7 +335,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
                       foregroundColor: GymiesColors.darkBlue,
                     ),
                     icon: const Icon(Icons.trending_up_rounded),
-                    label: const Text('Stuur voorstel'),
+                    label: const Text(S.of(context).stuurVoorstel),
                   ),
                 ),
               ],
@@ -355,7 +350,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
     if (_rebook.isEmpty) {
       return const Center(
         child: Text(
-          'Geen Smart Rebook alerts.\nKlanten verschijnen hier als ze langer dan 7 dagen geen sessie hadden.',
+          S.of(context).geenSmartRebookAlertsnklantenVerschijnenHierAlsZeLangerDan7DagenGeenSessieHadden,
           textAlign: TextAlign.center,
         ),
       );
@@ -366,7 +361,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
       itemBuilder: (_, i) {
         final item = _rebook[i];
         final name = mapStr(item, ['client_name', 'name']).isEmpty
-            ? 'Klant'
+            ? S.of(context).clientSingle
             : mapStr(item, ['client_name', 'name']);
         final daysSince = mapInt(item, ['days_since_last', 'daysSinceLast']);
         final lastAt = mapStr(item, ['last_session_at', 'lastSessionAt']);
@@ -374,7 +369,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
           padding: const EdgeInsets.only(bottom: 10),
           child: Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))]),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))]),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -384,7 +379,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
                   daysSince > 0
                       ? '${daysSince == 1 ? '1 dag' : '$daysSince dagen'} geleden laatste sessie'
                       : (lastAt.isEmpty
-                          ? 'Laatste sessie meer dan 7 dagen geleden'
+                          ? S.of(context).laatsteSessieMeerDan7Dagen
                           : lastAt),
                 ),
                 const SizedBox(height: 8),
@@ -397,7 +392,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
                       foregroundColor: GymiesColors.darkBlue,
                     ),
                     icon: const Icon(Icons.favorite_rounded),
-                    label: const Text('We missen je'),
+                    label: const Text(S.of(context).weMissenJe),
                   ),
                 ),
               ],
@@ -416,12 +411,12 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
           padding: const EdgeInsets.only(bottom: 10),
           child: Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))]),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))]),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Priority support lane',
+                  S.of(context).prioritySupportLane,
                   style: GoogleFonts.sora(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -430,7 +425,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Voor urgente operationele issues met contextpakket (issue + booking refs).',
+                  S.of(context).voorUrgenteOperationeleIssuesMetContextpakketissueBookingRefs,
                 ),
                 const SizedBox(height: 10),
                 SizedBox(
@@ -442,7 +437,7 @@ class _TrainerProHubScreenState extends State<TrainerProHubScreen>
                       foregroundColor: GymiesColors.darkBlue,
                     ),
                     icon: const Icon(Icons.priority_high_rounded),
-                    label: const Text('Open priority lane'),
+                    label: const Text(S.of(context).openPriorityLane),
                   ),
                 ),
               ],

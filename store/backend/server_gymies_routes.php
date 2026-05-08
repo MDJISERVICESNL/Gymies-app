@@ -6,7 +6,14 @@
  * Of: plak de inhoud van dit bestand (vanaf regel 8) onderaan routes/web.php onder dezelfde prefix api/gymies.
  */
 
+// Voorkom dubbele registratie als dit bestand vanuit meerdere plekken wordt geladen
+if (\Illuminate\Support\Facades\Route::has('api.gymies.login')) {
+    return;
+}
+
 // ========== GYMIES API (prefix api/gymies) ==========
+// HMAC middleware valideert request signing — voorkomt request tampering en replay attacks.
+// Wordt overgeslagen als GYMIES_HMAC_SECRET niet is geconfigureerd of nog dev-default is.
 Route::prefix('api/gymies')
     ->name('api.gymies.')
     ->middleware([
@@ -34,6 +41,8 @@ Route::prefix('api/gymies')
     Route::middleware('gymies.rate.limit:api')->group(function () {
         Route::post('auth/forgot-password', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'forgotPassword'])->name('auth.forgot-password');
         Route::post('auth/reset-password', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'resetPassword'])->name('auth.reset-password');
+        // Invite codes: public validation (no auth required)
+        Route::post('invite-codes/validate', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'validateInviteCodeEndpoint'])->name('invite-codes.validate');
         // verify-email + resend staan hierboven (dubbele registratie voorkomen)
     });
 
@@ -44,11 +53,14 @@ Route::prefix('api/gymies')
     Route::get('trainers', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'index'])->name('trainers.index');
     Route::get('trainers/landing-cities', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'landingCities'])->name('trainers.landing-cities');
     Route::get('trainers/landing-nearby', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'landingNearby'])->name('trainers.landing-nearby');
+    Route::get('trainers/by-slug/{slug}', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'showBySlug'])->name('trainers.by-slug');
     Route::get('trainers/{id}', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'show'])->name('trainers.show');
     Route::get('trainers/{id}/availability', [\App\Http\Controllers\Gymies\GymiesAvailabilityController::class, 'publicAvailability'])->name('trainers.availability');
     Route::get('trainers/{id}/blocked-slots', [\App\Http\Controllers\Gymies\GymiesAvailabilityController::class, 'blockedSlots'])->name('trainers.blocked-slots');
     Route::get('trainers/{id}/packages', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'packages'])->name('trainers.packages');
     Route::get('trainers/{id}/media', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'media'])->name('trainers.media');
+    Route::get('trainers/{id}/stories', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'stories'])->name('trainers.stories');
+    Route::get('trainers/{id}/has-stories', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'hasStories'])->name('trainers.has-stories');
     Route::get('trainers/{id}/gym-locations', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'gymLocations'])->name('trainers.gym-locations');
     // Publiek: landingspagina hero/sectie-media (admin vult URLs in Control Tower → gymies_system_settings).
     Route::get('site-media', [\App\Http\Controllers\Gymies\GymiesOpsController::class, 'siteMediaPublic'])->name('site-media');
@@ -108,11 +120,17 @@ Route::prefix('api/gymies')
 
     // ── Ambassador: publieke routes ────────────────────────────────────────────
     Route::post('ambassador/apply',              [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'apply'])->name('ambassador.apply');
-    Route::get('ambassador/code/validate',       [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'validateCode'])->name('ambassador.code.validate');
-    Route::get('ambassador/list',               [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'publicList'])->name('ambassador.list');
+    Route::get('ambassador/validate-code',      [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'validateCode'])->name('ambassador.validate-code');
+    Route::get('ambassadors',                   [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'publicList'])->name('ambassadors.index');
     Route::get('ambassador/profile/{slug}',    [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'publicProfile'])->name('ambassador.profile');
     // Publiek: valideer gym invite token (voor registratie met invite link)
     Route::get('gym/invites/validate', [\App\Http\Controllers\Gymies\GymiesGymInviteController::class, 'validateToken'])->name('gym.invites.validate');
+
+    // ─── Gym Registratie (publieke endpoints — token-gebaseerd) ──────────────
+    Route::post('gym/request-demo',          [\App\Http\Controllers\Gymies\GymiesGymRegistrationController::class, 'requestDemo'])->name('gym.request-demo');
+    Route::get('gym/validate-invite-token',  [\App\Http\Controllers\Gymies\GymiesGymRegistrationController::class, 'validateInviteToken'])->name('gym.validate-invite-token');
+    Route::post('gym/register-with-token',   [\App\Http\Controllers\Gymies\GymiesGymRegistrationController::class, 'registerWithToken'])->name('gym.register-with-token');
+    Route::get('gym/demo-status/{code}',     [\App\Http\Controllers\Gymies\GymiesGymRegistrationController::class, 'demoStatus'])->name('gym.demo-status');
 
     Route::get('group-sessions', [\App\Http\Controllers\Gymies\GymiesGroupSessionController::class, 'index'])->name('group-sessions.index');
     Route::get('group-sessions/{id}', [\App\Http\Controllers\Gymies\GymiesGroupSessionController::class, 'show'])->name('group-sessions.show');
@@ -122,6 +140,9 @@ Route::prefix('api/gymies')
         Route::match(['get', 'post'], 'webhooks/mollie-subscription', [\App\Http\Controllers\Gymies\GymiesSubscriptionController::class, 'subscriptionWebhook'])->name('webhooks.mollie-subscription');
     });
     Route::get('onboarding/mollie-connect/callback', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'mollieConnectCallback'])->name('onboarding.mollie-connect.callback');
+    // Mandaat webhooks (publiek — Mollie stuurt POST, callback is GET redirect)
+    Route::post('webhooks/mandaat', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'mandaatWebhook'])->name('webhooks.mandaat');
+    Route::get('onboarding/mandaat-callback', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'mandaatCallback'])->name('onboarding.mandaat-callback');
     // --- Cron-endpoints: beveiligd met GymiesCronMiddleware (X-Cron-Secret header) ---
     Route::middleware([\App\Http\Middleware\GymiesCronMiddleware::class])->group(function () {
         Route::post('cron/expire-pending-bookings', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'expirePendingBookings'])->name('cron.expire-pending-bookings');
@@ -144,12 +165,49 @@ Route::prefix('api/gymies')
         Route::match(['get', 'post'], 'cron/trigger-ghost-ratings', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'triggerGhostRatings'])->name('cron.trigger-ghost-ratings');
         Route::match(['get', 'post'], 'cron/ghost-rating-alerts', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'ghostRatingAlerts'])->name('cron.ghost-rating-alerts');
         Route::match(['get', 'post'], 'cron/process-notification-emails', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'processNotificationEmails'])->name('cron.process-notification-emails');
-        Route::match(['get', 'post'], 'cron/ambassador-tier-evaluation', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'evaluateAmbassadorTiers'])->name('cron.ambassador-tier-evaluation');
+        Route::match(['get', 'post'], 'cron/expire-subscription-trials', [\App\Http\Controllers\Gymies\GymiesSubscriptionController::class, 'expireSubscriptionTrials'])->name('cron.expire-subscription-trials');
+        Route::match(['get', 'post'], 'cron/recalculate-quality-scores', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'recalculateQualityScores'])->name('cron.recalculate-quality-scores');
+        Route::match(['get', 'post'], 'cron/evaluate-ambassador-tiers', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'evaluateAmbassadorTiers'])->name('cron.evaluate-ambassador-tiers');
+        Route::post('cron/crowdfund-check', [\App\Http\Controllers\Gymies\GymiesGroupSessionController::class, 'cronCrowdfundCheck'])->name('cron.crowdfund-check');
+        // V2: Recurring bookings genereren + waitlist offers expiren
+        Route::match(['get', 'post'], 'cron/generate-recurring-bookings', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'generateRecurringBookings'])->name('cron.generate-recurring-bookings');
+        Route::match(['get', 'post'], 'cron/expire-waitlist-offers', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'expireWaitlistOffers'])->name('cron.expire-waitlist-offers');
+        Route::match(['get', 'post'], 'cron/cleanup-idempotency-keys', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'cleanupIdempotencyKeys'])->name('cron.cleanup-idempotency-keys');
+        Route::match(['get', 'post'], 'cron/cleanup-expired-stories', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'cleanupExpiredStories'])->name('cron.cleanup-expired-stories');
         Route::match(['get', 'post'], 'cron/reconcile-mollie-payments', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'reconcileMolliePayments'])->name('cron.reconcile-mollie-payments');
+        Route::match(['get', 'post'], 'cron/process-payouts', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'processPayouts'])->name('cron.process-payouts');
+        Route::match(['get', 'post'], 'cron/process-gym-settlements', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'processGymSettlements'])->name('cron.process-gym-settlements');
+
+        // ── Onboarding cron jobs ──
+        Route::match(['get', 'post'], 'cron/onboarding-trial-reminders', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'onboardingTrialReminders'])->name('cron.onboarding-trial-reminders');
+        Route::match(['get', 'post'], 'cron/onboarding-nudges', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'onboardingNudges'])->name('cron.onboarding-nudges');
+        Route::match(['get', 'post'], 'cron/onboarding-payment-reminders', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'onboardingPaymentReminders'])->name('cron.onboarding-payment-reminders');
+        Route::match(['get', 'post'], 'cron/onboarding-smart-trial-suggestions', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'onboardingSmartTrialSuggestions'])->name('cron.onboarding-smart-trial-suggestions');
+        Route::match(['get', 'post'], 'cron/onboarding-sla-warnings', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'onboardingSlaWarnings'])->name('cron.onboarding-sla-warnings');
+        Route::match(['get', 'post'], 'cron/evaluate-regions', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'evaluateRegions'])->name('cron.evaluate-regions');
+
+        // Feature 1: Churn Prediction Cron
+        Route::post('cron/recalculate-churn-scores', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'cronRecalculateChurnScores'])->name('cron.recalculate-churn-scores');
+
+        // Waitlist expiry cron
+        Route::post('cron/expire-waitlist-offers', function () {
+            $service = new \App\Services\WaitlistService();
+            $expired1 = $service->expireOffers();
+            $expired2 = $service->expireGroupSessionOffers();
+            return response()->json(['success' => true, 'expired_individual' => $expired1, 'expired_group' => $expired2]);
+        })->name('cron.expire-waitlist-offers-v2');
     });
 
     // --- Beveiligd (Bearer token): Klanten, Trainers, Gyms, Admin ---
-    Route::middleware(['gymies.auth', \App\Http\Middleware\GymiesSentryContextMiddleware::class, 'gymies.rate.limit:api', 'gymies.error_log'])->group(function () {
+    // EnsureGymiesAuthPreempt zet user; GymiesAuthMiddleware valideert (gymies_personal_access_tokens + gymies_sessions).
+    Route::middleware([
+        \App\Http\Middleware\EnsureGymiesAuthPreempt::class,
+        \App\Http\Middleware\GymiesAuthMiddleware::class,
+        \App\Http\Middleware\GymiesSentryContextMiddleware::class,
+        'gymies.rate.limit:api',
+        'gymies.error_log',
+    ])
+        ->withoutMiddleware('auth:sanctum')->group(function () {
 
         // Klanten: profiel, sessies, boekingen, support, notificaties, consent, betalingen, groepslessen, conversaties
         Route::get('me', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'me'])->name('me');
@@ -159,22 +217,83 @@ Route::prefix('api/gymies')
         Route::get('auth/sessions', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'sessions'])->name('auth.sessions');
         Route::post('auth/logout-device', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'logoutDevice'])->name('auth.logout-device');
         Route::post('auth/logout-all-devices', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'logoutAllDevices'])->name('auth.logout-all-devices');
+
+        // Launch gate: invite codes + waitlist management
+        Route::post('invite-codes/generate', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'generateInviteCodes'])->name('invite-codes.generate');
+        Route::get('invite-codes/mine', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'getMyInviteCodes'])->name('invite-codes.mine');
+        Route::get('waitlist/status', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'getWaitlistStatus'])->name('waitlist.status');
+        Route::post('waitlist/activate-with-code', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'activateWithCode'])->name('waitlist.activate-with-code');
+
         // ops/health is publiek (zie boven) voor load balancers; metrics blijft beveiligd
+        Route::get('ops/health', [\App\Http\Controllers\Gymies\GymiesOpsController::class, 'health'])->name('ops.health');
         Route::get('ops/metrics', [\App\Http\Controllers\Gymies\GymiesOpsController::class, 'metrics'])->name('ops.metrics');
+        Route::get('ops/queue', [\App\Http\Controllers\Gymies\GymiesHealthController::class, 'queueMetrics'])->name('ops.queue');
         Route::post('ops/run-backup', [\App\Http\Controllers\Gymies\GymiesOpsController::class, 'runBackup'])->name('ops.run-backup');
         Route::post('ops/run-web-sync', [\App\Http\Controllers\Gymies\GymiesOpsController::class, 'runWebSync'])->name('ops.run-web-sync');
         Route::get('feature-flags', [\App\Http\Controllers\Gymies\GymiesOpsController::class, 'featureFlags'])->name('ops.feature-flags');
+        Route::post('feature-flags/toggle', function (\Illuminate\Http\Request $request) {
+            // Admin-only: feature flags toggleren via Control Tower
+            if (!auth('gymies')->check()) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+            $user = auth('gymies')->user();
+            if (!in_array($user->role, ['admin', 'staff'])) {
+                return response()->json(['error' => 'Forbidden'], 403);
+            }
+            $flag = $request->input('flag');
+            $enabled = filter_var($request->input('enabled', true), FILTER_VALIDATE_BOOLEAN);
+            $expiresAt = $request->input('expires_at') ? now()->addSeconds($request->input('expires_at')) : null;
+            DB::table('feature_flags')->updateOrInsert(
+                ['name' => $flag],
+                ['enabled' => $enabled, 'expires_at' => $expiresAt, 'updated_at' => now()]
+            );
+            return response()->json(['success' => true, 'flag' => $flag, 'enabled' => $enabled]);
+        })->name('ops.feature-flags.toggle');
+        Route::post('feature-flags/rollout', function (\Illuminate\Http\Request $request) {
+            // Admin-only: gradual rollout instellen
+            if (!auth('gymies')->check()) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+            $user = auth('gymies')->user();
+            if (!in_array($user->role, ['admin', 'staff'])) {
+                return response()->json(['error' => 'Forbidden'], 403);
+            }
+            $flag = $request->input('flag');
+            $percentage = (int) $request->input('percentage', 0);
+            $percentage = max(0, min(100, $percentage));
+            DB::table('feature_flags')->updateOrInsert(
+                ['name' => $flag],
+                ['rollout_percentage' => $percentage, 'updated_at' => now()]
+            );
+            return response()->json(['success' => true, 'flag' => $flag, 'rollout_percentage' => $percentage]);
+        })->name('ops.feature-flags.rollout');
         Route::get('broadcasts/active', [\App\Http\Controllers\Gymies\GymiesOpsController::class, 'broadcastsActive'])->name('broadcasts.active');
-        Route::get('broadcasting/config', [\App\Http\Controllers\Gymies\GymiesBroadcastController::class, 'config'])->name('broadcasting.config');
-        Route::post('broadcasting/auth', [\App\Http\Controllers\Gymies\GymiesBroadcastController::class, 'authenticate'])->name('broadcasting.auth');
+        Route::get('broadcasting/config', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'broadcastingConfig'])->name('broadcasting.config');
+        Route::post('broadcasting/auth', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'broadcastingAuth'])->name('broadcasting.auth');
         Route::get('gdpr/export', [\App\Http\Controllers\Gymies\GymiesComplianceController::class, 'export'])->name('gdpr.export');
         Route::get('gdpr/export/pdf', [\App\Http\Controllers\Gymies\GymiesComplianceController::class, 'exportPdf'])->name('gdpr.export-pdf');
         Route::post('gdpr/delete-request', [\App\Http\Controllers\Gymies\GymiesComplianceController::class, 'deleteRequest'])->name('gdpr.delete-request');
         Route::post('gdpr/delete-account', [\App\Http\Controllers\Gymies\GymiesComplianceController::class, 'deleteAccount'])->name('gdpr.delete-account');
+        // Flutter-aliases: account/delete → gdpr/delete-account, account/export-data → gdpr/export
+        Route::post('account/delete', [\App\Http\Controllers\Gymies\GymiesComplianceController::class, 'deleteAccount'])->name('account.delete');
+        Route::post('account/export-data', [\App\Http\Controllers\Gymies\GymiesComplianceController::class, 'export'])->name('account.export-data');
         Route::get('consent', [\App\Http\Controllers\Gymies\GymiesComplianceController::class, 'consent'])->name('consent.get');
         Route::put('consent', [\App\Http\Controllers\Gymies\GymiesComplianceController::class, 'updateConsent'])->name('consent.update');
         Route::post('consent', [\App\Http\Controllers\Gymies\GymiesComplianceController::class, 'updateConsent'])->name('consent.update.post');
+
+        Route::get('me/client-videos', [\App\Http\Controllers\Gymies\GymiesClientVideosController::class, 'clientIndex'])->name('me.client-videos');
+        // Client/trainer conversation tools
+        Route::get('me/session-notes', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'mySessionNotes'])->name('me.session-notes');
+        Route::get('me/shared-dossier', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'mySharedDossier'])->name('me.shared-dossier');
+        // Dashboard voor klanten (afwijkend van trainer dashboard)
+        Route::get('client/progress-dashboard', [\App\Http\Controllers\Gymies\GymiesClientDashboardController::class, 'progressDashboard'])->name('client.progress-dashboard');
+
+        // Ambassador: logged-in routes
+        Route::get('ambassador/me', [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'me'])->name('ambassador.me');
+        Route::get('ambassador/conversions', [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'myConversions'])->name('ambassador.conversions');
+        Route::post('ambassador/iban', [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'saveIban'])->name('ambassador.iban');
         Route::get('bookings', [\App\Http\Controllers\Gymies\GymiesBookingController::class, 'index'])->name('bookings.index');
+        Route::get('me/bookings/export', [\App\Http\Controllers\Gymies\GymiesBookingController::class, 'exportClientBookings'])->name('me.bookings.export');
         Route::get('trainer/summary', [\App\Http\Controllers\Gymies\GymiesBookingController::class, 'trainerSummary'])->name('trainer.summary');
 
         // Wachtlijst: klant-acties
@@ -192,8 +311,27 @@ Route::prefix('api/gymies')
         Route::post('bookings/{id}/standby/notify', [\App\Http\Controllers\Gymies\GymiesWaitlistController::class, 'notify'])->name('standby.notify');
         Route::post('waitlist/notify', [\App\Http\Controllers\Gymies\GymiesWaitlistController::class, 'notify'])->name('waitlist.notify.generic');
         Route::get('trainer/me', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'me'])->name('trainer.me');
+        // ProHub features
+        Route::get('trainer/pro/client-health', [\App\Http\Controllers\Gymies\GymiesProHubController::class, 'clientHealth'])->name('trainer.pro.client-health');
+        Route::get('trainer/pro/upsell-suggestions', [\App\Http\Controllers\Gymies\GymiesProHubController::class, 'upsellSuggestions'])->name('trainer.pro.upsell-suggestions');
+        Route::post('trainer/pro/upsell-suggestions/{id}/send', [\App\Http\Controllers\Gymies\GymiesProHubController::class, 'sendUpsellSuggestion'])->name('trainer.pro.upsell-send');
+        Route::get('trainer/pro/rebook-suggestions', [\App\Http\Controllers\Gymies\GymiesProHubController::class, 'rebookSuggestions'])->name('trainer.pro.rebook-suggestions');
+        Route::post('trainer/pro/rebook-suggestions/{id}/send', [\App\Http\Controllers\Gymies\GymiesProHubController::class, 'sendRebookSuggestion'])->name('trainer.pro.rebook-send');
+        // Pro+ features
+        Route::get('trainer/pro-plus/newsletters', [\App\Http\Controllers\Gymies\GymiesNewsletterController::class, 'index'])->name('trainer.pro-plus.newsletters');
+        Route::post('trainer/pro-plus/newsletter', [\App\Http\Controllers\Gymies\GymiesNewsletterController::class, 'send'])->name('trainer.pro-plus.newsletter.send');
+        Route::post('trainer/pro-plus/newsletters/schedule', [\App\Http\Controllers\Gymies\GymiesProPlusController::class, 'scheduleNewsletter'])->name('trainer.pro-plus.newsletters.schedule');
+        // Pro+ widget management
+        Route::patch('trainer/pro-plus/widget/settings', [\App\Http\Controllers\Gymies\GymiesProPlusController::class, 'updateSettings'])->name('trainer.pro-plus.widget.settings.update');
+        Route::get('trainer/pro-plus/widget/stats', [\App\Http\Controllers\Gymies\GymiesProPlusController::class, 'widgetStats'])->name('trainer.pro-plus.widget.stats');
+        Route::get('trainer/pro-plus/analytics/export', [\App\Http\Controllers\Gymies\GymiesProPlusController::class, 'getClientAnalytics'])->name('trainer.pro-plus.analytics.export');
+
         Route::put('trainer/me', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'updateMe'])->name('trainer.me.update');
         Route::post('trainer/me', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'updateMe'])->name('trainer.me.update.post');
+        Route::get('trainer/documents', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'documentsIndex'])->name('trainer.documents.index');
+        Route::put('trainer/documents', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'documentsUpdate'])->name('trainer.documents.update');
+        Route::patch('trainer/documents', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'documentsUpdate'])->name('trainer.documents.patch');
+        Route::post('trainer/documents', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'documentsUpdate'])->name('trainer.documents.update.post');
         Route::post('bookings/direct-book', [\App\Http\Controllers\Gymies\GymiesBookingController::class, 'storeDirectBook'])->name('bookings.direct-book');
 
         // Trainers: beschikbaarheid, pakketten, media, uitbetalingen, groepslessen, conversaties
@@ -221,6 +359,8 @@ Route::prefix('api/gymies')
             Route::post('checkin/report-fraud', [\App\Http\Controllers\Gymies\GymiesCheckinController::class, 'reportIdentityFraud'])->name('checkin.report-fraud');
             Route::post('sos/alert', [\App\Http\Controllers\Gymies\GymiesCheckinController::class, 'sosAlert'])->name('sos.alert');
             Route::post('bookings/{id}/safe-session/start', [\App\Http\Controllers\Gymies\GymiesCheckinController::class, 'startSafeSession'])->name('bookings.safe-session.start');
+            Route::post('bookings/{id}/safe-session/heartbeat', [\App\Http\Controllers\Gymies\GymiesCheckinController::class, 'safeSessionHeartbeat'])->name('bookings.safe-session.heartbeat');
+            Route::get('bookings/{id}/safe-session/status', [\App\Http\Controllers\Gymies\GymiesCheckinController::class, 'safeSessionStatus'])->name('bookings.safe-session.status');
             Route::post('bookings/{id}/checkout', [\App\Http\Controllers\Gymies\GymiesCheckinController::class, 'checkOut'])->name('bookings.checkout');
             Route::post('bookings/{id}/confirm-cash', [\App\Http\Controllers\Gymies\GymiesBookingController::class, 'confirmCashPayment'])->middleware('gymies.idempotency')->name('bookings.confirm-cash');
             Route::post('trainer/bookings/{id}/payments/cash/confirm', [\App\Http\Controllers\Gymies\GymiesBookingController::class, 'confirmCashPayment'])->middleware('gymies.idempotency')->name('trainer.bookings.payments.cash.confirm');
@@ -230,7 +370,14 @@ Route::prefix('api/gymies')
             Route::post('bookings/{id}/review-response', [\App\Http\Controllers\Gymies\GymiesBookingController::class, 'storeReviewResponse'])->name('bookings.review-response.store');
             Route::post('trainer/payouts/request-now', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'requestPayoutNow'])->name('trainer.payouts.request-now');
         });
+        // Trainers: specialties (skills/certificaten)
+        Route::get('trainer/specialties', [\App\Http\Controllers\Gymies\GymiesSpecialtyController::class, 'trainerSpecialties'])->name('trainer.specialties.index');
+        Route::put('trainer/specialties', [\App\Http\Controllers\Gymies\GymiesSpecialtyController::class, 'updateTrainerSpecialties'])->name('trainer.specialties.update');
+        Route::post('trainer/specialties/request', [\App\Http\Controllers\Gymies\GymiesSpecialtyController::class, 'requestSpecialty'])->name('trainer.specialties.request');
+        // Trainers: beschikbaarheid, pakketten, media, uitbetalingen, groepslessen, conversaties
         Route::get('trainer/availability', [\App\Http\Controllers\Gymies\GymiesAvailabilityController::class, 'index'])->name('trainer.availability.index');
+        Route::get('trainer/availability-settings', [\App\Http\Controllers\Gymies\GymiesAvailabilityController::class, 'settings'])->name('trainer.availability.settings');
+        Route::patch('trainer/availability-settings', [\App\Http\Controllers\Gymies\GymiesAvailabilityController::class, 'updateSettings'])->name('trainer.availability.settings.update');
         Route::post('trainer/availability/slots', [\App\Http\Controllers\Gymies\GymiesAvailabilityController::class, 'storeSlot'])->name('trainer.availability.slots.store');
         Route::put('trainer/availability/slots/{id}', [\App\Http\Controllers\Gymies\GymiesAvailabilityController::class, 'updateSlot'])->name('trainer.availability.slots.update');
         Route::delete('trainer/availability/slots/{id}', [\App\Http\Controllers\Gymies\GymiesAvailabilityController::class, 'deleteSlot'])->name('trainer.availability.slots.delete');
@@ -238,7 +385,6 @@ Route::prefix('api/gymies')
         Route::put('trainer/availability/exceptions/{id}', [\App\Http\Controllers\Gymies\GymiesAvailabilityController::class, 'updateException'])->name('trainer.availability.exceptions.update');
         Route::delete('trainer/availability/exceptions/{id}', [\App\Http\Controllers\Gymies\GymiesAvailabilityController::class, 'deleteException'])->name('trainer.availability.exceptions.delete');
         Route::get('trainer/revenue', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'revenue'])->name('trainer.revenue');
-        Route::patch('trainer/fee-preference', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'updateFeePreference'])->name('trainer.fee-preference');
         Route::get('trainer/payout-settings', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'payoutSettings'])->name('trainer.payout-settings');
         Route::put('trainer/payout-settings', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'updatePayoutSettings'])->name('trainer.payout-settings.update');
         Route::post('trainer/payout-settings', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'updatePayoutSettings'])->name('trainer.payout-settings.update.post');
@@ -256,6 +402,9 @@ Route::prefix('api/gymies')
         Route::post('trainer/spoed-inval/offers/{offerId}/respond', [\App\Http\Controllers\Gymies\GymiesSpoedInvalController::class, 'respondToOffer'])->name('trainer.spoed-inval.respond');
         Route::get('trainer/favorite-colleagues', [\App\Http\Controllers\Gymies\GymiesSpoedInvalController::class, 'getFavoriteColleagues'])->name('trainer.favorite-colleagues');
         Route::put('trainer/favorite-colleagues', [\App\Http\Controllers\Gymies\GymiesSpoedInvalController::class, 'updateFavoriteColleagues'])->name('trainer.favorite-colleagues.update');
+
+        // Gym onboarding (beveiligd — gebruiker moet ingelogd zijn na registerWithToken)
+        Route::post('gym/onboarding', [\App\Http\Controllers\Gymies\GymiesGymRegistrationController::class, 'onboarding'])->name('gym.onboarding');
 
         // Gyms: dashboard, trainers, boekingen, settlements, instellingen, leden
         Route::get('gym/dashboard', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'dashboard'])->name('gym.dashboard');
@@ -276,7 +425,7 @@ Route::prefix('api/gymies')
         Route::get('gym/bookings/stats', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'bookingsStats'])->name('gym.bookings.stats');
         Route::get('gym/bookings/export', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'exportBookingsCsv'])->name('gym.bookings.export');
         Route::get('gym/bookings/{id}', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'bookingDetail'])->name('gym.bookings.detail');
-        Route::get('gym/settlements', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'settlements'])->name('gym.settlements');
+        Route::get('gym/settlements', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'gymPayouts'])->name('gym.settlements');
         Route::get('gym/settlements/{id}', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'settlementDetail'])->name('gym.settlements.detail');
         Route::get('gym/revenue/export', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'exportRevenueCsv'])->name('gym.revenue.export');
         Route::get('gym/trainers/export', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'exportTrainersCsv'])->name('gym.trainers.export');
@@ -297,15 +446,6 @@ Route::prefix('api/gymies')
         Route::get('gym/locations/{id}/conflicts', [\App\Http\Controllers\Gymies\GymiesGymLocationController::class, 'conflicts'])->name('gym.locations.conflicts');
         Route::put('gym/locations/{id}', [\App\Http\Controllers\Gymies\GymiesGymLocationController::class, 'update'])->name('gym.locations.update');
         Route::delete('gym/locations/{id}', [\App\Http\Controllers\Gymies\GymiesGymLocationController::class, 'destroy'])->name('gym.locations.destroy');
-        Route::get('gym/teams', [\App\Http\Controllers\Gymies\GymiesGymTeamController::class, 'index'])->name('gym.teams.index');
-        Route::post('gym/teams', [\App\Http\Controllers\Gymies\GymiesGymTeamController::class, 'store'])->name('gym.teams.store');
-        Route::put('gym/teams/{id}', [\App\Http\Controllers\Gymies\GymiesGymTeamController::class, 'update'])->name('gym.teams.update');
-        Route::post('gym/teams/{id}/members', [\App\Http\Controllers\Gymies\GymiesGymTeamController::class, 'addMember'])->name('gym.teams.members.add');
-        Route::delete('gym/teams/{id}/members/{trainerUserId}', [\App\Http\Controllers\Gymies\GymiesGymTeamController::class, 'removeMember'])->name('gym.teams.members.remove');
-        Route::get('gym/invites', [\App\Http\Controllers\Gymies\GymiesGymInviteController::class, 'index'])->name('gym.invites.index');
-        Route::post('gym/invites', [\App\Http\Controllers\Gymies\GymiesGymInviteController::class, 'store'])->name('gym.invites.store');
-        Route::delete('gym/invites/{id}', [\App\Http\Controllers\Gymies\GymiesGymInviteController::class, 'destroy'])->name('gym.invites.destroy');
-        Route::post('gym/invites/accept', [\App\Http\Controllers\Gymies\GymiesGymInviteController::class, 'accept'])->name('gym.invites.accept');
         // Trainer-trainer chat binnen gym
         Route::get('gym/trainer-chat/conversations', [\App\Http\Controllers\Gymies\GymiesGymTrainerChatController::class, 'index'])->name('gym.trainer-chat.conversations');
         Route::post('gym/trainer-chat/conversations', [\App\Http\Controllers\Gymies\GymiesGymTrainerChatController::class, 'ensure'])->name('gym.trainer-chat.ensure');
@@ -313,9 +453,18 @@ Route::prefix('api/gymies')
         Route::post('gym/trainer-chat/conversations/{id}/messages', [\App\Http\Controllers\Gymies\GymiesGymTrainerChatController::class, 'send'])->name('gym.trainer-chat.send');
         Route::middleware('gymies.idempotency')->group(function () {
             Route::post('gym/settlements/draft', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'createSettlementDraft'])->name('gym.settlements.draft');
+            Route::post('gym/settlements/request-now', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'requestSettlementNow'])->middleware('throttle:10,1')->name('gym.settlements.request-now');
             Route::post('gym/settlements/{id}/adjustments', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'addSettlementAdjustment'])->name('gym.settlements.adjustments');
             Route::post('gym/settlements/{id}/transition', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'transitionSettlement'])->name('gym.settlements.transition');
         });
+        // ── Gym Mollie & Payout ──
+        Route::get('gym/mollie-status', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'mollieStatus'])->middleware('throttle:10,1')->name('gym.mollie.status');
+        Route::post('gym/mollie-disconnect', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'mollieDisconnect'])->middleware('throttle:10,1')->name('gym.mollie.disconnect');
+        Route::get('gym/payout-settings', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'payoutSettings'])->middleware('throttle:10,1')->name('gym.payout.settings');
+        Route::put('gym/payout-settings', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'updatePayoutSettings'])->middleware('throttle:10,1')->name('gym.payout.settings.update');
+        Route::get('gym/settlements/{id}/download', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'downloadSettlementInvoice'])->name('gym.settlements.download');
+
+        
         Route::get('trainer/packages', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'packages'])->name('trainer.packages');
         Route::post('trainer/packages', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'storePackage'])->name('trainer.packages.store');
         Route::put('trainer/packages/{id}', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'updatePackage'])->name('trainer.packages.update');
@@ -324,31 +473,14 @@ Route::prefix('api/gymies')
         Route::post('trainer/promo-codes', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'storePromoCode'])->name('trainer.promo-codes.store');
         Route::put('trainer/promo-codes/{id}', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'updatePromoCode'])->name('trainer.promo-codes.update');
         Route::delete('trainer/promo-codes/{id}', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'deletePromoCode'])->name('trainer.promo-codes.delete');
-        Route::get('trainer/clients', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientsIndex'])->name('trainer.clients.index');
-        Route::get('trainer/retention/sleeping-clients', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'sleepingClients'])->name('trainer.retention.sleeping-clients');
-        Route::get('trainer/pro/client-health', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'proClientHealth'])->name('trainer.pro.client-health');
-        Route::get('trainer/pro/upsell-suggestions', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'proUpsellSuggestions'])->name('trainer.pro.upsell-suggestions.index');
-        Route::post('trainer/pro/upsell-suggestions/{suggestionId}/send', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'proUpsellSuggestionsSend'])->name('trainer.pro.upsell-suggestions.send');
-        Route::get('trainer/pro/rebook-suggestions', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'proRebookSuggestions'])->name('trainer.pro.rebook-suggestions.index');
-        Route::post('trainer/pro/rebook-suggestions/{suggestionId}/send', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'proRebookSuggestionsSend'])->name('trainer.pro.rebook-suggestions.send');
         Route::get('trainer/clients/{clientUserId}/progress', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientProgressIndex'])->name('trainer.clients.progress.index');
-        Route::post('trainer/clients/{clientUserId}/progress', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientProgressStore'])->name('trainer.clients.progress.store');
-        Route::get('trainer/clients/{clientUserId}/dossier', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientDossierGet'])->name('trainer.clients.dossier.show');
-        Route::put('trainer/clients/{clientUserId}/dossier', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientDossierPut'])->name('trainer.clients.dossier.update');
-        Route::get('trainer/clients/{clientUserId}/dossier/summary', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientDossierSummary'])->name('trainer.clients.dossier.summary');
-        Route::get('trainer/clients/{clientUserId}/session-entries', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'sessionEntriesIndex'])->name('trainer.clients.session-entries.index');
-        Route::post('trainer/clients/{clientUserId}/session-entries', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'sessionEntriesStore'])->name('trainer.clients.session-entries.store');
-        Route::patch('trainer/clients/{clientUserId}/session-entries/{entryId}', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'sessionEntriesPatch'])->name('trainer.clients.session-entries.patch');
-        Route::delete('trainer/clients/{clientUserId}/session-entries/{entryId}', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'sessionEntriesDelete'])->name('trainer.clients.session-entries.delete');
-        Route::get('trainer/clients/{clientUserId}/goals', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientGoalsIndex'])->name('trainer.clients.goals.index');
-        Route::post('trainer/clients/{clientUserId}/goals', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientGoalsStore'])->name('trainer.clients.goals.store');
-        Route::patch('trainer/clients/{clientUserId}/goals/{goalId}', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientGoalsPatch'])->name('trainer.clients.goals.patch');
-        Route::post('trainer/clients/{clientUserId}/goals/{goalId}/progress-points', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientGoalsProgressPointStore'])->name('trainer.clients.goals.progress-points.store');
-        Route::get('trainer/clients/{clientUserId}/session-notes', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientSessionNotesIndex'])->name('trainer.clients.session-notes.index');
+        Route::post('trainer/clients/{clientUserId}/session-notes', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'clientSessionNotesStore'])->name('trainer.clients.session-notes.store');
+        Route::get('trainer/clients/{clientUserId}/payments', [\App\Http\Controllers\Gymies\GymiesTrainerController::class, 'clientPayments'])->name('trainer.clients.payments.index');
+        Route::get('trainer/clients/{clientUserId}/videos', [\App\Http\Controllers\Gymies\GymiesClientVideosController::class, 'index'])->name('trainer.clients.videos.index');
+        Route::post('trainer/clients/{clientUserId}/videos', [\App\Http\Controllers\Gymies\GymiesClientVideosController::class, 'store'])->name('trainer.clients.videos.store');
+        Route::delete('trainer/clients/{clientUserId}/videos/{id}', [\App\Http\Controllers\Gymies\GymiesClientVideosController::class, 'destroy'])->name('trainer.clients.videos.destroy');
         Route::post('trainer/clients/bulk-message', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'bulkMessageClients'])->name('trainer.clients.bulk-message');
-        Route::post('trainer/promo-to-favorites', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'promoToFavorites'])->name('trainer.promo-to-favorites');
         Route::get('trainer/studio/performance-summary', [\App\Http\Controllers\Gymies\GymiesStudioAnalyticsController::class, 'performanceSummary'])->name('trainer.studio.performance-summary');
-        Route::get('trainer/studio/capacity-week', [\App\Http\Controllers\Gymies\GymiesStudioAnalyticsController::class, 'capacityWeek'])->name('trainer.studio.capacity-week');
         Route::get('trainer/studio/safety-log', [\App\Http\Controllers\Gymies\GymiesStudioAnalyticsController::class, 'safetyLog'])->name('trainer.studio.safety-log');
         Route::put('trainer/bookings/{bookingId}/session-note', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'sessionNotePut'])->name('trainer.bookings.session-note');
         Route::get('trainer/storefront-cms', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'storefrontCmsGet'])->name('trainer.storefront-cms.get');
@@ -393,30 +525,32 @@ Route::prefix('api/gymies')
         Route::get('conversations/{id}/messages', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'messages'])->name('client.conversations.messages');
         Route::post('conversations/{id}/messages', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'sendMessage'])->name('client.conversations.send');
         Route::post('conversations/{id}/mark-read', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'markRead'])->name('client.conversations.mark-read');
-        Route::post('conversations/{id}/typing', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'typing'])->name('client.conversations.typing');
+        Route::delete('conversations/{id}', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'destroy'])->name('client.conversations.destroy');
         Route::get('conversations/{id}/context', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'conversationContext'])->name('client.conversations.context');
         Route::get('me/progress', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'myProgressForTrainer'])->name('client.me.progress');
-        Route::get('me/shared-dossier', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'mySharedDossierFromTrainer'])->name('client.me.shared-dossier');
-        Route::get('me/session-entries', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'mySharedSessionEntriesForTrainer'])->name('client.me.session-entries');
-        Route::get('me/goals', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'mySharedGoalsForTrainer'])->name('client.me.goals');
-        Route::get('me/dossier-summary', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'mySharedDossierSummaryForTrainer'])->name('client.me.dossier-summary');
-        Route::get('me/buddy-stats', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'buddyStats'])->name('client.me.buddy-stats');
-        Route::post('me/buddy-search/start', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'buddySearchStart'])->name('client.me.buddy-search.start');
-        // Alias: buddy/pool/join → buddy-search/start (Flutter app candidate path)
-        Route::post('buddy/pool/join', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'buddySearchStart'])->name('client.buddy.pool.join');
-        Route::post('buddy/pool/leave', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'buddySearchStop'])->name('client.buddy.pool.leave');
-        Route::post('me/buddy-search/stop', [\App\Http\Controllers\Gymies\GymiesClientConversationController::class, 'buddySearchStop'])->name('client.me.buddy-search.stop');
 
 
         // Klant progress-dashboard & workouts
-        Route::get('client/progress-dashboard', [\App\Http\Controllers\Gymies\GymiesClientDashboardController::class, 'progressDashboard'])->name('client.progress-dashboard');
         Route::get('me/workouts', [\App\Http\Controllers\Gymies\GymiesClientDashboardController::class, 'myWorkouts'])->name('client.me.workouts');
 
-        Route::get('me/favorites', [\App\Http\Controllers\Gymies\GymiesFavoritesController::class, 'index'])->name('client.me.favorites');
-        Route::post('me/favorites', [\App\Http\Controllers\Gymies\GymiesFavoritesController::class, 'store'])->name('client.me.favorites.store');
-        Route::delete('me/favorites/{trainerId}', [\App\Http\Controllers\Gymies\GymiesFavoritesController::class, 'destroy'])->name('client.me.favorites.destroy');
+        Route::get('me/favorites', [\App\Http\Controllers\Gymies\GymiesFavoritesController::class, 'index'])->name('me.favorites.index');
+        Route::post('me/favorites', [\App\Http\Controllers\Gymies\GymiesFavoritesController::class, 'store'])->name('me.favorites.store');
+        Route::delete('me/favorites/{trainerId}', [\App\Http\Controllers\Gymies\GymiesFavoritesController::class, 'destroy'])->name('me.favorites.destroy');
 
         Route::get('referral/my-code', [\App\Http\Controllers\Gymies\GymiesReferralController::class, 'myCode'])->name('referral.my-code');
+
+        // Ambassador personal endpoints (unified → AmbassadorController)
+        Route::get('me/ambassador/stats', [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'myStats']);
+        Route::get('me/ambassador/referrals', [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'myReferrals']);
+        Route::get('me/ambassador/payouts', [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'myPayouts']);
+        Route::post('me/ambassador/request-payout', [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'myRequestPayout']);
+
+        // Trainer community chat
+        Route::get('me/gym-chats', [GymiesStaffDashboardController::class, 'myGymChats']);
+        Route::get('me/gym-chats/{chatId}/messages', [GymiesStaffDashboardController::class, 'gymChatMessages']);
+        Route::post('me/gym-chats/{chatId}/messages', [GymiesStaffDashboardController::class, 'sendGymChatMessage']);
+        Route::post('me/gym-chats/{chatId}/mute', [GymiesStaffDashboardController::class, 'toggleGymChatMute']);
+        Route::get('me/gym-trainers', [GymiesStaffDashboardController::class, 'myGymTrainers']);
 
         // ── Ambassador: eigen dashboard ────────────────────────────────────────────
         Route::get('ambassador/my',              [\App\Http\Controllers\Gymies\GymiesAmbassadorController::class, 'me'])->name('ambassador.my');
@@ -428,6 +562,151 @@ Route::prefix('api/gymies')
         Route::post('onboarding/upload-document', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'uploadDocument'])->name('onboarding.upload-document');
         Route::post('onboarding/mollie-connect/start', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'startMollieConnect'])->name('onboarding.mollie-connect.start');
         Route::post('onboarding/select-plan', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'selectPlan'])->name('onboarding.select-plan');
+
+        // ─── Nieuwe onboarding flow (Fase B) ─────────────────────────────
+        Route::post('onboarding/submit', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'submitOnboarding'])->name('onboarding.submit');
+        Route::put('onboarding/billing-cycle', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'selectBillingCycle'])->name('onboarding.billing-cycle');
+        Route::put('onboarding/plan-selection', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'savePlanSelection'])->name('onboarding.plan-selection');
+        Route::post('onboarding/validate-code', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'validateInvitationCode'])->name('onboarding.validate-code');
+        Route::post('onboarding/initiate-mandaat', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'initiateMandaat'])->name('onboarding.initiate-mandaat');
+        Route::get('onboarding/pricing-preview', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'pricingPreview'])->name('onboarding.pricing-preview');
+        Route::post('onboarding/referral-code', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'generateReferralCode'])->name('onboarding.referral-code');
+
+        // ─── Staff/Medewerkers Dashboard ──────────────────────────────────
+        Route::prefix('staff')->name('staff.')->group(function () {
+            Route::get('dashboard', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'dashboard'])->name('dashboard');
+            Route::get('pending-reviews', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'pendingReviews'])->name('pending-reviews');
+            Route::post('review/{trainerId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'reviewTrainer'])->name('review');
+            Route::post('suspend/{trainerId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'suspendTrainer'])->name('suspend');
+            Route::post('reactivate/{trainerId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'reactivateTrainer'])->name('reactivate');
+            Route::get('trials', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'trialOverview'])->name('trials');
+            Route::post('trials/{trainerId}/extend', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'extendTrial'])->name('trials.extend');
+            Route::get('trials/{trainerId}/extendability', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'trialExtendability'])->name('trials.extendability');
+            Route::get('audit-log', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'auditLog'])->name('audit-log');
+            Route::get('invitation-codes', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'invitationCodes'])->name('invitation-codes');
+            Route::post('invitation-codes', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'createInvitationCode'])->name('invitation-codes.create');
+            Route::delete('invitation-codes/{codeId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'deactivateInvitationCode'])->name('invitation-codes.deactivate');
+            Route::get('fraud-check/{trainerId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'fraudCheck'])->name('fraud-check');
+            Route::get('feature-flags', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'featureFlags'])->name('feature-flags');
+            Route::put('feature-flags/{key}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'updateFeatureFlag'])->name('feature-flags.update');
+
+            // ─── Support Ticket Beheer ───────────────────────────────
+            Route::get('tickets', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffTickets'])->name('tickets');
+            Route::get('tickets/stats', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffTicketStats'])->name('tickets.stats');
+            Route::get('tickets/{ticketId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffTicketDetail'])->name('tickets.detail');
+            Route::put('tickets/{ticketId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffUpdateTicket'])->name('tickets.update');
+            Route::post('tickets/{ticketId}/messages', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffAddTicketMessage'])->name('tickets.messages.add');
+
+            // ─── Interne Staff Chat ──────────────────────────────────
+            Route::get('chat/messages', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffChatMessages'])->name('chat.messages');
+            Route::post('chat/messages', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffChatSend'])->name('chat.send');
+            Route::get('chat/channels', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffChatChannels'])->name('chat.channels');
+            Route::post('chat/mark-read', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffChatMarkRead'])->name('chat.mark-read');
+            Route::get('chat/unread-counts', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffChatUnreadCounts'])->name('chat.unread-counts');
+
+            // ─── Fase H: Uitgebreide Staff Features ─────────────────
+            Route::get('trainer-detail/{trainerId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffTrainerDetail'])->name('trainer-detail');
+            Route::get('trainers', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffTrainers'])->name('trainers');
+            Route::get('bookings-monitor', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffBookingsMonitor'])->name('bookings-monitor');
+            Route::get('onboarding-pipeline', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffOnboardingPipeline'])->name('onboarding-pipeline');
+            Route::get('canned-responses', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffCannedResponses'])->name('canned-responses');
+            Route::post('canned-responses', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffCreateCannedResponse'])->name('canned-responses.create');
+            Route::delete('canned-responses/{id}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffDeleteCannedResponse'])->name('canned-responses.delete');
+            Route::get('disputes', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffDisputes'])->name('disputes');
+            Route::post('auto-assign-tickets', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffAutoAssignTickets'])->name('auto-assign-tickets');
+            Route::get('trial-extensions/{trainerId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffTrialExtensions'])->name('trial-extensions');
+            Route::get('dashboard-extended', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffDashboardExtended'])->name('dashboard-extended');
+            Route::get('audit-export', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffAuditExport'])->name('audit-export');
+            Route::get('feature-flags-extended', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffFeatureFlagsExtended'])->name('feature-flags-extended');
+
+            // ─── Fase I: Volledige Staff Operaties ──────────────────
+            // I.1 Geschillen oplossen + berichten
+            Route::get('disputes/{disputeId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffDisputeDetail'])->name('disputes.detail');
+            Route::post('disputes/{disputeId}/resolve', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffResolveDispute'])->name('disputes.resolve');
+            Route::post('disputes/{disputeId}/message', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffAddDisputeMessage'])->name('disputes.message');
+
+            // I.2 Ticket aanmaken namens klant/trainer
+            Route::post('tickets', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffCreateTicket'])->name('tickets.create');
+
+            // I.3 Booking annuleren + herschikken + detail
+            Route::get('bookings/{bookingId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffBookingDetail'])->name('bookings.detail');
+            Route::post('bookings/{bookingId}/cancel', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffCancelBooking'])->name('bookings.cancel');
+            Route::post('bookings/{bookingId}/reschedule', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffRescheduleBooking'])->name('bookings.reschedule');
+
+            // I.4 Refund/credit toekennen (max €50)
+            Route::post('bookings/{bookingId}/refund', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffRefundOrCredit'])->name('bookings.refund');
+
+            // I.5 Trainer documenten goedkeuren/afkeuren
+            Route::post('documents/{documentId}/review', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffReviewDocument'])->name('documents.review');
+
+            // I.6 Trainer notities
+            Route::get('notes/{userId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffTrainerNotes'])->name('notes.index');
+            Route::post('notes/{userId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffAddTrainerNote'])->name('notes.add');
+
+            // I.7 Nudge push notificatie
+            Route::post('nudge', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffSendNudge'])->name('nudge');
+
+            // I.8 Trainer-klant chat inzien (read-only)
+            Route::get('conversations/{conversationId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffViewConversation'])->name('conversations.view');
+            Route::get('user-conversations/{userId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffUserConversations'])->name('user-conversations');
+
+            // I.9 Groepslessen monitor
+            Route::get('group-sessions', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffGroupSessions'])->name('group-sessions');
+            Route::get('group-sessions/{sessionId}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffGroupSessionDetail'])->name('group-sessions.detail');
+
+            // I.10 Betalingen overzicht
+            Route::get('payments', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffPaymentsOverview'])->name('payments');
+
+            // I.11 Subscription toewijzen/pauzeren
+            Route::post('subscriptions/{userId}/assign', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffAssignSubscription'])->name('subscriptions.assign');
+            Route::post('subscriptions/{userId}/toggle', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffToggleSubscription'])->name('subscriptions.toggle');
+
+            // I.12 Ticket samenvoegen + escalatie
+            Route::post('tickets/merge', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffMergeTickets'])->name('tickets.merge');
+            Route::post('tickets/{ticketId}/escalate', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffEscalateTicket'])->name('tickets.escalate');
+
+            // I.13 Gym/studio overzicht
+            Route::get('gyms', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffGymsOverview'])->name('gyms');
+
+            // Fix #82: Gym Revenue Analytics
+            Route::get('gyms/{gymId}/revenue', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'gymRevenueAnalytics'])->name('gyms.revenue');
+
+            // Fix #83: Bulk Member Import
+            Route::post('gyms/{gymId}/import-members', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'gymBulkImportMembers'])->name('gyms.import-members');
+
+            // Fix #88: Gym Occupancy Stats
+            Route::get('gyms/{gymId}/occupancy', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'gymOccupancyStats'])->name('gyms.occupancy');
+
+            // Feature 1: Churn Prediction
+            Route::get('gyms/{gymId}/churn-report', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'gymChurnReport'])->name('gyms.churn-report');
+
+            // Fix #90: Ambassador Dashboard
+            Route::get('ambassadors/{userId}/dashboard', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'ambassadorDashboard'])->name('ambassadors.dashboard');
+
+            // Fix #94: Ambassador Payout History
+            Route::get('ambassadors/{userId}/payouts', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'ambassadorPayoutHistory'])->name('ambassadors.payouts');
+
+            // I.14-17: Trainer Reports & Analytics (Fix 64-69)
+            Route::get('trainers/{userId}/earnings', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'trainerEarningsReport'])->name('trainers.earnings');
+            Route::get('trainers/{userId}/profile-completeness', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'trainerProfileCompleteness'])->name('trainers.profile-completeness');
+            Route::get('trainers/{userId}/tax-report', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'trainerTaxReport'])->name('trainers.tax-report');
+            Route::get('trainers/{userId}/booking-stats', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'trainerBookingStats'])->name('trainers.booking-stats');
+
+            // Feature 2: Multi-locatie Coördinatie
+            Route::get('gyms/{orgId}/locations', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'gymLocations'])->name('gyms.locations');
+            Route::get('gyms/{orgId}/locations/{locId}/stats', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'gymLocationStats'])->name('gyms.location-stats');
+            Route::post('gyms/{orgId}/trainers/{userId}/transfer', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'transferTrainer'])->name('gyms.transfer-trainer');
+            Route::post('gyms/{orgId}/group-sessions/{sessionId}/duplicate', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'duplicateGroupSession'])->name('gyms.duplicate-session');
+
+            // ─── Activity Heatmap ───────────────────────────────────
+            Route::get('activity-heatmap', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'staffActivityHeatmap'])->name('activity-heatmap');
+
+            // ─── Launch Regions Management ──────────────────────────
+            Route::get('regions', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'getRegions'])->name('regions');
+            Route::get('regions/{slug}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'getRegionDetail'])->name('regions.detail');
+            Route::put('regions/{slug}', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'updateRegionStatus'])->name('regions.update');
+            Route::post('regions', [\App\Http\Controllers\Gymies\GymiesStaffDashboardController::class, 'createRegion'])->name('regions.create');
+        });
         Route::get('subscription/my', [\App\Http\Controllers\Gymies\GymiesSubscriptionController::class, 'mySubscription'])->name('subscription.my');
         Route::post('subscription/change-plan', [\App\Http\Controllers\Gymies\GymiesSubscriptionController::class, 'changePlan'])->name('subscription.change-plan');
         Route::post('subscription/cancel', [\App\Http\Controllers\Gymies\GymiesSubscriptionController::class, 'cancelSubscription'])->name('subscription.cancel');
@@ -463,9 +742,6 @@ Route::prefix('api/gymies')
         // Waitlist endpoints
         Route::get('trainer/group-sessions/{id}/waitlist', [\App\Http\Controllers\Gymies\GymiesGroupSessionController::class, 'waitlist'])->name('trainer.group-sessions.waitlist');
         Route::post('trainer/group-sessions/{sessionId}/waitlist/{clientUserId}/promote', [\App\Http\Controllers\Gymies\GymiesGroupSessionController::class, 'promoteWaitlistParticipant'])->name('trainer.group-sessions.waitlist.promote');
-
-        // Crowdfund cron: auto-cancel sessies voorbij deadline
-        Route::post('cron/crowdfund-check', [\App\Http\Controllers\Gymies\GymiesGroupSessionController::class, 'cronCrowdfundCheck'])->name('cron.crowdfund-check');
 
         // ── Gymies Points ────────────────────────────────────────────────────────
         Route::get('points/balance',  [\App\Http\Controllers\Gymies\GymiesPointsController::class, 'balance'])->name('points.balance');
@@ -550,6 +826,20 @@ Route::prefix('api/gymies')
                 Route::post('payouts/{payoutId}/status', [\App\Http\Controllers\Gymies\GymiesAdminController::class, 'updatePayoutStatus'])
                     ->middleware(['gymies.idempotency', 'gymies.admin.capability:admin.payouts.manage'])
                     ->name('payouts.status');
+
+                // Fee beheer (platform fees per trainer / per plan / globaal)
+                Route::get('fees', [\App\Http\Controllers\Gymies\GymiesFeeAdminController::class, 'index'])
+                    ->middleware('gymies.admin.capability:admin.payments.view')
+                    ->name('fees.index');
+                Route::post('fees', [\App\Http\Controllers\Gymies\GymiesFeeAdminController::class, 'store'])
+                    ->middleware(['gymies.idempotency', 'gymies.admin.capability:admin.payments.manage'])
+                    ->name('fees.store');
+                Route::put('fees/{id}', [\App\Http\Controllers\Gymies\GymiesFeeAdminController::class, 'update'])
+                    ->middleware(['gymies.idempotency', 'gymies.admin.capability:admin.payments.manage'])
+                    ->name('fees.update');
+                Route::delete('fees/{id}', [\App\Http\Controllers\Gymies\GymiesFeeAdminController::class, 'destroy'])
+                    ->middleware(['gymies.idempotency', 'gymies.admin.capability:admin.payments.manage'])
+                    ->name('fees.destroy');
 
                 Route::get('tickets', [\App\Http\Controllers\Gymies\GymiesAdminController::class, 'tickets'])
                     ->middleware('gymies.admin.capability:admin.tickets.view')
@@ -751,6 +1041,20 @@ Route::prefix('api/gymies')
                 Route::get('organisations/{orgId}/settlement-report', [\App\Http\Controllers\Gymies\GymiesAdminController::class, 'organisationSettlementReport'])
                     ->middleware('gymies.admin.capability:admin.organisations.view')
                     ->name('organisations.settlement-report');
+
+                // ─── Gym Demo Requests (admin) ──────────────────────────────
+                Route::get('demo-requests', [\App\Http\Controllers\Gymies\GymiesAdminController::class, 'demoRequests'])
+                    ->middleware('gymies.admin.capability:admin.organisations.view')
+                    ->name('demo-requests.index');
+                Route::put('demo-requests/{id}', [\App\Http\Controllers\Gymies\GymiesAdminController::class, 'updateDemoRequest'])
+                    ->middleware(['gymies.idempotency', 'gymies.admin.capability:admin.organisations.manage'])
+                    ->name('demo-requests.update');
+                Route::get('demo-requests/{id}/logs', [\App\Http\Controllers\Gymies\GymiesAdminController::class, 'demoRequestLogs'])
+                    ->middleware('gymies.admin.capability:admin.organisations.view')
+                    ->name('demo-requests.logs');
+                Route::post('demo-requests/{id}/resend-invite', [\App\Http\Controllers\Gymies\GymiesAdminController::class, 'resendDemoInvite'])
+                    ->middleware(['gymies.idempotency', 'gymies.admin.capability:admin.organisations.manage'])
+                    ->name('demo-requests.resend-invite');
 
                 Route::get('ghost-ratings', [\App\Http\Controllers\Gymies\GymiesAdminController::class, 'ghostRatingDashboard'])
                     ->middleware('gymies.admin.capability:admin.users.view')

@@ -3,13 +3,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../services/subscription_entitlements_service.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
 import '../utils/map_utils.dart';
-import 'widgets/gymies_app_bar.dart';
+import '../utils/currency_format.dart';
 import 'widgets/gymies_dialog.dart';
 import 'widgets/gymies_segment_tab_bar.dart';
 
@@ -148,7 +149,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon dossier niet laden.';
+        _error = S.of(context).konDossierNietLaden;
         _loading = false;
       });
     }
@@ -167,7 +168,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
     final submit = await showDialog<bool>(
       context: context,
       builder: (ctx) => GymiesDialog(
-        title: 'Nieuwe sessie-entry',
+        title: S.of(context).nieuweSessieentry,
         headerIcon: Icons.add_chart_rounded,
         content: StatefulBuilder(
           builder: (_, setModalState) => Form(
@@ -183,7 +184,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                       _templateChip('Kracht', Icons.fitness_center_rounded, focusCtrl),
                       _templateChip('Cardio', Icons.directions_run_rounded, focusCtrl),
                       _templateChip('Flexibiliteit', Icons.self_improvement_rounded, focusCtrl),
-                      _templateChip('Herstel', Icons.healing_rounded, focusCtrl),
+                      _templateChip(S.of(context).herstel, Icons.healing_rounded, focusCtrl),
                       _templateChip('Voeding', Icons.restaurant_rounded, focusCtrl),
                       _templateChip('Assessment', Icons.assignment_rounded, focusCtrl),
                     ],
@@ -192,10 +193,10 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                   TextFormField(
                     controller: focusCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Focus van sessie',
+                      labelText: S.of(context).focusVanSessie,
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Focus is verplicht'
+                        ? S.of(context).focusIsVerplicht
                         : null,
                   ),
                   const SizedBox(height: 8),
@@ -203,10 +204,10 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                     controller: positiveCtrl,
                     maxLines: 2,
                     decoration: const InputDecoration(
-                      labelText: 'Wat ging goed?',
+                      labelText: S.of(context).watGingGoed,
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Vul minimaal 1 positief punt in'
+                        ? S.of(context).vulMinimaal1PositiefPuntIn
                         : null,
                   ),
                   const SizedBox(height: 8),
@@ -214,10 +215,10 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                     controller: improveCtrl,
                     maxLines: 2,
                     decoration: const InputDecoration(
-                      labelText: 'Aandachtspunt',
+                      labelText: S.of(context).aandachtspunt,
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Vul een aandachtspunt in'
+                        ? S.of(context).vulEenAandachtspuntIn
                         : null,
                   ),
                   const SizedBox(height: 8),
@@ -225,7 +226,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                     controller: homeworkCtrl,
                     maxLines: 2,
                     decoration: const InputDecoration(
-                      labelText: 'Huiswerk / actiepunt',
+                      labelText: S.of(context).huiswerkActiepunt,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -236,7 +237,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                           controller: energyCtrl,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Energie (1-5)',
+                            labelText: S.of(context).energie15,
                           ),
                         ),
                       ),
@@ -246,7 +247,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                           controller: performanceCtrl,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Performance score',
+                            labelText: S.of(context).performanceScore,
                           ),
                         ),
                       ),
@@ -256,8 +257,8 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     value: shareWithClient,
-                    title: const Text('Deel met klant'),
-                    subtitle: const Text('Uit = intern trainer-only notitie'),
+                    title: const Text(S.of(context).deelMetKlant),
+                    subtitle: const Text(S.of(context).uitInternTraineronlyNotitie),
                     onChanged: (v) => setModalState(() => shareWithClient = v),
                   ),
                 ],
@@ -267,11 +268,11 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
         ),
         actions: [
           GymiesDialogAction(
-            label: 'Annuleren',
+            label: S.of(context).annuleren,
             returnValue: false,
           ),
           GymiesDialogAction(
-            label: 'Opslaan',
+            label: S.of(context).opslaan,
             isPrimary: true,
             onPressed: () {
               if (!(formKey.currentState?.validate() ?? false)) return;
@@ -326,7 +327,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Sessie-entry opgeslagen'),
+          content: Text(S.of(context).sessieentryOpgeslagen),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -346,7 +347,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
     final body = mapStr(note, ['body', 'note', 'text']);
     final focusCtrl = TextEditingController(text: _lineValue(body, 'Focus'));
     final wentWellCtrl = TextEditingController(text: _lineValue(body, 'Goed'));
-    final actionCtrl = TextEditingController(text: _lineValue(body, 'Aandachtspunt'));
+    final actionCtrl = TextEditingController(text: _lineValue(body, S.of(context).aandachtspunt));
     final homeworkCtrl = TextEditingController(text: _lineValue(body, 'Huiswerk'));
     final energyCtrl = TextEditingController(text: _lineValue(body, 'Energie').replaceAll('/5', '').trim());
     final performanceCtrl = TextEditingController(text: _lineValue(body, 'Performance'));
@@ -371,7 +372,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                       _templateChip('Kracht', Icons.fitness_center_rounded, focusCtrl),
                       _templateChip('Cardio', Icons.directions_run_rounded, focusCtrl),
                       _templateChip('Flexibiliteit', Icons.self_improvement_rounded, focusCtrl),
-                      _templateChip('Herstel', Icons.healing_rounded, focusCtrl),
+                      _templateChip(S.of(context).herstel, Icons.healing_rounded, focusCtrl),
                       _templateChip('Voeding', Icons.restaurant_rounded, focusCtrl),
                       _templateChip('Assessment', Icons.assignment_rounded, focusCtrl),
                     ],
@@ -380,10 +381,10 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                   TextFormField(
                     controller: focusCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Focus van sessie',
+                      labelText: S.of(context).focusVanSessie,
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Focus is verplicht'
+                        ? S.of(context).focusIsVerplicht
                         : null,
                   ),
                   const SizedBox(height: 8),
@@ -391,10 +392,10 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                     controller: wentWellCtrl,
                     maxLines: 2,
                     decoration: const InputDecoration(
-                      labelText: 'Wat ging goed?',
+                      labelText: S.of(context).watGingGoed,
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Vul minimaal 1 positief punt in'
+                        ? S.of(context).vulMinimaal1PositiefPuntIn
                         : null,
                   ),
                   const SizedBox(height: 8),
@@ -402,10 +403,10 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                     controller: actionCtrl,
                     maxLines: 2,
                     decoration: const InputDecoration(
-                      labelText: 'Aandachtspunt',
+                      labelText: S.of(context).aandachtspunt,
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Vul een aandachtspunt in'
+                        ? S.of(context).vulEenAandachtspuntIn
                         : null,
                   ),
                   const SizedBox(height: 8),
@@ -413,7 +414,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                     controller: homeworkCtrl,
                     maxLines: 2,
                     decoration: const InputDecoration(
-                      labelText: 'Huiswerk / actiepunt',
+                      labelText: S.of(context).huiswerkActiepunt,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -424,7 +425,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                           controller: energyCtrl,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Energie (1-5)',
+                            labelText: S.of(context).energie15,
                           ),
                         ),
                       ),
@@ -434,7 +435,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                           controller: performanceCtrl,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Performance score',
+                            labelText: S.of(context).performanceScore,
                           ),
                         ),
                       ),
@@ -444,8 +445,8 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     value: shareWithClient,
-                    title: const Text('Deel met klant'),
-                    subtitle: const Text('Uit = intern trainer-only notitie'),
+                    title: const Text(S.of(context).deelMetKlant),
+                    subtitle: const Text(S.of(context).uitInternTraineronlyNotitie),
                     onChanged: (v) => setModalState(() => shareWithClient = v),
                   ),
                 ],
@@ -455,11 +456,11 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
         ),
         actions: [
           GymiesDialogAction(
-            label: 'Annuleren',
+            label: S.of(context).annuleren,
             returnValue: false,
           ),
           GymiesDialogAction(
-            label: 'Opslaan',
+            label: S.of(context).opslaan,
             isPrimary: true,
             onPressed: () {
               if (!(formKey.currentState?.validate() ?? false)) return;
@@ -473,23 +474,13 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
     if (!mounted) return;
     setState(() => _saving = true);
     try {
-      final api = context.read<GymiesApi>();
-      final noteId = mapStr(note, ['id']);
-      final noteBody =
-          'Focus: ${focusCtrl.text.trim()}\n'
-          'Goed: ${wentWellCtrl.text.trim()}\n'
-          'Aandachtspunt: ${actionCtrl.text.trim()}\n'
-          'Huiswerk: ${homeworkCtrl.text.trim().isEmpty ? '-' : homeworkCtrl.text.trim()}\n'
-          'Energie: ${energyCtrl.text.trim().isEmpty ? '-' : energyCtrl.text.trim()}/5\n'
-          'Performance: ${performanceCtrl.text.trim().isEmpty ? '-' : performanceCtrl.text.trim()}\n'
-          'Visibility: ${shareWithClient ? 'shared' : 'internal'}';
       // NOTE: updateTrainerClientSessionNote does not exist in GymiesApi.
       // The method below is a placeholder until the API endpoint is implemented.
       // For now, this edit feature is unavailable.
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Bewerken wordt binnenkort beschikbaar'),
+          content: Text(S.of(context).bewerkenWordtBinnenkortBeschikbaar),
           backgroundColor: Colors.orange,
         ),
       );
@@ -507,9 +498,9 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: GymiesColors.primary.withValues(alpha: 0.12),
+          color: GymiesColors.primary.withOpacity(0.12),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: GymiesColors.primary.withValues(alpha: 0.3)),
+          border: Border.all(color: GymiesColors.primary.withOpacity(0.3)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -571,7 +562,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
+                color: Colors.black.withOpacity(0.04),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
@@ -587,14 +578,14 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                     width: 32,
                     height: 32,
                     decoration: BoxDecoration(
-                      color: GymiesColors.darkBlue.withValues(alpha: 0.08),
+                      color: GymiesColors.darkBlue.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(Icons.description_outlined, color: GymiesColors.darkBlue, size: 16),
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    'Dossier status',
+                    S.of(context).dossierStatus,
                     style: GoogleFonts.sora(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -644,7 +635,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
+                color: Colors.black.withOpacity(0.04),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
@@ -660,14 +651,14 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                     width: 32,
                     height: 32,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.12),
+                      color: GymiesColors.primary.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(Icons.radar_rounded, color: Colors.amber.shade700, size: 16),
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    'Coach radar',
+                    S.of(context).coachRadar,
                     style: GoogleFonts.sora(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -691,13 +682,13 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                 icon: Icons.task_alt_rounded,
                 text: mapStr(_dossier, ['last_homework', 'homework']).isNotEmpty
                     ? 'Huiswerk: ${mapStr(_dossier, ['last_homework', 'homework'])}'
-                    : 'Nog geen huiswerk geregistreerd.',
+                    : S.of(context).nogGeenHuiswerkGeregistreerd,
               ),
               _radarRow(
                 icon: Icons.visibility_rounded,
                 text: mapStr(_dossier, ['last_visibility']).isNotEmpty
                     ? 'Zichtbaarheid: ${mapStr(_dossier, ['last_visibility'])}'
-                    : 'Nog geen visibility policy.',
+                    : S.of(context).nogGeenVisibilityPolicy,
               ),
             ],
           ),
@@ -721,7 +712,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
           padding: const EdgeInsets.all(16),
           child: TextField(
             decoration: InputDecoration(
-              hintText: 'Zoek in notities...',
+              hintText: S.of(context).zoekInNotities,
               prefixIcon: const Icon(Icons.search_rounded),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -738,7 +729,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
         ),
         if (filteredNotes.isEmpty)
           const Expanded(
-            child: Center(child: Text('Nog geen sessie-entries.')),
+            child: Center(child: Text(S.of(context).nogGeenSessieentries)),
           )
         else
           Expanded(
@@ -749,7 +740,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                 final n = filteredNotes[i];
                 final title = mapStr(n, ['title', 'type']).isNotEmpty
                     ? mapStr(n, ['title', 'type'])
-                    : 'Sessie-entry';
+                    : S.of(context).sessieentry;
                 final body = mapStr(n, ['body', 'note', 'text']);
                 final date = _dateFrom(n, ['session_at', 'created_at', 'date', 'at']);
                 final visibility = _visibilityLabel(n);
@@ -763,7 +754,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                     ),
                     padding: const EdgeInsets.all(12),
                     child: Column(
@@ -793,7 +784,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                             IconButton(
                               icon: const Icon(Icons.edit_rounded, size: 20),
                               onPressed: () => _editNote(n),
-                              tooltip: 'Bewerken',
+                              tooltip: S.of(context).bewerken,
                               constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                               padding: EdgeInsets.zero,
                             ),
@@ -883,14 +874,14 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
           ),
           child: ListTile(
             leading: const Icon(Icons.flag_outlined),
-            title: Text('Doelenstatus', style: GoogleFonts.sora()),
+            title: Text(S.of(context).doelenstatus, style: GoogleFonts.sora()),
             subtitle: Text(
               goals.isEmpty
-                  ? 'Nog geen doelen ingesteld.'
+                  ? S.of(context).nogGeenDoelenIngesteld
                   : '${goals.length} actief doel(en)',
             ),
           ),
@@ -901,11 +892,11 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
             ),
             padding: const EdgeInsets.all(12),
             child: Text(
-              'Voeg doelen toe via backend of volgende iteratie UI.',
+              S.of(context).voegDoelenToeViaBackendOfVolgendeIteratieUi,
               style: GoogleFonts.sora(),
             ),
           )
@@ -915,7 +906,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
               ),
               child: ListTile(
                 title: Text(
@@ -958,7 +949,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Video toegevoegd'),
+          content: Text(S.of(context).videoToegevoegd),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -976,10 +967,10 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
     Haptics.heavy();
     final confirm = await GymiesDialog.destructive(
       context,
-      title: 'Video verwijderen',
-      message: 'Weet je zeker dat je deze video wilt verwijderen?',
-      confirmLabel: 'Verwijderen',
-      cancelLabel: 'Annuleren',
+      title: S.of(context).videoVerwijderen,
+      message: S.of(context).weetJeZekerDatJeDeze2,
+      confirmLabel: S.of(context).verwijderen,
+      cancelLabel: S.of(context).annuleren,
     );
     if (confirm != true || !mounted) return;
     try {
@@ -991,7 +982,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Video verwijderd')),
+        const SnackBar(content: Text(S.of(context).videoVerwijderd)),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -1009,7 +1000,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
           ),
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -1019,7 +1010,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                 children: [
                   Expanded(
                     child: Text(
-                      'Instructievideo\'s voor ${widget.clientName}',
+                      'Instructievideos voor ${widget.clientName}',
                       style: GoogleFonts.sora(
                         fontSize: 18,
                         color: GymiesColors.darkBlue,
@@ -1035,7 +1026,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.add_rounded),
-                    label: Text(_uploadingVideo ? 'Uploaden...' : 'Video toevoegen'),
+                    label: Text(_uploadingVideo ? 'Uploaden...' : S.of(context).videoToevoegen),
                     style: FilledButton.styleFrom(
                       backgroundColor: GymiesColors.primary,
                       foregroundColor: GymiesColors.darkBlue,
@@ -1045,7 +1036,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                'Alleen deze klant kan deze video\'s bekijken in zijn dossier.',
+                'Alleen deze klant kan deze videos bekijken in zijn dossier.',
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
               ),
             ],
@@ -1057,7 +1048,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
             ),
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -1065,12 +1056,12 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                 Icon(Icons.videocam_off_outlined, size: 48, color: Colors.grey.shade400),
                 const SizedBox(height: 12),
                 Text(
-                  'Nog geen video\'s',
+                  S.of(context).nogGeenVideos,
                   style: GoogleFonts.sora(fontSize: 16, color: GymiesColors.darkBlue),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Voeg instructievideo\'s toe die alleen deze klant kan bekijken.',
+                  S.of(context).voegInstructievideos toe die alleen deze klant kan bekijken.',
                   style: GoogleFonts.sora(color: Colors.grey.shade600, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
@@ -1090,14 +1081,14 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                 ),
                 child: ListTile(
                   leading: Container(
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.15),
+                      color: GymiesColors.primary.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(Icons.play_circle_outline, color: GymiesColors.darkBlue, size: 20),
@@ -1105,7 +1096,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                   title: Text(title, style: GoogleFonts.sora()),
                   subtitle: url.isNotEmpty
                       ? Text(
-                          'Bekijk in dossier',
+                          S.of(context).bekijkInDossier,
                           style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600),
                         )
                       : null,
@@ -1130,7 +1121,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
             ),
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1138,12 +1129,12 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                 Icon(Icons.payment_outlined, size: 48, color: Colors.grey.shade400),
                 const SizedBox(height: 12),
                 Text(
-                  'Geen betaalde sessies',
+                  S.of(context).geenBetaaldeSessies,
                   style: GoogleFonts.sora(fontSize: 18, color: GymiesColors.darkBlue),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Betaalde sessies van deze klant verschijnen hier.',
+                  S.of(context).betaaldeSessiesVanDezeKlantVerschijnenHier,
                   style: GoogleFonts.sora(color: Colors.grey.shade600, fontSize: 14),
                   textAlign: TextAlign.center,
                 ),
@@ -1168,20 +1159,20 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
             ),
             child: ListTile(
               leading: Container(
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: GymiesColors.primary.withValues(alpha: 0.15),
+                  color: GymiesColors.primary.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.euro, color: GymiesColors.darkBlue, size: 20),
               ),
               title: Text(
-                '€ ${(amountCents / 100).toStringAsFixed(2)}',
+                formatEuro(amountCents),
                 style: GoogleFonts.sora(fontSize: 16, color: GymiesColors.darkBlue),
               ),
               subtitle: Text(
@@ -1209,14 +1200,14 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
           ),
           padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Interne trainernotities',
+                S.of(context).interneTrainernotities,
                 style: GoogleFonts.sora(
                   fontSize: 18,
                   color: GymiesColors.darkBlue,
@@ -1224,7 +1215,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                summary.isEmpty ? 'Nog geen interne notities.' : summary,
+                summary.isEmpty ? S.of(context).nogGeenInterneNotities : summary,
                 style: GoogleFonts.sora(),
               ),
             ],
@@ -1234,6 +1225,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
     );
   }
 
+  // ignore: unused_element
   Widget _kpiCard(String label, String value, IconData icon) {
     return _kpiCardNew(label, value, icon, GymiesColors.darkBlue);
   }
@@ -1245,7 +1237,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1261,7 +1253,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                 width: 24,
                 height: 24,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
+                  color: color.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(7),
                 ),
                 child: Icon(icon, color: color, size: 13),
@@ -1300,7 +1292,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
             width: 22,
             height: 22,
             decoration: BoxDecoration(
-              color: GymiesColors.darkBlue.withValues(alpha: 0.06),
+              color: GymiesColors.darkBlue.withOpacity(0.06),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(icon, size: 12, color: GymiesColors.darkBlue),
@@ -1361,7 +1353,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
               width: 34,
               height: 34,
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.15),
+                color: GymiesColors.primary.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Center(
@@ -1396,7 +1388,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                       widget.clientEmail,
                       style: GoogleFonts.sora(
                         fontSize: 11,
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: Colors.white.withOpacity(0.5),
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1417,7 +1409,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
               backgroundColor: GymiesColors.primary,
               foregroundColor: GymiesColors.darkBlue,
               icon: const Icon(Icons.add_chart_rounded),
-              label: Text(_saving ? 'Opslaan...' : 'Nieuwe entry'),
+              label: Text(_saving ? S.of(context).opslaan2 : 'Nieuwe entry'),
             )
           : null,
       body: _error != null
@@ -1444,7 +1436,7 @@ class _TrainerClientDossierScreenState extends State<TrainerClientDossierScreen>
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              'Dossier is alleen-lezen. Upgrade naar Pro om te bewerken.',
+                              S.of(context).dossierIsAlleenlezenUpgradeNaarProOmTeBewerken,
                               style: TextStyle(
                                 color: Colors.amber.shade900,
                                 fontWeight: FontWeight.w600,

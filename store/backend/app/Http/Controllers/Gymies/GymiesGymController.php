@@ -10,7 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use App\Http\Controllers\Gymies\GymiesPlanManager;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class GymiesGymController extends Controller
 {
@@ -98,7 +99,7 @@ class GymiesGymController extends Controller
         if ($ctx instanceof JsonResponse) {
             return $ctx;
         }
-        if (!Schema::hasTable('gymies_gym_locations')) {
+        if (!Schema::hasTable('gym_locations')) {
             return response()->json(['data' => []]);
         }
 
@@ -110,46 +111,58 @@ class GymiesGymController extends Controller
         $endAt = $request->input('end_at');
         $orgId = (int) $ctx['organisation_id'];
 
-        $locations = DB::table('gymies_gym_locations')
+        $locations = DB::table('gym_locations')
             ->where('organisation_id', $orgId)
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get(['id', 'name', 'location_type', 'capacity']);
 
+        $locationIds = $locations->pluck('id')->all();
+
+        // Batch-fetch alle conflicten in 3 queries ipv 3×N
+        $blocksByLoc = collect();
+        if (Schema::hasTable('gym_location_blocks') && count($locationIds) > 0) {
+            $blocksByLoc = DB::table('gym_location_blocks')
+                ->whereIn('location_id', $locationIds)
+                ->where('start_at', '<', $endAt)
+                ->where('end_at', '>', $startAt)
+                ->get()
+                ->groupBy('location_id');
+        }
+
+        $sessionsByLoc = collect();
+        if (Schema::hasColumn('gymies_group_sessions', 'gym_location_id') && count($locationIds) > 0) {
+            $sessionsByLoc = DB::table('gymies_group_sessions')
+                ->whereIn('gym_location_id', $locationIds)
+                ->whereIn('status', ['scheduled', 'published', 'crowdfund'])
+                ->where('scheduled_at', '<', $endAt)
+                ->whereRaw('DATE_ADD(scheduled_at, INTERVAL COALESCE(duration_minutes, 60) MINUTE) > ?', [$startAt])
+                ->get(['id', 'gym_location_id', 'title', 'scheduled_at', 'duration_minutes'])
+                ->groupBy('gym_location_id');
+        }
+
+        $bookingsByLoc = collect();
+        if (Schema::hasColumn('gymies_bookings', 'gym_location_id') && count($locationIds) > 0) {
+            $bookingsByLoc = DB::table('gymies_bookings')
+                ->whereIn('gym_location_id', $locationIds)
+                ->whereIn('status', ['pending', 'confirmed', 'reserved'])
+                ->where('scheduled_at', '<', $endAt)
+                ->whereRaw('DATE_ADD(scheduled_at, INTERVAL COALESCE(duration_minutes, 60) MINUTE) > ?', [$startAt])
+                ->get(['id', 'gym_location_id', 'scheduled_at', 'duration_minutes'])
+                ->groupBy('gym_location_id');
+        }
+
         $data = [];
         foreach ($locations as $loc) {
             $conflicts = [];
-            if (Schema::hasTable('gymies_gym_location_blocks')) {
-                $blocks = DB::table('gymies_gym_location_blocks')
-                    ->where('location_id', $loc->id)
-                    ->where('start_at', '<', $endAt)
-                    ->where('end_at', '>', $startAt)
-                    ->get();
-                foreach ($blocks as $b) {
-                    $conflicts[] = ['type' => 'block', 'start_at' => $b->start_at, 'end_at' => $b->end_at, 'reason' => $b->reason ?? null];
-                }
+            foreach ($blocksByLoc->get($loc->id, []) as $b) {
+                $conflicts[] = ['type' => 'block', 'start_at' => $b->start_at, 'end_at' => $b->end_at, 'reason' => $b->reason ?? null];
             }
-            if (Schema::hasColumn('gymies_group_sessions', 'gym_location_id')) {
-                $sessions = DB::table('gymies_group_sessions')
-                    ->where('gym_location_id', $loc->id)
-                    ->whereIn('status', ['scheduled', 'published', 'crowdfund'])
-                    ->where('scheduled_at', '<', $endAt)
-                    ->whereRaw('DATE_ADD(scheduled_at, INTERVAL COALESCE(duration_minutes, 60) MINUTE) > ?', [$startAt])
-                    ->get(['id', 'title', 'scheduled_at', 'duration_minutes']);
-                foreach ($sessions as $s) {
-                    $conflicts[] = ['type' => 'group_session', 'id' => (string) $s->id, 'title' => $s->title ?? '', 'start_at' => $s->scheduled_at];
-                }
+            foreach ($sessionsByLoc->get($loc->id, []) as $s) {
+                $conflicts[] = ['type' => 'group_session', 'id' => (string) $s->id, 'title' => $s->title ?? '', 'start_at' => $s->scheduled_at];
             }
-            if (Schema::hasColumn('gymies_bookings', 'gym_location_id')) {
-                $bookings = DB::table('gymies_bookings')
-                    ->where('gym_location_id', $loc->id)
-                    ->whereIn('status', ['pending', 'confirmed', 'reserved'])
-                    ->where('scheduled_at', '<', $endAt)
-                    ->whereRaw('DATE_ADD(scheduled_at, INTERVAL COALESCE(duration_minutes, 60) MINUTE) > ?', [$startAt])
-                    ->get(['id', 'scheduled_at', 'duration_minutes']);
-                foreach ($bookings as $b) {
-                    $conflicts[] = ['type' => 'booking', 'id' => (string) $b->id, 'start_at' => $b->scheduled_at, 'duration_minutes' => (int) $b->duration_minutes];
-                }
+            foreach ($bookingsByLoc->get($loc->id, []) as $b) {
+                $conflicts[] = ['type' => 'booking', 'id' => (string) $b->id, 'start_at' => $b->scheduled_at, 'duration_minutes' => (int) $b->duration_minutes];
             }
             $data[] = [
                 'id' => (string) $loc->id,
@@ -430,11 +443,11 @@ class GymiesGymController extends Controller
         ];
 
         $locationOccupancy = [];
-        if (Schema::hasTable('gymies_gym_locations')) {
+        if (Schema::hasTable('gym_locations')) {
             $locMap = [];
             if (Schema::hasColumn('gymies_bookings', 'gym_location_id')) {
                 $locRows = DB::table('gymies_bookings as b')
-                    ->leftJoin('gymies_gym_locations as gl', 'b.gym_location_id', '=', 'gl.id')
+                    ->leftJoin('gym_locations as gl', 'b.gym_location_id', '=', 'gl.id')
                     ->where('b.organisation_id', $orgId)
                     ->whereBetween('b.scheduled_at', [$currentStart, $currentEnd])
                     ->whereIn('b.status', ['confirmed', 'completed', 'no_show', 'pending'])
@@ -455,7 +468,7 @@ class GymiesGymController extends Controller
             }
             if (Schema::hasTable('gymies_group_sessions') && Schema::hasColumn('gymies_group_sessions', 'gym_location_id')) {
                 $gsRows = DB::table('gymies_group_sessions as gs')
-                    ->leftJoin('gymies_gym_locations as gl', 'gs.gym_location_id', '=', 'gl.id')
+                    ->leftJoin('gym_locations as gl', 'gs.gym_location_id', '=', 'gl.id')
                     ->where('gs.organisation_id', $orgId)
                     ->whereBetween('gs.scheduled_at', [$currentStart, $currentEnd])
                     ->groupBy('gs.gym_location_id', 'gl.name')
@@ -1582,16 +1595,7 @@ class GymiesGymController extends Controller
 
         $orgId = (int) $ctx['organisation_id'];
         $payload = [];
-        // N-030 FIXED: stored XSS voorkomen — string velden worden gesanitized voor opslag
-        $stringFields = ['name', 'contact_email'];
-        $safeFields   = ['payout_frequency', 'payout_minimum_cents'];
-        foreach ($stringFields as $key) {
-            if ($request->has($key)) {
-                $raw = (string) $request->input($key, '');
-                $payload[$key] = htmlspecialchars(strip_tags($raw), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-            }
-        }
-        foreach ($safeFields as $key) {
+        foreach (['name', 'contact_email', 'payout_frequency', 'payout_minimum_cents'] as $key) {
             if ($request->has($key)) {
                 $payload[$key] = $request->input($key);
             }
@@ -1605,8 +1609,8 @@ class GymiesGymController extends Controller
         }
         if (Schema::hasColumn('gymies_organisations', 'default_location_id') && $request->has('default_location_id')) {
             $locId = $request->filled('default_location_id') ? (int) $request->input('default_location_id') : null;
-            if ($locId !== null && Schema::hasTable('gymies_gym_locations')) {
-                $loc = DB::table('gymies_gym_locations')->where('id', $locId)->where('organisation_id', $orgId)->first();
+            if ($locId !== null && Schema::hasTable('gym_locations')) {
+                $loc = DB::table('gym_locations')->where('id', $locId)->where('organisation_id', $orgId)->first();
                 $payload['default_location_id'] = $loc ? $locId : null;
             } else {
                 $payload['default_location_id'] = null;
@@ -1995,29 +1999,6 @@ class GymiesGymController extends Controller
             return response()->json(['message' => 'Onvoldoende rechten voor deze actie.'], 403);
         }
 
-        // T-plan: Gym features vereisen Studio (tier 3).
-        // Check plan van de organisatie-eigenaar zodat alle teamleden meegaan.
-        // Als er geen owner is → gym is ongeldig, blokkeer toegang.
-        $ownerId = DB::table('gymies_organisation_members')
-            ->where('organisation_id', (int) $membership->organisation_id)
-            ->where('role', 'owner')
-            ->where('status', 'active')
-            ->value('user_id');
-        if (!$ownerId) {
-            return response()->json([
-                'message' => 'Gym heeft geen actieve eigenaar. Neem contact op met support.',
-                'code' => 'plan_gym_no_owner',
-            ], 403);
-        }
-        $planCheck = GymiesPlanManager::assertTeam((int) $ownerId);
-        if (!$planCheck['allowed']) {
-            return response()->json([
-                'message' => $planCheck['message'],
-                'upgrade_hint' => $planCheck['upgrade_hint'],
-                'code' => 'plan_gym_locked',
-            ], 403);
-        }
-
         return [
             'user_id' => (int) $user->id,
             'organisation_id' => (int) $membership->organisation_id,
@@ -2267,4 +2248,365 @@ class GymiesGymController extends Controller
 
         return $out;
     }
+
+    // ══════════════════════════════════════════════════════
+    // GYM MOLLIE & PAYOUT METHODS
+    // ══════════════════════════════════════════════════════
+
+    /**
+     * GET gym/mollie-status — Mollie Connect status voor deze gym.
+     */
+    public function mollieStatus(Request $request): JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner', 'manager']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        $this->ensureGymMollieSchema();
+
+        $org = DB::table('gymies_organisations')->where('id', $orgId)->first();
+        $hasToken = false;
+        $mollieOrgId = null;
+        if ($org) {
+            if (!empty($org->mollie_access_token ?? null)) {
+                try {
+                    $token = decrypt($org->mollie_access_token);
+                    $hasToken = is_string($token) && $token !== '';
+                } catch (\Throwable $e) {
+                    $hasToken = false;
+                }
+            }
+            $mollieOrgId = $org->mollie_organization_id ?? null;
+        }
+
+        return response()->json([
+            'connected' => $hasToken,
+            'mollie_organization_id' => $mollieOrgId,
+            'can_receive_payments' => $hasToken,
+        ]);
+    }
+
+    /**
+     * POST gym/mollie-disconnect — Verwijder Mollie koppeling.
+     */
+    public function mollieDisconnect(Request $request): JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        $update = ['updated_at' => now()];
+        $columns = Schema::getColumnListing('gymies_organisations');
+        if (in_array('mollie_access_token', $columns)) $update['mollie_access_token'] = null;
+        if (in_array('mollie_refresh_token', $columns)) $update['mollie_refresh_token'] = null;
+        if (in_array('mollie_organization_id', $columns)) $update['mollie_organization_id'] = null;
+        if (in_array('mollie_token_expires_at', $columns)) $update['mollie_token_expires_at'] = null;
+
+        DB::table('gymies_organisations')->where('id', $orgId)->update($update);
+
+        return response()->json(['message' => 'Mollie koppeling verwijderd.']);
+    }
+
+    /**
+     * GET gym/payout-settings — IBAN, frequentie, modus.
+     */
+    public function payoutSettings(Request $request): JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner', 'manager']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        $org = DB::table('gymies_organisations')->where('id', $orgId)->first();
+
+        return response()->json([
+            'iban' => $org->payout_iban ?? '',
+            'iban_name' => $org->payout_iban_name ?? '',
+            'payout_frequency' => $org->payout_frequency ?? 'monthly',
+            'payout_minimum_cents' => (int) ($org->payout_minimum_cents ?? 5000),
+            'payout_mode' => $org->payout_mode ?? 'platform',
+            'mollie_connected' => !empty($org->mollie_access_token ?? null),
+        ]);
+    }
+
+    /**
+     * PUT gym/payout-settings — Update IBAN, frequentie.
+     */
+    public function updatePayoutSettings(Request $request): JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        $update = ['updated_at' => now()];
+        $columns = Schema::getColumnListing('gymies_organisations');
+
+        $iban = trim($request->input('iban', ''));
+        if ($iban !== '' && in_array('payout_iban', $columns)) {
+            // Validate IBAN using GymiesPayoutService
+            if (!GymiesPayoutService::validateIban($iban)) {
+                return response()->json(['message' => 'IBAN is ongeldig. Controleer het IBAN-formaat.'], 422);
+            }
+            $update['payout_iban'] = $iban;
+        }
+
+        $ibanName = trim($request->input('iban_name', ''));
+        if ($iban !== '' && empty($ibanName)) {
+            return response()->json(['message' => 'Naam voor IBAN-houder is verplicht wanneer IBAN is opgegeven.'], 422);
+        }
+        if ($ibanName !== '' && in_array('payout_iban_name', $columns)) $update['payout_iban_name'] = $ibanName;
+
+        $freq = $request->input('payout_frequency');
+        if (in_array($freq, ['monthly', 'weekly', 'daily'], true) && in_array('payout_frequency', $columns)) {
+            $update['payout_frequency'] = $freq;
+        }
+
+        $mode = $request->input('payout_mode');
+        if (in_array($mode, ['platform', 'mollie_connect'], true) && in_array('payout_mode', $columns)) {
+            $update['payout_mode'] = $mode;
+        }
+
+        DB::table('gymies_organisations')->where('id', $orgId)->update($update);
+
+        return response()->json(['message' => 'Instellingen bijgewerkt.']);
+    }
+
+    /**
+     * GET gym/settlements — Alle uitbetalingen/settlements.
+     */
+    public function gymPayouts(Request $request): JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner', 'manager']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        if (!Schema::hasTable('gymies_organisation_settlements')) {
+            return response()->json(['settlements' => []]);
+        }
+
+        $settlements = DB::table('gymies_organisation_settlements')
+            ->where('organisation_id', $orgId)
+            ->orderByDesc('created_at')
+            ->limit(100)
+            ->get();
+
+        return response()->json([
+            'settlements' => $settlements->map(fn ($s) => [
+                'id' => $s->id,
+                'status' => $s->status ?? 'draft',
+                'gross_cents' => (int) ($s->gross_cents ?? 0),
+                'fee_cents' => (int) ($s->fee_cents ?? 0),
+                'net_cents' => (int) ($s->net_cents ?? 0),
+                'net_formatted' => '€' . number_format((int) ($s->net_cents ?? 0) / 100, 2, ',', '.'),
+                'period_start' => $s->period_start ?? null,
+                'period_end' => $s->period_end ?? null,
+                'invoice_number' => $s->invoice_number ?? null,
+                'invoice_path' => $s->invoice_path ?? null,
+                'has_pdf' => !empty($s->invoice_path),
+                'paid_at' => $s->paid_at ?? null,
+                'created_at' => $s->created_at ?? null,
+            ])->values(),
+        ]);
+    }
+
+    /**
+     * GET gym/settlements/{id}/download — Download settlement factuur PDF.
+     */
+    public function downloadSettlementInvoice(Request $request, string $id): \Illuminate\Http\Response|JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner', 'manager']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        if (!Schema::hasTable('gymies_organisation_settlements')) {
+            return response()->json(['message' => 'Settlements niet beschikbaar.'], 404);
+        }
+
+        $settlement = DB::table('gymies_organisation_settlements')
+            ->where('id', (int) $id)
+            ->where('organisation_id', $orgId)
+            ->first();
+
+        if (!$settlement) {
+            return response()->json(['message' => 'Settlement niet gevonden.'], 404);
+        }
+
+        try {
+            // Generate PDF if not yet generated
+            if (empty($settlement->invoice_path)) {
+                $pdf = GymiesInvoiceGenerator::getGymSettlementInvoicePdf((int) $id);
+                if (!$pdf) {
+                    return response()->json(['message' => 'Factuur kon niet worden gegenereerd.'], 500);
+                }
+                $content = $pdf;
+            } else {
+                if (!\Illuminate\Support\Facades\Storage::disk('local')->exists($settlement->invoice_path)) {
+                    return response()->json(['message' => 'PDF niet gevonden op schijf.'], 404);
+                }
+                $content = \Illuminate\Support\Facades\Storage::disk('local')->get($settlement->invoice_path);
+            }
+
+            $filename = ($settlement->invoice_number ?? 'settlement-' . $id) . '.pdf';
+
+            $contentType = str_starts_with(trim($content), '<!DOCTYPE') || str_starts_with(trim($content), '<html')
+                ? 'text/html' : 'application/pdf';
+            if ($contentType === 'text/html') {
+                $filename = str_replace('.pdf', '.html', $filename);
+            }
+
+            return response($content, 200)
+                ->header('Content-Type', $contentType)
+                ->header('Content-Disposition', "attachment; filename=\"{$filename}\"");
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Gym settlement invoice download failed', [
+                'org_id' => $orgId,
+                'settlement_id' => (int) $id,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['message' => 'Fout bij downloaden.'], 500);
+        }
+    }
+
+    /**
+     * POST gym/settlements/request-now — Vraag direct settlement aan.
+     * Controleert: payout_mode=gymies, IBAN ingesteld, geen pending settlement.
+     * Berekent beschikbare bedrag en maakt settlement record met status 'pending'.
+     */
+    public function requestSettlementNow(Request $request): JsonResponse
+    {
+        $ctx = $this->requireGymMember($request, ['owner', 'manager']);
+        if ($ctx instanceof JsonResponse) return $ctx;
+        $orgId = (int) $ctx['organisation_id'];
+
+        if (!Schema::hasTable('gymies_organisation_settlements') || !Schema::hasTable('gymies_organisations')) {
+            return response()->json(['message' => 'Settlement tabellen ontbreken.'], 422);
+        }
+
+        if (!Schema::hasTable('gymies_payment_transactions')) {
+            return response()->json(['message' => 'Payment transactions tabel ontbreekt.'], 422);
+        }
+
+        // Haal organisatie op
+        $org = DB::table('gymies_organisations')->where('id', $orgId)->first();
+        if (!$org) {
+            return response()->json(['message' => 'Organisatie niet gevonden.'], 404);
+        }
+
+        // Check payout_mode
+        if ($org->payout_mode !== 'gymies') {
+            return response()->json([
+                'message' => 'Settlement alleen beschikbaar voor payout_mode=gymies.',
+                'current_mode' => $org->payout_mode ?? 'none',
+            ], 422);
+        }
+
+        // Check IBAN ingesteld
+        if (empty($org->payout_iban)) {
+            return response()->json(['message' => 'IBAN is niet ingesteld. Stel eerst payout-instellingen in.'], 422);
+        }
+
+        // Check geen pending settlement
+        $hasPending = DB::table('gymies_organisation_settlements')
+            ->where('organisation_id', $orgId)
+            ->where('status', 'pending')
+            ->exists();
+
+        if ($hasPending) {
+            return response()->json(['message' => 'Er is al een openstaande settlement. Wacht op verwerking.'], 422);
+        }
+
+        try {
+            // Bereken beschikbare bedrag: alle payments met mollie_account_source='organisation'
+            // die nog niet in een paid settlement zitten
+            $transactions = DB::table('gymies_payment_transactions')
+                ->where('organisation_id', $orgId)
+                ->where('mollie_account_source', 'organisation')
+                ->whereIn('status', ['success', 'paid'])
+                ->get(['id', 'amount_cents']);
+
+            $grossCents = (int) $transactions->sum('amount_cents');
+            $numBookings = $transactions->count();
+
+            if ($grossCents <= 0) {
+                return response()->json([
+                    'message' => 'Geen beschikbare inkomsten voor settlement.',
+                    'gross_cents' => 0,
+                ], 422);
+            }
+
+            $feeCents = $numBookings * GymiesPayoutService::BOOKING_FEE_CENTS;
+            $netAmountCents = max($grossCents - $feeCents, 0);
+
+            // Maak settlement record
+            $settlementId = DB::transaction(function () use ($orgId, $grossCents, $feeCents, $netAmountCents, $ctx) {
+                return DB::table('gymies_organisation_settlements')->insertGetId([
+                    'organisation_id' => $orgId,
+                    'amount_cents' => $grossCents,
+                    'fee_cents' => $feeCents,
+                    'net_amount_cents' => $netAmountCents,
+                    'status' => 'pending',
+                    'period_start' => now()->toDateString(),
+                    'period_end' => now()->toDateString(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            });
+
+            $this->logAudit((int) $ctx['user_id'], 'gym_settlement_request_now', 'organisation_settlement', $settlementId, null, [
+                'organisation_id' => $orgId,
+                'gross_cents' => $grossCents,
+                'fee_cents' => $feeCents,
+            ]);
+
+            return response()->json([
+                'data' => [
+                    'settlement_id' => (string) $settlementId,
+                    'status' => 'pending',
+                    'gross_cents' => $grossCents,
+                    'fee_cents' => $feeCents,
+                    'net_amount_cents' => $netAmountCents,
+                    'net_formatted' => '€' . number_format($netAmountCents / 100, 2, ',', '.'),
+                    'num_transactions' => $numBookings,
+                ]
+            ], 201);
+        } catch (\Throwable $e) {
+            Log::error('Settlement request failed', [
+                'organisation_id' => $orgId,
+                'error' => $e->getMessage(),
+            ]);
+            if (app()->bound('sentry')) {
+                app('sentry')->captureException($e);
+            }
+            return response()->json(['message' => 'Fout bij aanmaken settlement.'], 500);
+        }
+    }
+
+    /**
+     * Ensure gym organisations table has the Mollie + payout columns.
+     */
+    public static function ensureGymMollieSchema(): void
+    {
+        if (!Schema::hasTable('gymies_organisations')) return;
+
+        $columns = Schema::getColumnListing('gymies_organisations');
+        $needed = [
+            'mollie_access_token' => 'TEXT NULL',
+            'mollie_refresh_token' => 'TEXT NULL',
+            'mollie_organization_id' => 'VARCHAR(50) NULL',
+            'mollie_token_expires_at' => 'TIMESTAMP NULL',
+            'payout_iban' => 'VARCHAR(40) NULL',
+            'payout_iban_name' => 'VARCHAR(255) NULL',
+            'payout_mode' => "VARCHAR(20) DEFAULT 'platform'",
+        ];
+
+        foreach ($needed as $col => $definition) {
+            if (!in_array($col, $columns)) {
+                try {
+                    DB::statement("ALTER TABLE gymies_organisations ADD COLUMN {$col} {$definition}");
+                } catch (\Throwable $e) {
+                    // Column might already exist via concurrent request
+                }
+            }
+        }
+    }
+
 }

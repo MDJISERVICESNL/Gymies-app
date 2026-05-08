@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
@@ -42,81 +44,81 @@ class _TrainerNewsletterComposeScreenState
     _NewsletterTemplate(
       icon: Icons.fitness_center_rounded,
       label: 'Nieuw schema',
-      subject: 'Nieuw trainingsschema beschikbaar!',
+      subject: S.of(context).nieuwTrainingsschemaBeschikbaar2,
       html: '<p>Hallo!</p>'
-          '<p>Je nieuwe trainingsschema is nu beschikbaar in de app. '
-          'Bekijk de updates en zorg dat je goed bent voorbereid voor je volgende sessies.</p>'
+          S.of(context).pjeNieuweTrainingsschemaIsNuBeschikbaar
+          S.of(context).bekijkDeUpdatesEnZorgDat
           '<p><b>Bijzonderheden:</b></p>'
-          '<ul><li>Aangepast aan jouw doelen</li>'
+          S.of(context).ulliaangepastAanJouwDoelenli
           '<li>Progressieve oefeningen</li>'
-          '<li>Flexibel in te delen</li></ul>'
-          '<p>Ben je klaar? Laten we aan de slag gaan!</p>'
-          '<p>Groeten,<br>Je trainer</p>',
+          S.of(context).liflexibelInTeDelenliul
+          S.of(context).pbenJeKlaarLatenWeAan
+          S.of(context).pgroetenbrjeTrainerp,
     ),
     _NewsletterTemplate(
       icon: Icons.beach_access_rounded,
       label: 'Vakantie',
       subject: 'Vakantieperiode – Studio gesloten',
       html: '<p>Hallo!</p>'
-          '<p>We willen je graag informeren dat onze studio gesloten is '
-          'van <b>[datum]</b> tot <b>[datum]</b> vanwege vakantie.</p>'
-          '<p>Wij zijn dan niet beschikbaar voor sessies, maar je kunt '
-          'je trainingsplan volgen via de app.</p>'
-          '<p>We kijken ernaar uit je binnenkort weer te zien!</p>'
-          '<p>Groeten,<br>Je trainer</p>',
+          S.of(context).pweWillenJeGraagInformerenDat
+          S.of(context).vanBdatumbTotBdatumbVanwegeVakantiep
+          S.of(context).pwijZijnDanNietBeschikbaarVoor
+          S.of(context).jeTrainingsplanVolgenViaDeAppp
+          S.of(context).pweKijkenErnaarUitJeBinnenkort
+          S.of(context).pgroetenbrjeTrainerp,
     ),
     _NewsletterTemplate(
       icon: Icons.local_offer_rounded,
-      label: 'Actie',
-      subject: 'Exclusieve actie voor onze klanten!',
+      label: S.of(context).actie,
+      subject: S.of(context).exclusieveActieVoorOnzeKlanten2,
       html: '<p>Hallo!</p>'
-          '<p>We hebben een speciale aanbieding voor jou! '
-          'Als dank voor je vertrouwen en inzet bieden we deze week:</p>'
-          '<ul><li><b>[Beschrijving van aanbieding]</b></li>'
-          '<li>[Voordeel voor jou]</li>'
+          S.of(context).pweHebbenEenSpecialeAanbiedingVoor
+          S.of(context).alsDankVoorJeVertrouwenEn
+          S.of(context).ullibbeschrijvingVanAanbiedingbli
+          S.of(context).livoordeelVoorJouli
           '<li>Geldig tot <b>[datum]</b></li></ul>'
-          '<p>Niet gemist! Dit aanbod is exclusief voor onze vaste klanten.</p>'
-          '<p>Groeten,<br>Je trainer</p>',
+          S.of(context).pnietGemistDitAanbodIsExclusief
+          S.of(context).pgroetenbrjeTrainerp,
     ),
     _NewsletterTemplate(
       icon: Icons.lightbulb_outline_rounded,
       label: 'Tips',
-      subject: 'Fitnesstip van de week',
+      subject: S.of(context).fitnesstipVanDeWeek2,
       html: '<p>Hallo!</p>'
-          '<p>Deze week delen we een waardevolle fitnesstip met je:</p>'
+          S.of(context).pdezeWeekDelenWeEenWaardevolle
           '<h2>[Tip/advies]</h2>'
-          '<p><b>Waarom is dit belangrijk?</b><br>[Uitleg van het voordeel]</p>'
-          '<p><b>Hoe pas je dit toe?</b><br>[Praktische stappen]</p>'
-          '<p>Vragen? Laat het weten! Je trainer is altijd beschikbaar.</p>'
-          '<p>Groeten,<br>Je trainer</p>',
+          S.of(context).pbwaaromIsDitBelangrijkbbruitlegVanHet
+          S.of(context).pbhoePasJeDitToebbrpraktischeStappenp
+          S.of(context).pvragenLaatHetWetenJeTrainer
+          S.of(context).pgroetenbrjeTrainerp,
     ),
     _NewsletterTemplate(
       icon: Icons.event_rounded,
       label: 'Evenement',
-      subject: 'Kom naar ons event!',
+      subject: S.of(context).komNaarOnsEvent2,
       html: '<p>Hallo!</p>'
-          '<p>We organiseren een speciaal event en je bent van harte uitgenodigd!</p>'
-          '<p><b>Datum:</b> [datum en tijd]<br>'
+          S.of(context).pweOrganiserenEenSpeciaalEventEn
+          S.of(context).pbdatumbDatumEnTijdbr
           '<b>Locatie:</b> [adres]</p>'
-          '<p><b>Wat te verwachten:</b></p>'
+          S.of(context).pbwatTeVerwachtenbp
           '<ul><li>[Activiteit 1]</li>'
           '<li>[Activiteit 2]</li>'
           '<li>[Activiteit 3]</li></ul>'
-          '<p>Snel aanmelden! Beperkt aantal plaatsen beschikbaar.</p>'
-          '<p>Groeten,<br>Je trainer</p>',
+          S.of(context).psnelAanmeldenBeperktAantalPlaatsenBeschikbaarp
+          S.of(context).pgroetenbrjeTrainerp,
     ),
     _NewsletterTemplate(
       icon: Icons.campaign_rounded,
       label: 'Update',
-      subject: 'Belangrijk update van je trainer',
+      subject: S.of(context).belangrijkUpdateVanJeTrainer2,
       html: '<p>Hallo!</p>'
-          '<p>We willen je graag op de hoogte stellen van de volgende updates:</p>'
+          S.of(context).pweWillenJeGraagOpDe
           '<ul><li>[Update 1]</li>'
           '<li>[Update 2]</li>'
           '<li>[Update 3]</li></ul>'
-          '<p>Deze veranderingen helpen ons om je beter van dienst te zijn. '
-          'Heb je vragen? Neem gerust contact op!</p>'
-          '<p>Groeten,<br>Je trainer</p>',
+          S.of(context).pdezeVeranderingenHelpenOnsOmJe
+          S.of(context).hebJeVragenNeemGerustContact
+          S.of(context).pgroetenbrjeTrainerp,
     ),
   ];
 
@@ -151,7 +153,10 @@ class _TrainerNewsletterComposeScreenState
           _isOrderedList = data['insertOrderedList'] == true;
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Format state parsing failed, UI state remains unchanged
+      if (kDebugMode) debugPrint('[NewsletterCompose] Parse format state failed: $e');
+    }
   }
 
   @override
@@ -174,7 +179,7 @@ class _TrainerNewsletterComposeScreenState
     height: 100%;
     background: #0D1B2A;
     color: #E8E8E8;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, S.of(context).segoeUi, Roboto, sans-serif;
     font-size: 15px;
     line-height: 1.6;
     -webkit-text-size-adjust: none;
@@ -188,7 +193,7 @@ class _TrainerNewsletterComposeScreenState
     overflow-wrap: break-word;
   }
   #editor:empty::before {
-    content: 'Schrijf je nieuwsbrief...';
+    content: S.of(context).schrijfJeNieuwsbrief;
     color: rgba(255,255,255,0.3);
     pointer-events: none;
   }
@@ -310,12 +315,12 @@ class _TrainerNewsletterComposeScreenState
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: Colors.white.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
                 Text(
-                  'Kies een template',
+                  S.of(context).kiesEenTemplate,
                   style: GoogleFonts.sora(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -324,10 +329,10 @@ class _TrainerNewsletterComposeScreenState
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Start met een voorgeschreven mail',
+                  S.of(context).startMetEenVoorgeschrevenMail,
                   style: GoogleFonts.sora(
                     fontSize: 12,
-                    color: Colors.white.withValues(alpha: 0.4),
+                    color: Colors.white.withOpacity(0.4),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -348,13 +353,13 @@ class _TrainerNewsletterComposeScreenState
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
+                          color: Colors.white.withOpacity(0.06),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                          border: Border.all(color: Colors.white.withOpacity(0.08)),
                         ),
                         child: Row(
                           children: [
-                            Icon(tpl.icon, size: 18, color: GymiesColors.primary.withValues(alpha: 0.7)),
+                            Icon(tpl.icon, size: 18, color: GymiesColors.primary.withOpacity(0.7)),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -362,7 +367,7 @@ class _TrainerNewsletterComposeScreenState
                                 style: GoogleFonts.sora(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,
-                                  color: Colors.white.withValues(alpha: 0.8),
+                                  color: Colors.white.withOpacity(0.8),
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -388,7 +393,7 @@ class _TrainerNewsletterComposeScreenState
       _subjectFocus.requestFocus();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Vul een onderwerp in'),
+          content: Text(S.of(context).vulEenOnderwerpIn),
           backgroundColor: Colors.red,
         ),
       );
@@ -400,9 +405,10 @@ class _TrainerNewsletterComposeScreenState
         await _webCtrl.runJavaScriptReturningResult('getTextLength()');
     final textLen = int.tryParse(lengthRaw.toString()) ?? 0;
     if (textLen < 10) {
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Schrijf minimaal 10 tekens'),
+          content: Text(S.of(context).schrijfMinimaal10Tekens),
           backgroundColor: Colors.red,
         ),
       );
@@ -427,18 +433,21 @@ class _TrainerNewsletterComposeScreenState
     setState(() => _sending = true);
 
     try {
+      // ignore: use_build_context_synchronously
       await context.read<GymiesApi>().sendNewsletter(
             subject: subject,
             body: htmlBody,
           );
       if (!mounted) return;
       Haptics.light();
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Nieuwsbrief verstuurd!'),
+          content: Text(S.of(context).nieuwsbriefVerstuurd),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
+      // ignore: use_build_context_synchronously
       Navigator.of(context).pop(true); // Return true = sent
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -451,7 +460,7 @@ class _TrainerNewsletterComposeScreenState
       setState(() => _sending = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Versturen mislukt, probeer opnieuw.'),
+          content: Text(S.of(context).versturenMisluktProbeerOpnieuw),
           backgroundColor: Colors.red,
         ),
       );
@@ -473,7 +482,7 @@ class _TrainerNewsletterComposeScreenState
           onPressed: _sending ? null : () => Navigator.of(context).pop(false),
         ),
         title: Text(
-          'Nieuwsbrief',
+          S.of(context).nieuwsbrief,
           style: GoogleFonts.sora(
             fontSize: 17,
             fontWeight: FontWeight.w600,
@@ -503,7 +512,7 @@ class _TrainerNewsletterComposeScreenState
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        'Versturen',
+                        S.of(context).versturen,
                         style: GoogleFonts.sora(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -525,21 +534,21 @@ class _TrainerNewsletterComposeScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'ONDERWERP',
+                  S.of(context).onderwerp,
                   style: GoogleFonts.sora(
                     fontSize: 9,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.8,
-                    color: Colors.white.withValues(alpha: 0.35),
+                    color: Colors.white.withOpacity(0.35),
                   ),
                 ),
                 const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: Colors.white.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                    border: Border.all(color: Colors.white.withOpacity(0.1)),
                   ),
                   child: Theme(
                     data: Theme.of(context).copyWith(
@@ -559,11 +568,11 @@ class _TrainerNewsletterComposeScreenState
                       ),
                       cursorColor: GymiesColors.primary,
                       decoration: InputDecoration(
-                        hintText: 'Typ je onderwerp hier...',
+                        hintText: S.of(context).typJeOnderwerpHier,
                         hintStyle: GoogleFonts.sora(
                           fontSize: 15,
                           fontWeight: FontWeight.w400,
-                          color: Colors.white.withValues(alpha: 0.25),
+                          color: Colors.white.withOpacity(0.25),
                         ),
                         filled: false,
                         fillColor: Colors.transparent,
@@ -585,9 +594,9 @@ class _TrainerNewsletterComposeScreenState
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.08),
+                color: GymiesColors.primary.withOpacity(0.08),
                 border: Border(
-                  bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+                  bottom: BorderSide(color: Colors.white.withOpacity(0.06)),
                 ),
               ),
               child: Row(
@@ -595,7 +604,7 @@ class _TrainerNewsletterComposeScreenState
                   Icon(Icons.auto_awesome_rounded, size: 16, color: GymiesColors.primary),
                   const SizedBox(width: 8),
                   Text(
-                    'Kies een template',
+                    S.of(context).kiesEenTemplate,
                     style: GoogleFonts.sora(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -603,7 +612,7 @@ class _TrainerNewsletterComposeScreenState
                     ),
                   ),
                   const Spacer(),
-                  Icon(Icons.arrow_forward_ios_rounded, size: 12, color: GymiesColors.primary.withValues(alpha: 0.5)),
+                  Icon(Icons.arrow_forward_ios_rounded, size: 12, color: GymiesColors.primary.withOpacity(0.5)),
                 ],
               ),
             ),
@@ -628,7 +637,7 @@ class _TrainerNewsletterComposeScreenState
               color: GymiesColors.darkBlue,
               border: Border(
                 top: BorderSide(
-                  color: Colors.white.withValues(alpha: 0.08),
+                  color: Colors.white.withOpacity(0.08),
                 ),
               ),
             ),
@@ -700,7 +709,7 @@ class _TrainerNewsletterComposeScreenState
         width: 1,
         height: 24,
         margin: const EdgeInsets.symmetric(horizontal: 2),
-        color: Colors.white.withValues(alpha: 0.1),
+        color: Colors.white.withOpacity(0.1),
       );
 }
 
@@ -742,7 +751,7 @@ class _ToolbarBtn extends StatelessWidget {
         height: 40,
         decoration: BoxDecoration(
           color: active
-              ? GymiesColors.primary.withValues(alpha: 0.15)
+              ? GymiesColors.primary.withOpacity(0.15)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
@@ -751,7 +760,7 @@ class _ToolbarBtn extends StatelessWidget {
           size: 20,
           color: active
               ? GymiesColors.primary
-              : Colors.white.withValues(alpha: 0.55),
+              : Colors.white.withOpacity(0.55),
         ),
       ),
     );

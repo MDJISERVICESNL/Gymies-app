@@ -56,11 +56,13 @@ dependencies:
   share_plus: ^12.0.2
   geolocator: ^14.0.2
   geocoding: ^4.0.0
+  google_maps_flutter: ^2.5.0
   cached_network_image: ^3.4.1
   webview_flutter: ^4.10.0
   package_info_plus: ^9.0.1
   intl: ^0.20.2
   flutter_secure_storage: ^10.0.0
+  path_provider: ^2.1.5
 
   # ── Error Tracking ──────────────────────────────────────────
   sentry_flutter: ^8.13.0               # Sentry crash & error reporting met user context
@@ -85,6 +87,8 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  integration_test:
+    sdk: flutter
   flutter_launcher_icons: ^0.14.3
 
   # The "flutter_lints" package below contains a set of recommended lints to
@@ -105,6 +109,7 @@ dependency_overrides:
 
 # The following section is specific to Flutter packages.
 flutter:
+  generate: true
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

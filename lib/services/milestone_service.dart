@@ -1,4 +1,3 @@
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -171,8 +170,15 @@ class MilestoneService extends ChangeNotifier {
   }
 
   Future<void> _persistShown() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_prefsKey, _shownMilestones.toList());
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_prefsKey, _shownMilestones.toList());
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[MilestoneService] Failed to persist milestones: $e');
+      }
+      // Fail silently - milestones will reset on app restart but won't crash
+    }
   }
 
   String _sessionTitle(int count) {

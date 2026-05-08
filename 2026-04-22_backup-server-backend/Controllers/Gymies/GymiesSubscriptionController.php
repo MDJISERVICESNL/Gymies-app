@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 final class GymiesSubscriptionController extends Controller
@@ -432,14 +433,14 @@ final class GymiesSubscriptionController extends Controller
                             'mollie_payment_id' => $paymentId,
                             'amount_cents' => $amountCents,
                             'status' => $status === 'paid' ? 'paid' : ($status === 'failed' ? 'failed' : 'pending'),
-                            'failure_reason' => $status === 'failed' ? ($data['details']['failureReason'] ?? 'Onbekend') : null,
+                            'failure_reason' => $status === 'failed' ? (($data['details']['failureReason'] ?? null) ?: 'Onbekend') : null,
                             'paid_at' => $status === 'paid' ? now() : null,
                             'created_at' => now(),
                         ]);
                     } else {
                         DB::table('gymies_subscription_payments')->where('id', $existing->id)->update([
                             'status' => $status === 'paid' ? 'paid' : ($status === 'failed' ? 'failed' : 'pending'),
-                            'failure_reason' => $status === 'failed' ? ($data['details']['failureReason'] ?? null) : null,
+                            'failure_reason' => $status === 'failed' ? (($data['details']['failureReason'] ?? null) ?: null) : null,
                             'paid_at' => $status === 'paid' ? now() : $existing->paid_at,
                         ]);
                     }
@@ -768,8 +769,8 @@ final class GymiesSubscriptionController extends Controller
         // 4a. Mollie Customer aanmaken
         try {
             $customerResponse = Http::withToken($apiKey)->timeout(15)->post(self::MOLLIE_API . '/customers', [
-                'name' => $user->display_name ?? (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')),
-                'email' => $user->email ?? '',
+                'name' => $user->display_name ?? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: 'Unknown',
+                'email' => $user->email ?? 'noemail@unknown.local',
             ]);
 
             if (!$customerResponse->successful()) {
@@ -913,8 +914,8 @@ final class GymiesSubscriptionController extends Controller
 
         // 1. Mollie Customer aanmaken
         $customerResponse = Http::withToken($apiKey)->timeout(15)->post(self::MOLLIE_API . '/customers', [
-            'name' => $user->display_name ?? ($user->first_name . ' ' . $user->last_name),
-            'email' => $user->email,
+            'name' => $user->display_name ?? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')) ?: 'Unknown',
+            'email' => $user->email ?? 'noemail@unknown.local',
         ]);
 
         if (!$customerResponse->successful()) {

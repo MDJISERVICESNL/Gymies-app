@@ -63,18 +63,22 @@ class GymiesIdempotencyMiddleware
             ->first();
 
         if ($existing) {
-            // Cached response retourneren
+            // Return cached response with idempotency marker
             $body = json_decode($existing->response_body, true) ?? [];
-            return response()->json($body, (int) $existing->response_code)
-                ->header('X-Idempotency-Replayed', 'true');
+            $statusCode = (int) $existing->response_code;
+
+            // Return JSON response (original response was JSON per line 78)
+            $cachedResponse = response()->json($body, $statusCode);
+            $cachedResponse->headers->set('X-Idempotency-Replayed', 'true');
+
+            return $cachedResponse;
         }
 
         // Verwerk het request
         /** @var Response $response */
         $response = $next($request);
 
-        // Sla response op voor toekomstige retries
-        // Alleen JSON responses cachen
+        // Cache response for future retries (only JSON responses)
         if ($response instanceof \Illuminate\Http\JsonResponse) {
             $userId = 0;
             $user = $request->attributes->get('gymies_user') ?? $request->user();
@@ -83,7 +87,8 @@ class GymiesIdempotencyMiddleware
             }
 
             try {
-                DB::table(self::TABLE)->insert([
+                // insertOrIgnore handles race conditions — if key already exists, ignore
+                DB::table(self::TABLE)->insertOrIgnore([
                     'idempotency_key' => $key,
                     'user_id' => $userId,
                     'endpoint' => substr($request->path(), 0, 120),
@@ -94,8 +99,12 @@ class GymiesIdempotencyMiddleware
                     'expires_at' => now()->addHours(self::TTL_HOURS),
                 ]);
             } catch (\Illuminate\Database\QueryException $e) {
-                // Duplicate key → race condition, negeer
-                // De eerste request wint, de tweede krijgt volgende keer de cached response
+                // Race condition: another process inserted the same key first
+                // Log but don't fail — the cached response will be used on next check
+                \Illuminate\Support\Facades\Log::debug('[Idempotency] Race condition on key insert', [
+                    'key' => $key,
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 

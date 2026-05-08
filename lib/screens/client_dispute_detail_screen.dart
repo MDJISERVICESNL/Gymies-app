@@ -1,11 +1,12 @@
+
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
-
 /// Detail-scherm voor een geschil: info-header + chat-berichten + invoerveld.
 class ClientDisputeDetailScreen extends StatefulWidget {
   const ClientDisputeDetailScreen({super.key, required this.disputeId});
@@ -68,7 +69,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon geschil niet laden.';
+        _error = S.of(context).konGeschilNietLaden;
         _loading = false;
       });
     }
@@ -101,7 +102,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Kon bericht niet versturen.'),
+          content: const Text(S.of(context).konBerichtNietVersturen),
           backgroundColor: Colors.red.shade600,
         ),
       );
@@ -133,7 +134,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
         backgroundColor: GymiesColors.darkBlue,
         foregroundColor: Colors.white,
         title: Text(
-          'Geschil',
+          S.of(context).geschil,
           style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 18),
         ),
         centerTitle: true,
@@ -172,7 +173,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
             TextButton.icon(
               onPressed: _load,
               icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: Text('Opnieuw proberen', style: GoogleFonts.sora(fontSize: 13)),
+              label: Text(S.of(context).opnieuwProberen, style: GoogleFonts.sora(fontSize: 13)),
             ),
           ],
         ),
@@ -191,7 +192,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
           Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 8),
             child: Text(
-              'BERICHTEN',
+              S.of(context).berichten,
               style: GoogleFonts.sora(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
@@ -211,7 +212,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
                       size: 32, color: Colors.grey.shade400),
                   const SizedBox(height: 8),
                   Text(
-                    'Nog geen berichten',
+                    S.of(context).nogGeenBerichten,
                     style: GoogleFonts.sora(
                       fontSize: 13,
                       color: Colors.grey.shade500,
@@ -220,8 +221,8 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
                   const SizedBox(height: 4),
                   Text(
                     _isResolved
-                        ? 'Dit geschil is opgelost.'
-                        : 'Stuur een bericht om het gesprek te starten.',
+                        ? S.of(context).ditGeschilIsOpgelost
+                        : S.of(context).stuurEenBerichtOmHetGesprek,
                     style: GoogleFonts.sora(
                       fontSize: 12,
                       color: Colors.grey.shade400,
@@ -250,7 +251,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -336,7 +337,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
 
   Widget _buildMessageBubble(Map<String, dynamic> msg) {
     final isMine = msg['is_mine'] == true;
-    final author = (msg['author'] ?? 'Onbekend').toString();
+    final author = (msg['author'] ?? S.of(context).statusOnbekend).toString();
     final text = (msg['message'] ?? '').toString();
     final time = (msg['created_at'] ?? '').toString();
 
@@ -361,7 +362,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
+                  color: Colors.black.withOpacity(0.06),
                   blurRadius: 6,
                   offset: const Offset(0, 2),
                 ),
@@ -398,7 +399,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
                   style: GoogleFonts.sora(
                     fontSize: 10,
                     color: isMine
-                        ? Colors.white.withValues(alpha: 0.5)
+                        ? Colors.white.withOpacity(0.5)
                         : Colors.grey.shade400,
                   ),
                 ),
@@ -425,7 +426,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Dit geschil is opgelost. Je kunt geen berichten meer versturen.',
+              S.of(context).ditGeschilIsOpgelostJeKuntGeenBerichtenMeerVersturen,
               style: GoogleFonts.sora(
                 fontSize: 12,
                 color: Colors.green.shade700,
@@ -444,7 +445,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 8,
             offset: const Offset(0, -2),
           ),
@@ -471,7 +472,7 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
                 textCapitalization: TextCapitalization.sentences,
                 style: GoogleFonts.sora(fontSize: 14, color: GymiesColors.darkBlue),
                 decoration: InputDecoration(
-                  hintText: 'Typ een bericht...',
+                  hintText: S.of(context).typEenBericht,
                   hintStyle: GoogleFonts.sora(
                     fontSize: 14,
                     color: Colors.grey.shade400,
@@ -523,13 +524,13 @@ class _ClientDisputeDetailScreenState extends State<ClientDisputeDetailScreen> {
   String _resolutionLabel(String? type) {
     switch (type) {
       case 'client':
-        return 'Opgelost in het voordeel van de klant';
+        return S.of(context).opgelostInHetVoordeelVanDe;
       case 'trainer':
-        return 'Opgelost in het voordeel van de trainer';
+        return S.of(context).opgelostInHetVoordeelVanDe2;
       case 'split':
-        return 'Opgelost met een compromis (split)';
+        return S.of(context).opgelostMetEenCompromisSplit;
       default:
-        return 'Geschil opgelost';
+        return S.of(context).geschilOpgelost;
     }
   }
 
@@ -580,7 +581,7 @@ class _StatusBadge extends StatelessWidget {
       case 'open':
         return 'Open';
       case 'in_progress':
-        return 'In behandeling';
+        return S.of(context).statusInBehandeling;
       case 'resolved':
         return 'Opgelost';
       default:
@@ -593,7 +594,7 @@ class _StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.12),
+        color: _color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(

@@ -74,15 +74,28 @@ final class GymiesStudioAnalyticsController extends Controller
         $heatmap = [];
         if (Schema::hasTable('gymies_bookings')) {
             $names = DB::table('gymies_users')->whereIn('id', $trainerIds)->pluck('display_name', 'id')->all();
+            // FIX 1: Batch query instead of N+1 per trainer
+            $allMetrics = DB::table('gymies_bookings')
+                ->whereIn('trainer_user_id', $trainerIds)
+                ->whereIn('status', ['confirmed', 'completed', 'no_show'])
+                ->whereBetween('scheduled_at', [$fromDt, $toDt])
+                ->whereNotNull('paid_at')
+                ->selectRaw('trainer_user_id, status, COUNT(*) as c, SUM(COALESCE(amount_cents,0)) as revenue')
+                ->groupBy('trainer_user_id', 'status')
+                ->get();
+
+            // Index by trainer_id for easy access
+            $metricsByTrainer = [];
+            foreach ($allMetrics as $m) {
+                $tid = (int) $m->trainer_user_id;
+                if (!isset($metricsByTrainer[$tid])) {
+                    $metricsByTrainer[$tid] = [];
+                }
+                $metricsByTrainer[$tid][] = $m;
+            }
+
             foreach ($trainerIds as $tid) {
-                $rows = DB::table('gymies_bookings')
-                    ->where('trainer_user_id', $tid)
-                    ->whereIn('status', ['confirmed', 'completed', 'no_show'])
-                    ->whereBetween('scheduled_at', [$fromDt, $toDt])
-                    ->whereNotNull('paid_at')
-                    ->selectRaw('status, COUNT(*) as c, SUM(COALESCE(amount_cents,0)) as revenue')
-                    ->groupBy('status')
-                    ->get();
+                $rows = $metricsByTrainer[$tid] ?? [];
                 $revenue = 0;
                 $noShow = 0;
                 $completed = 0;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Helpers;
 
 use App\Events\Gymies\GymiesChatMessageSent;
+use App\Http\Controllers\Gymies\FcmPushHelper;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -81,11 +82,14 @@ final class GymiesChatBroadcast
         $trainerId = (int) $conv->trainer_user_id;
         $clientId = (int) $conv->client_user_id;
         $receiverId = $fromUserId === $trainerId ? $clientId : $trainerId;
+        $senderType = $fromUserId === $trainerId ? 'trainer' : 'client';
         if ($receiverId <= 0) {
             return;
         }
         $preview = mb_substr($body, 0, 200);
         $createdAt = now()->toIso8601String();
+
+        // 1) WebSocket broadcast (Reverb)
         try {
             if (class_exists(GymiesChatMessageSent::class)) {
                 event(new GymiesChatMessageSent(
@@ -95,10 +99,53 @@ final class GymiesChatBroadcast
                     (string) $fromUserId,
                     $preview,
                     $createdAt,
+                    null,
+                    $senderType,
                 ));
             }
         } catch (\Throwable $e) {
-            // Broadcasting niet geconfigureerd: geen fout naar client
+            \Log::warning('[GymiesChatBroadcast] Broadcast failed: ' . $e->getMessage());
+            if (app()->bound('sentry')) {
+                app('sentry')->captureException($e);
+            }
         }
+
+        // 2) FCM push notification (best effort, valt stil als geen tokens/key)
+        try {
+            $senderName = self::resolveUserName($fromUserId) ?? ($senderType === 'trainer' ? 'Je trainer' : 'Je klant');
+            FcmPushHelper::sendToUser(
+                $receiverId,
+                $senderName,
+                $preview,
+                [
+                    'type' => 'chat_message',
+                    'conversation_id' => (string) $conversationId,
+                    'message_id' => (string) $messageId,
+                    'from_user_id' => (string) $fromUserId,
+                    'sender_type' => $senderType,
+                ]
+            );
+        } catch (\Throwable $e) {
+            \Log::warning('[GymiesChatBroadcast] FCM push failed: ' . $e->getMessage());
+            if (app()->bound('sentry')) {
+                app('sentry')->captureException($e);
+            }
+        }
+    }
+
+    /**
+     * Haal de naam op van een user (voor push notification titel).
+     */
+    private static function resolveUserName(int $userId): ?string
+    {
+        try {
+            $user = DB::table('users')->where('id', $userId)->first(['name']);
+            if ($user && !empty($user->name)) {
+                return $user->name;
+            }
+        } catch (\Throwable $e) {
+            // Stil falen — fallback wordt gebruikt
+        }
+        return null;
     }
 }

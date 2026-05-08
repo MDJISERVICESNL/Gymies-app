@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Gymies;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -24,7 +25,7 @@ class GymiesTrainerController
             $trainers = $this->loadTrainers($request);
             return response()->json(['data' => $trainers]);
         } catch (\Throwable $e) {
-            \Log::error('GymiesTrainerController@index FAILED', [
+            Log::error('GymiesTrainerController@index FAILED', [
                 'error' => $e->getMessage(),
                 'file'  => $e->getFile() . ':' . $e->getLine(),
                 'trace' => array_slice($e->getTrace(), 0, 5),
@@ -51,7 +52,7 @@ class GymiesTrainerController
 
             return response()->json($trainer);
         } catch (\Throwable $e) {
-            \Log::error('GymiesTrainerController@show FAILED', [
+            Log::error('GymiesTrainerController@show FAILED', [
                 'id'    => $id,
                 'error' => $e->getMessage(),
                 'file'  => $e->getFile() . ':' . $e->getLine(),
@@ -108,7 +109,9 @@ class GymiesTrainerController
             $update['profile_slug'] = trim($body['profile_slug']) ?: null;
         }
         if (isset($body['visible_badges']) && is_array($body['visible_badges'])) {
-            $update['visible_badges'] = json_encode(array_values($body['visible_badges']));
+            // Max 6 toggleable badges (always-visible badges worden niet meegeteld)
+            $badges = array_values(array_slice($body['visible_badges'], 0, 6));
+            $update['visible_badges'] = json_encode($badges);
         }
 
         if (!empty($update) && Schema::hasTable('gymies_trainer_profiles')) {
@@ -169,6 +172,93 @@ class GymiesTrainerController
         return response()->json(['data' => $media, 'media' => $media]);
     }
 
+    /**
+     * GET trainers/{id}/stories — Publiek: actieve stories (niet verlopen).
+     */
+    public function stories(Request $request, string $id): JsonResponse
+    {
+        $trainerId = (int) $id;
+        if ($trainerId <= 0) {
+            return response()->json(['stories' => [], 'data' => []]);
+        }
+
+        GymiesSchemaEnsure::trainerMediaStoryColumns();
+
+        if (!Schema::hasTable('gymies_trainer_media')) {
+            return response()->json(['stories' => [], 'data' => []]);
+        }
+
+        $userIdCol = Schema::hasColumn('gymies_trainer_media', 'trainer_user_id')
+            ? 'trainer_user_id'
+            : 'user_id';
+
+        $query = DB::table('gymies_trainer_media')
+            ->where($userIdCol, $trainerId)
+            ->where('usage', 'story')
+            ->where(function ($q) {
+                $q->whereNull('expires_at')
+                  ->orWhere('expires_at', '>', now());
+            })
+            ->orderByDesc('created_at')
+            ->limit(200);
+
+        $rows = $query->get();
+
+        $stories = $rows->map(function ($row) {
+            $filePath = (string) ($row->file_path ?? '');
+            $externalUrl = (string) ($row->external_url ?? '');
+            $url = $externalUrl !== '' ? $externalUrl : $filePath;
+            if ($filePath !== '' && !str_starts_with($filePath, 'http')) {
+                $url = url($filePath);
+            }
+            return [
+                'id' => (string) $row->id,
+                'media_type' => (string) ($row->media_type ?? 'image'),
+                'type' => (string) ($row->media_type ?? 'image'),
+                'url' => $url,
+                'thumbnail_url' => $row->thumbnail_url ?? null,
+                'caption' => $row->caption ?? null,
+                'usage' => 'story',
+                'created_at' => $row->created_at ?? null,
+                'expires_at' => $row->expires_at ?? null,
+            ];
+        })->all();
+
+        return response()->json(['stories' => $stories, 'data' => $stories]);
+    }
+
+    /**
+     * GET trainers/{id}/has-stories — Publiek: heeft trainer actieve stories?
+     */
+    public function hasStories(Request $request, string $id): JsonResponse
+    {
+        $trainerId = (int) $id;
+        if ($trainerId <= 0) {
+            return response()->json(['has_stories' => false]);
+        }
+
+        GymiesSchemaEnsure::trainerMediaStoryColumns();
+
+        if (!Schema::hasTable('gymies_trainer_media') || !Schema::hasColumn('gymies_trainer_media', 'usage')) {
+            return response()->json(['has_stories' => false]);
+        }
+
+        $userIdCol = Schema::hasColumn('gymies_trainer_media', 'trainer_user_id')
+            ? 'trainer_user_id'
+            : 'user_id';
+
+        $exists = DB::table('gymies_trainer_media')
+            ->where($userIdCol, $trainerId)
+            ->where('usage', 'story')
+            ->where(function ($q) {
+                $q->whereNull('expires_at')
+                  ->orWhere('expires_at', '>', now());
+            })
+            ->exists();
+
+        return response()->json(['has_stories' => $exists]);
+    }
+
     private function usersTable(): ?string
     {
         foreach (['gymies_users', 'users'] as $t) {
@@ -210,6 +300,10 @@ class GymiesTrainerController
             });
         }
 
+        // Add pagination parameters
+        $limit = min(100, max(1, (int) ($request->query('limit') ?? 50)));
+        $offset = max(0, (int) ($request->query('offset') ?? 0));
+
         $lat = $request->has('lat') ? $this->parseFloat($request->input('lat')) : null;
         $lng = $request->has('lng') ? $this->parseFloat($request->input('lng')) : null;
         $hasCoords = $lat !== null && $lng !== null;
@@ -237,7 +331,7 @@ class GymiesTrainerController
                 ->whereRaw("{$distanceExpr} <= ?", [$lng, $lat, $maxDistanceMeters])
                 ->orderByRaw("{$distanceExpr} ASC", [$lng, $lat]);
 
-            $profilesWithCoords = $queryWithCoords->get();
+            $profilesWithCoords = $queryWithCoords->limit($limit)->offset($offset)->get();
 
             // Trainers zonder coördinaten: vallen terug op city lookup
             $queryWithoutCoords = (clone $query)
@@ -300,7 +394,7 @@ class GymiesTrainerController
         }
 
         // ── Fallback: geen coördinaten of geen lat/lng kolommen → originele PHP-logica ──
-        $profiles = $query->select("{$usersTable}.*", 'gymies_trainer_profiles.*')->get();
+        $profiles = $query->select("{$usersTable}.*", 'gymies_trainer_profiles.*')->limit($limit)->offset($offset)->get();
 
         $trainers = [];
         foreach ($profiles as $row) {
@@ -416,6 +510,13 @@ class GymiesTrainerController
         ];
         if (in_array('email', $userCols))  $select[] = "{$usersTable}.email";
 
+        // created_at voor founding partner badge berekening
+        if (in_array('created_at', $profileCols)) {
+            $select[] = "gymies_trainer_profiles.created_at as profile_created_at";
+        } elseif (in_array('created_at', $userCols)) {
+            $select[] = "{$usersTable}.created_at";
+        }
+
         // Alle trainer_profiles kolommen: alleen selecteren als ze bestaan
         $profileFields = [
             'display_name'       => 'profile_display_name',
@@ -429,6 +530,12 @@ class GymiesTrainerController
             'booking_advance_days' => 'booking_advance_days',
             'payment_method'     => 'payment_method',
             'boosted_until'      => 'boosted_until',
+            // Badge-gerelateerde profiel velden
+            'offers_online_sessions' => 'offers_online_sessions',
+            'has_flexible_hours'     => 'has_flexible_hours',
+            'same_day_booking'       => 'same_day_booking',
+            'has_free_cancellation'  => 'has_free_cancellation',
+            'has_free_trial'         => 'has_free_trial',
         ];
         foreach ($profileFields as $col => $alias) {
             if (in_array($col, $profileCols)) {
@@ -473,13 +580,39 @@ class GymiesTrainerController
         if (array_key_exists('distance_km', $r) && $r['distance_km'] !== null) {
             $profile['distance_km'] = (float) $r['distance_km'];
         }
+
+        // Founding Partner badge — computed via feature flags
+        $profile['is_founding_partner'] = $this->isFoundingPartner($r);
+
+        // Computed badge velden — trainer profile columns die direct doorgestuurd worden
+        $badgeFields = [
+            'offers_online_sessions', 'has_flexible_hours', 'same_day_booking',
+            'has_free_cancellation', 'has_free_trial', 'return_client_percentage',
+            'is_top_booked',
+        ];
+        foreach ($badgeFields as $field) {
+            if (array_key_exists($field, $r)) {
+                $profile[$field] = $r[$field];
+            }
+        }
+
+        // Computed: return_client_percentage (indien niet in profiel, berekenen uit bookings)
+        if (!isset($profile['return_client_percentage'])) {
+            $profile['return_client_percentage'] = $this->computeReturnClientPercentage($r);
+        }
+
+        // Computed: is_top_booked (top 10% van regio)
+        if (!isset($profile['is_top_booked'])) {
+            $profile['is_top_booked'] = $this->computeIsTopBooked($r);
+        }
+
         return $profile;
     }
 
     private function buildMinimalTrainerFromUser(object $user): array
     {
         $r = (array) $user;
-        return [
+        $minimal = [
             'user_id' => (string) ($r['id'] ?? ''),
             'display_name' => $r['display_name'] ?? $r['name'] ?? $r['email'] ?? 'Trainer',
             'email' => $r['email'] ?? '',
@@ -493,6 +626,117 @@ class GymiesTrainerController
             'booking_advance_days' => 28,
             'payment_method' => 'transfer_and_cash',
         ];
+        $minimal['is_founding_partner'] = $this->isFoundingPartner($r);
+        return $minimal;
+    }
+
+    /**
+     * Check of een trainer als Founding Partner kwalificeert.
+     * Gebaseerd op feature flags: founding_partner_badge_enabled + founding_partner_cutoff_date.
+     */
+    private function isFoundingPartner(array $row): bool
+    {
+        if (!GymiesFeatureFlags::isEnabled('founding_partner_badge_enabled')) {
+            return false;
+        }
+
+        $cutoff = GymiesFeatureFlags::getValue('founding_partner_cutoff_date');
+        if (!$cutoff) {
+            return false;
+        }
+
+        // Trainer's registratie-datum: probeer created_at uit profile of user tabel
+        $createdAt = $row['profile_created_at'] ?? $row['created_at'] ?? null;
+        if (!$createdAt) {
+            return false;
+        }
+
+        try {
+            $createdDate = new \DateTime((string) $createdAt);
+            $cutoffDate  = new \DateTime($cutoff);
+            return $createdDate < $cutoffDate;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Bereken het percentage klanten dat terugkomt (≥2 bookings met deze trainer).
+     */
+    private function computeReturnClientPercentage(array $row): ?float
+    {
+        $userId = (int) ($row['user_id'] ?? $row['id'] ?? 0);
+        if ($userId <= 0 || !Schema::hasTable('gymies_bookings')) {
+            return null;
+        }
+
+        $trainerCol = Schema::hasColumn('gymies_bookings', 'trainer_user_id')
+            ? 'trainer_user_id' : 'trainer_id';
+        $clientCol = Schema::hasColumn('gymies_bookings', 'client_user_id')
+            ? 'client_user_id' : 'client_id';
+
+        $totalClients = DB::table('gymies_bookings')
+            ->where($trainerCol, $userId)
+            ->distinct($clientCol)
+            ->count($clientCol);
+
+        if ($totalClients < 3) return null; // Te weinig data
+
+        $returningClients = DB::table('gymies_bookings')
+            ->select($clientCol)
+            ->where($trainerCol, $userId)
+            ->groupBy($clientCol)
+            ->havingRaw('COUNT(*) >= 2')
+            ->get()
+            ->count();
+
+        return round(($returningClients / $totalClients) * 100, 1);
+    }
+
+    /**
+     * Check of trainer in de top 10% meest geboekt is in zijn regio.
+     */
+    private function computeIsTopBooked(array $row): bool
+    {
+        $userId = (int) ($row['user_id'] ?? $row['id'] ?? 0);
+        $city = $row['city'] ?? $row['region'] ?? null;
+        if ($userId <= 0 || !$city || !Schema::hasTable('gymies_bookings')) {
+            return false;
+        }
+
+        $trainerCol = Schema::hasColumn('gymies_bookings', 'trainer_user_id')
+            ? 'trainer_user_id' : 'trainer_id';
+
+        // Bookings in de afgelopen 30 dagen voor deze trainer
+        $myBookings = DB::table('gymies_bookings')
+            ->where($trainerCol, $userId)
+            ->where('created_at', '>=', now()->subDays(30))
+            ->count();
+
+        if ($myBookings < 5) return false; // Minimum drempel
+
+        // Alle trainers in dezelfde stad: bookings afgelopen 30 dagen
+        $cityTrainerIds = DB::table('gymies_trainer_profiles')
+            ->where('city', $city)
+            ->pluck('user_id')
+            ->toArray();
+
+        if (count($cityTrainerIds) < 5) return false; // Te weinig trainers voor vergelijking
+
+        $bookingCounts = DB::table('gymies_bookings')
+            ->whereIn($trainerCol, $cityTrainerIds)
+            ->where('created_at', '>=', now()->subDays(30))
+            ->select($trainerCol)
+            ->selectRaw('COUNT(*) as cnt')
+            ->groupBy($trainerCol)
+            ->orderByDesc('cnt')
+            ->pluck('cnt', $trainerCol)
+            ->toArray();
+
+        $topCutoff = (int) ceil(count($cityTrainerIds) * 0.10);
+        $topTrainerIds = array_slice(array_keys($bookingCounts), 0, max(1, $topCutoff));
+
+        return in_array($userId, $topTrainerIds, true);
     }
 
     private function loadPackages(int $trainerId): array
@@ -523,18 +767,54 @@ class GymiesTrainerController
             return [];
         }
 
+        GymiesSchemaEnsure::trainerMediaStoryColumns();
+
         $userIdCol = Schema::hasColumn('gymies_trainer_media', 'trainer_user_id')
             ? 'trainer_user_id'
             : 'user_id';
-        $rows = DB::table('gymies_trainer_media')
-            ->where($userIdCol, $trainerId)
-            ->get();
+
+        $hasUsage = Schema::hasColumn('gymies_trainer_media', 'usage');
+        $hasExpires = Schema::hasColumn('gymies_trainer_media', 'expires_at');
+
+        $query = DB::table('gymies_trainer_media')
+            ->where($userIdCol, $trainerId);
+
+        // Filter verlopen stories uit
+        if ($hasUsage && $hasExpires) {
+            $query->where(function ($q) {
+                $q->where('usage', '!=', 'story')
+                  ->orWhere(function ($q2) {
+                      $q2->where('usage', 'story')
+                         ->where(function ($q3) {
+                             $q3->whereNull('expires_at')
+                                ->orWhere('expires_at', '>', now());
+                         });
+                  });
+            });
+        }
+
+        $rows = $query->get();
 
         $media = [];
-        // Alleen veilige velden — voorkom interne metadata/pad leaks.
-        $allowed = ['id', 'type', 'url', 'thumbnail_url', 'caption', 'sort_order', 'created_at'];
         foreach ($rows as $row) {
-            $media[] = collect((array) $row)->only($allowed)->toArray();
+            $filePath = (string) ($row->file_path ?? '');
+            $externalUrl = (string) ($row->external_url ?? '');
+            $url = $externalUrl !== '' ? $externalUrl : $filePath;
+            if ($filePath !== '' && !str_starts_with($filePath, 'http')) {
+                $url = url($filePath);
+            }
+            $item = [
+                'id' => (string) $row->id,
+                'type' => (string) ($row->media_type ?? 'image'),
+                'media_type' => (string) ($row->media_type ?? 'image'),
+                'url' => $url,
+                'thumbnail_url' => $row->thumbnail_url ?? null,
+                'caption' => $row->caption ?? null,
+                'sort_order' => (int) ($row->sort_order ?? 0),
+                'created_at' => $row->created_at ?? null,
+                'usage' => $hasUsage ? ((string) ($row->usage ?? 'gallery')) : 'gallery',
+            ];
+            $media[] = $item;
         }
         return $media;
     }

@@ -34,18 +34,27 @@ class ConnectivityService extends ChangeNotifier {
       _isOnline = true; // Assume online bij fout
     }
 
-    _subscription = _connectivity.onConnectivityChanged.listen((results) {
-      final wasOnline = _isOnline;
-      _currentResults = results;
-      _isOnline = _hasConnection(results);
+    try {
+      // BUG FIX: Add try-catch around subscription to prevent crashes on setup failure
+      _subscription = _connectivity.onConnectivityChanged.listen((results) {
+        final wasOnline = _isOnline;
+        _currentResults = results;
+        _isOnline = _hasConnection(results);
 
-      if (wasOnline != _isOnline) {
-        if (kDebugMode) {
-          debugPrint('[Connectivity] ${_isOnline ? "ONLINE" : "OFFLINE"} — $results');
+        if (wasOnline != _isOnline) {
+          if (kDebugMode) {
+            debugPrint('[Connectivity] ${_isOnline ? "ONLINE" : "OFFLINE"} — $results');
+          }
+          notifyListeners();
         }
-        notifyListeners();
-      }
-    });
+      }, onError: (e) {
+        if (kDebugMode) debugPrint('[Connectivity] Stream error: $e');
+        _isOnline = true; // Assume online on error
+      });
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Connectivity] Initialization error: $e');
+      _isOnline = true; // Assume online on error
+    }
   }
 
   bool _hasConnection(List<ConnectivityResult> results) {

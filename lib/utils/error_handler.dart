@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../services/api_client.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// Centrale error handler voor API calls in screens.
 /// Toont een gebruiksvriendelijke SnackBar en logt naar Sentry.
@@ -56,8 +57,10 @@ class GymiesErrorHandler {
         withScope: (scope) {
           scope.setTag('error.type', statusCode == 0 ? 'network' : 'server');
           if (error is ApiException) {
-            scope.setExtra('statusCode', statusCode);
-            scope.setExtra('message', error.message);
+            scope.setContexts('error', {
+              'statusCode': statusCode,
+              'message': error.message,
+            });
           }
         },
       );
@@ -99,7 +102,7 @@ class GymiesErrorHandler {
     if (error is ApiException) return error.message;
     final msg = error.toString();
     if (msg.contains('SocketException') || msg.contains('TimeoutException')) {
-      return 'Geen verbinding. Controleer je internet en probeer opnieuw.';
+      return 'Geen verbinding. Probeer het later opnieuw.';
     }
     return 'Er ging iets mis. Probeer het later opnieuw.';
   }

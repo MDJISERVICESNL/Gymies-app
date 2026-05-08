@@ -57,27 +57,49 @@ class BiometricAuthService {
 
   /// Is biometrische auth ingeschakeld door de gebruiker?
   Future<bool> get isEnabled async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_prefEnabled) ?? false;
+    try {
+      // BUG FIX: Add try-catch for SharedPreferences.getInstance()
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_prefEnabled) ?? false;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Biometric] isEnabled error: $e');
+      return false;
+    }
   }
 
   /// Schakel biometrische auth in/uit.
   Future<void> setEnabled(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefEnabled, enabled);
-    if (kDebugMode) debugPrint('[Biometric] enabled=$enabled');
+    try {
+      // BUG FIX: Add try-catch for SharedPreferences operations
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefEnabled, enabled);
+      if (kDebugMode) debugPrint('[Biometric] enabled=$enabled');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Biometric] setEnabled error: $e');
+    }
   }
 
   /// Is de gebruiker al gevraagd of hij biometrie wil inschakelen?
   Future<bool> get hasBeenAsked async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_prefAsked) ?? false;
+    try {
+      // BUG FIX: Add try-catch for SharedPreferences.getInstance()
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_prefAsked) ?? false;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Biometric] hasBeenAsked error: $e');
+      return false;
+    }
   }
 
   /// Markeer dat de gebruiker de opt-in vraag heeft gezien.
   Future<void> markAsked() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefAsked, true);
+    try {
+      // BUG FIX: Add try-catch for SharedPreferences operations
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefAsked, true);
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Biometric] markAsked error: $e');
+    }
   }
 
   /// Reset alles bij logout — voorkomt dat volgende gebruiker biometric erft.

@@ -1,329 +1,409 @@
-/// Trainer model voor API-response.
-class Trainer {
-  Trainer({
-    required this.userId,
-    required this.displayName,
-    required this.email,
-    this.specialty,
-    this.region,
-    this.city,
-    this.categories = const [],
-    this.lessonTypes = const [],
-    this.distanceKm,
-    this.hourlyRateCents,
-    this.rating,
-    this.reviewCount,
-    this.avatarUrl,
-    this.trainerVerified = false,
-    this.emailVerified = false,
-    this.woman2woman = false,
-    this.isAmbassador = false,
-    this.subscriptionTier,
-    this.clientsWith5PlusSessions,
-    this.avgResponseMinutes,
-    this.diplomaVerified = false,
-    this.specialistCategory,
-    this.totalSessions,
-    this.hasOwnLocation = false,
-    this.offersDuoTraining = false,
-    this.hasIntroOffer = false,
-    this.profileCreatedAt,
-    this.bookingsThisWeek,
-    this.visibleBadgeIds,
-    this.mediaGallery = const [],
-    this.storyMedia = const [],
-    this.boostedUntil,
-    this.bookingAdvanceDays,
-    this.paymentMethod,
-    this.instagramUrl,
-    this.snapchatUsername,
-    this.facebookUrl,
-    this.bio,
-    this.specializationsTags = const [],
-    this.cancellationHours,
-    this.cancellationRefundPercent,
-    this.cancellationExceptions,
-    this.introOfferDescription,
-    this.brandColor,
-    this.brandLogoUrl,
-    this.brandBannerUrl,
-    this.introVideoUrl,
-  });
+import '../utils/currency_format.dart';
 
-  final String userId;
-  final String displayName;
-  final String email;
+class Trainer {
+  final int id;
+  final String name;
+  final String? avatarUrl;
+  final bool hasActiveStory;
+
+  // Profile basics
   final String? specialty;
   final String? region;
-  final String? city;
-  final List<String> categories;
-  final List<String> lessonTypes;
-  final double? distanceKm;
   final int? hourlyRateCents;
+
+  // Tier / verification
+  final String? tierRaw;
+  final bool? trainerVerifiedFlag;
+  final bool? woman2womanFlag;
+  final bool? isAmbassadorFlag;
+
+  // Trust / rating
   final double? rating;
   final int? reviewCount;
-  final String? avatarUrl;
-  final bool trainerVerified;
-  final bool emailVerified;
-  final bool woman2woman;
-  final bool isAmbassador;
-  final String? subscriptionTier;
-  final bool diplomaVerified;
+  final int? clientsWith5PlusSessions;
+  final double? avgResponseMinutes;
+
+  // Expertise / logistics
+  final bool? diplomaVerifiedFlag;
   final String? specialistCategory;
   final int? totalSessions;
-  final bool hasOwnLocation;
-  final bool offersDuoTraining;
-  final bool hasIntroOffer;
+  final bool? hasOwnLocationFlag;
+  final bool? offersDuoTrainingFlag;
+  final bool? hasIntroOfferFlag;
+
+  // Activity
   final DateTime? profileCreatedAt;
   final int? bookingsThisWeek;
-  final int? clientsWith5PlusSessions;
-  final int? avgResponseMinutes;
+
+  // Founding Partner (computed by backend via feature flags)
+  final bool? isFoundingPartnerFlag;
+
+  // Trust & social proof (computed by backend)
+  final double? returnClientPercentage;
+  final bool? isTopBookedFlag;
+  final bool? hasFreeTrialFlag;
+
+  // Service & beschikbaarheid
+  final bool? offersOnlineSessionsFlag;
+  final bool? hasFlexibleHoursFlag;
+  final bool? sameDayBookingFlag;
+  final bool? hasFreeCancellationFlag;
+
+  // UI / badges preferences
+  final String? city;
   final List<String>? visibleBadgeIds;
-  final List<Map<String, dynamic>> mediaGallery;
-  final List<Map<String, dynamic>> storyMedia;
-  final DateTime? boostedUntil;
+
+  // Storefront/editor usage (veelgebruikte velden in screens)
+  final String? bio;
+  final String? brandColor;
+  final String? brandLogoUrl;
+  final List<String> specializationsTags;
   final int? bookingAdvanceDays;
-  final String? paymentMethod;
+  final String? paymentMethodLabel;
+  final String? introOfferDescription;
+  final bool? hasCancellationPolicyFlag;
+  final String? cancellationPolicyLabel;
+  final String? cancellationExceptions;
+
   final String? instagramUrl;
   final String? snapchatUsername;
   final String? facebookUrl;
-  final String? bio;
-  final List<String> specializationsTags;
-  final int? cancellationHours;
-  final int? cancellationRefundPercent;
-  final String? cancellationExceptions;
-  final String? introOfferDescription;
+  final String? profileSlug;
 
-  // ── Pro+ branding ──
-  final String? brandColor;
-  final String? brandLogoUrl;
-  final String? brandBannerUrl;
-  final String? introVideoUrl;
+  // Discovery / filtering
+  final List<String> categories;
+  final List<String> lessonTypes;
+  final double? distanceKm;
+  final bool isBoosted;
 
-  /// Of deze trainer momenteel geboost is (in top 5 van zijn stad).
-  bool get isBoosted {
-    final until = boostedUntil;
-    if (until == null) return false;
-    return DateTime.now().isBefore(until);
-  }
+  Trainer({
+    required this.id,
+    required this.name,
+    this.avatarUrl,
+    this.hasActiveStory = false,
+
+    this.specialty,
+    this.region,
+    this.hourlyRateCents,
+
+    this.tierRaw,
+    this.trainerVerifiedFlag,
+    this.woman2womanFlag,
+    this.isAmbassadorFlag,
+
+    this.rating,
+    this.reviewCount,
+    this.clientsWith5PlusSessions,
+    this.avgResponseMinutes,
+
+    this.diplomaVerifiedFlag,
+    this.specialistCategory,
+    this.totalSessions,
+    this.hasOwnLocationFlag,
+    this.offersDuoTrainingFlag,
+    this.hasIntroOfferFlag,
+
+    this.profileCreatedAt,
+    this.bookingsThisWeek,
+    this.isFoundingPartnerFlag,
+
+    this.returnClientPercentage,
+    this.isTopBookedFlag,
+    this.hasFreeTrialFlag,
+
+    this.offersOnlineSessionsFlag,
+    this.hasFlexibleHoursFlag,
+    this.sameDayBookingFlag,
+    this.hasFreeCancellationFlag,
+
+    this.city,
+    this.visibleBadgeIds,
+
+    this.bio,
+    this.brandColor,
+    this.brandLogoUrl,
+    this.specializationsTags = const [],
+    this.bookingAdvanceDays,
+    this.paymentMethodLabel,
+    this.introOfferDescription,
+    this.hasCancellationPolicyFlag,
+    this.cancellationPolicyLabel,
+    this.cancellationExceptions,
+
+    this.instagramUrl,
+    this.snapchatUsername,
+    this.facebookUrl,
+    this.profileSlug,
+
+    this.categories = const [],
+    this.lessonTypes = const [],
+    this.distanceKm,
+    this.isBoosted = false,
+  });
 
   factory Trainer.fromJson(Map<String, dynamic> json) {
-    // Merge storefront data (nested 'storefront' object) naar root-niveau
-    // zodat alle velden uniform bereikbaar zijn.
-    final sf = json['storefront'];
-    if (sf is Map<String, dynamic>) {
-      for (final entry in sf.entries) {
-        json.putIfAbsent(entry.key, () => entry.value);
+    String? pickString(List<String> keys) {
+      for (final k in keys) {
+        final v = json[k];
+        if (v is String && v.trim().isNotEmpty) return v.trim();
+        if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim();
       }
-    }
-    // Merge branding data (nested 'branding' object) naar root-niveau
-    final br = json['branding'];
-    if (br is Map<String, dynamic>) {
-      for (final entry in br.entries) {
-        json.putIfAbsent(entry.key, () => entry.value);
-      }
-    }
-    final id = json['user_id'] ?? json['id']?.toString() ?? '';
-    List<String> listFrom(dynamic raw) {
-      if (raw is List) {
-        return raw
-            .map((e) => e?.toString().trim() ?? '')
-            .where((e) => e.isNotEmpty)
-            .toList();
-      }
-      final asString = raw?.toString().trim() ?? '';
-      if (asString.isEmpty) return const [];
-      return asString
-          .split(',')
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
+      return null;
     }
 
-    double? numberFrom(dynamic raw) {
-      if (raw is num) return raw.toDouble();
-      return double.tryParse(raw?.toString() ?? '');
+    int? pickInt(List<String> keys) {
+      for (final k in keys) {
+        final v = json[k];
+        if (v is int) return v;
+        if (v is num) return v.toInt();
+        if (v is String) return int.tryParse(v.trim());
+      }
+      return null;
     }
+
+    double? pickDouble(List<String> keys) {
+      for (final k in keys) {
+        final v = json[k];
+        if (v is double) return v;
+        if (v is num) return v.toDouble();
+        if (v is String) return double.tryParse(v.trim());
+      }
+      return null;
+    }
+
+    bool? pickBool(List<String> keys) {
+      bool? parse(dynamic v) {
+        if (v == null) return null;
+        if (v is bool) return v;
+        if (v is num) return v != 0;
+        if (v is String) {
+          final s = v.trim().toLowerCase();
+          if (s.isEmpty) return null;
+          if (s == 'true' || s == '1' || s == 'yes' || s == 'y') return true;
+          if (s == 'false' || s == '0' || s == 'no' || s == 'n') return false;
+        }
+        return null;
+      }
+
+      for (final k in keys) {
+        final v = json[k];
+        final b = parse(v);
+        if (b != null) return b;
+      }
+      return null;
+    }
+
+    DateTime? parseDate(List<String> keys) {
+      for (final k in keys) {
+        final v = json[k];
+        if (v is DateTime) return v;
+        if (v is String) {
+          final s = v.trim();
+          if (s.isEmpty) continue;
+          final dt = DateTime.tryParse(s);
+          if (dt != null) return dt;
+        }
+      }
+      return null;
+    }
+
+    // API kan 'id', 'user_id', of 'trainer_user_id' teruggeven
+    final rawId = json['id'] ?? json['user_id'] ?? json['trainer_user_id'];
+    final id = rawId is int
+        ? rawId
+        : int.tryParse(rawId?.toString() ?? '') ?? 0;
+
+    final visibleBadgesRaw = json['visibleBadgeIds'] ?? json['visible_badge_ids'] ?? json['visible_badges'];
+    final visibleBadges = visibleBadgesRaw is List
+        ? visibleBadgesRaw.map((e) => e.toString()).toList()
+        : null;
+
+    final specializationsRaw =
+        json['specializationsTags'] ?? json['specializations_tags'] ?? json['specializations'];
+    final specializationsTags = specializationsRaw is List
+        ? specializationsRaw.map((e) => e.toString()).toList()
+        : const <String>[];
+
+    final categoriesRaw = json['categories'] ?? json['category'] ?? json['trainer_categories'];
+    final categories = categoriesRaw is List
+        ? categoriesRaw.map((e) => e.toString()).toList()
+        : categoriesRaw is String && categoriesRaw.isNotEmpty
+            ? [categoriesRaw]
+            : const <String>[];
+
+    final lessonTypesRaw = json['lessonTypes'] ?? json['lesson_types'] ?? json['lesson_type'];
+    final lessonTypes = lessonTypesRaw is List
+        ? lessonTypesRaw.map((e) => e.toString()).toList()
+        : lessonTypesRaw is String && lessonTypesRaw.isNotEmpty
+            ? [lessonTypesRaw]
+            : const <String>[];
 
     return Trainer(
-      userId: id.toString(),
-      displayName: (json['display_name'] ?? json['name'] ?? json['email'] ?? '')
-          .toString()
-          .trim(),
-      email: (json['email'] ?? '').toString().trim(),
-      specialty: json['specialty']?.toString().trim(),
-      region: json['region']?.toString().trim(),
-      city: (json['city'] ?? json['place'] ?? json['town'])?.toString().trim(),
-      categories: listFrom(
-        json['categories'] ?? json['category_list'] ?? json['category'],
-      ),
-      lessonTypes: listFrom(
-        json['lesson_types'] ?? json['lessons'] ?? json['classes'],
-      ),
-      distanceKm: numberFrom(json['distance_km'] ?? json['distance']),
-      hourlyRateCents: (json['hourly_rate_cents'] ?? json['hourly_rate']) is int
-          ? json['hourly_rate_cents'] ?? json['hourly_rate']
-          : ((json['hourly_rate_cents'] ?? json['hourly_rate']) as num?)
-                ?.toInt(),
-      rating: (json['rating'] as num?)?.toDouble(),
-      reviewCount: (json['review_count'] as num?)?.toInt(),
-      avatarUrl: json['avatar_url'] ?? json['avatar']?.toString(),
-      trainerVerified: json['trainer_verified'] == true,
-      emailVerified: json['email_verified'] == true,
-      woman2woman: json['woman2woman'] == true || json['woman_2_woman'] == true,
-      isAmbassador: json['is_ambassador'] == true || json['ambassador'] == true,
-      subscriptionTier:
-          (json['subscription_tier'] ??
-                  json['tier'] ??
-                  json['plan_tier'] ??
-                  json['plan'] ??
-                  json['subscription'])
-              ?.toString()
-              .trim(),
-      diplomaVerified: json['diploma_verified'] == true ||
-          json['certified'] == true ||
-          json['gediplomeerd'] == true,
-      specialistCategory: (json['specialist_category'] ??
-              json['specialist'] ??
-              json['specialty_badge'])
-          ?.toString()
-          .trim(),
-      totalSessions: (json['total_sessions'] ?? json['sessions_count'] ?? json['completed_sessions']) is int
-          ? (json['total_sessions'] ?? json['sessions_count'] ?? json['completed_sessions']) as int
-          : int.tryParse((json['total_sessions'] ?? json['sessions_count'] ?? json['completed_sessions'])?.toString() ?? ''),
-      hasOwnLocation: json['has_own_location'] == true ||
-          json['own_location'] == true ||
-          json['eigen_locatie'] == true,
-      offersDuoTraining: json['offers_duo_training'] == true ||
-          json['duo_training'] == true ||
-          json['duo_discount'] == true,
-      hasIntroOffer: json['has_intro_offer'] == true ||
-          json['intro_offer'] == true ||
-          json['introductiekorting'] == true,
-      profileCreatedAt: () {
-        final raw = json['profile_created_at'] ?? json['created_at'] ?? json['registered_at'];
-        if (raw == null) return null;
-        if (raw is DateTime) return raw;
-        return DateTime.tryParse(raw.toString());
-      }(),
-      bookingsThisWeek: (json['bookings_this_week'] ?? json['weekly_bookings']) is int
-          ? (json['bookings_this_week'] ?? json['weekly_bookings']) as int
-          : int.tryParse((json['bookings_this_week'] ?? json['weekly_bookings'])?.toString() ?? ''),
-      clientsWith5PlusSessions: (json['clients_with_5_plus_sessions'] ?? json['repeat_clients']) is int
-          ? (json['clients_with_5_plus_sessions'] ?? json['repeat_clients']) as int
-          : int.tryParse((json['clients_with_5_plus_sessions'] ?? json['repeat_clients'])?.toString() ?? ''),
-      avgResponseMinutes: (json['avg_response_minutes'] ?? json['response_time_minutes']) is int
-          ? (json['avg_response_minutes'] ?? json['response_time_minutes']) as int
-          : int.tryParse((json['avg_response_minutes'] ?? json['response_time_minutes'])?.toString() ?? ''),
-      visibleBadgeIds: () {
-        final raw = json['visible_badges'] ?? json['visible_badge_ids'] ?? json['badge_ids'];
-        if (raw == null) return null;
-        return listFrom(raw);
-      }(),
-      mediaGallery: _listOfMaps(json['media_gallery'] ?? json['mediaGallery'] ?? json['media']),
-      storyMedia: _listOfMaps(json['story_media'] ?? json['storyMedia'] ?? json['story'] ?? json['stories']),
-      boostedUntil: () {
-        final raw = json['boosted_until'] ?? json['boostedUntil'];
-        if (raw == null) return null;
-        if (raw is DateTime) return raw;
-        return DateTime.tryParse(raw.toString());
-      }(),
-      bookingAdvanceDays: (json['booking_advance_days'] ?? json['bookingAdvanceDays']) is int
-          ? (json['booking_advance_days'] ?? json['bookingAdvanceDays']) as int
-          : int.tryParse((json['booking_advance_days'] ?? json['bookingAdvanceDays'])?.toString() ?? ''),
-      paymentMethod: (json['payment_method'] ?? json['paymentMethod'])?.toString().trim(),
-      instagramUrl: (json['instagram_url'] ?? json['instagramUrl'])?.toString().trim(),
-      snapchatUsername: (json['snapchat_username'] ?? json['snapchatUsername'])?.toString().trim(),
-      facebookUrl: (json['facebook_url'] ?? json['facebookUrl'])?.toString().trim(),
-      bio: (json['bio'] ?? json['about'] ?? json['intro'])?.toString().trim(),
-      specializationsTags: listFrom(json['specializations_tags'] ?? json['specializationsTags']),
-      cancellationHours: (json['cancellation_hours'] ?? json['cancellationHours']) is int
-          ? (json['cancellation_hours'] ?? json['cancellationHours']) as int
-          : int.tryParse((json['cancellation_hours'] ?? json['cancellationHours'])?.toString() ?? ''),
-      cancellationRefundPercent: (json['cancellation_refund_percent'] ?? json['cancellationRefundPercent']) is int
-          ? (json['cancellation_refund_percent'] ?? json['cancellationRefundPercent']) as int
-          : int.tryParse((json['cancellation_refund_percent'] ?? json['cancellationRefundPercent'])?.toString() ?? ''),
-      cancellationExceptions: (json['cancellation_exceptions'] ?? json['cancellationExceptions'])?.toString().trim(),
-      introOfferDescription: (json['intro_offer_description'] ?? json['introOfferDescription'])?.toString().trim(),
-      brandColor: (json['brand_color'] ?? json['brandColor'])?.toString().trim(),
-      brandLogoUrl: (json['brand_logo_url'] ?? json['brandLogoUrl'])?.toString().trim(),
-      brandBannerUrl: (json['brand_banner_url'] ?? json['brandBannerUrl'])?.toString().trim(),
-      introVideoUrl: (json['intro_video_url'] ?? json['introVideoUrl'])?.toString().trim(),
+      id: id,
+      name: (json['name'] as String?) ??
+          (json['display_name'] as String?) ??
+          (json['email'] as String?) ??
+          'Trainer',
+      avatarUrl: json['avatar_url'] as String? ?? json['avatarUrl'] as String?,
+      hasActiveStory: (json['hasActiveStory'] ?? json['has_active_story'] ?? false) as bool? ?? false,
+
+      specialty: pickString(['specialty', 'specialism', 'trainer_specialty', 'specialty_name']),
+      region: pickString(['region', 'trainer_region', 'city_region', 'location_region']),
+      hourlyRateCents: pickInt(['hourly_rate_cents', 'hourlyRateCents', 'hourly_rate', 'hourlyRate']),
+
+      tierRaw: pickString(['tierNormalized', 'tier_normalized', 'tier', 'subscription_tier', 'subscription_tier_name']),
+
+      trainerVerifiedFlag: pickBool(['trainerVerified', 'trainer_verified', 'verified', 'trainer_is_verified']),
+      woman2womanFlag: pickBool(['woman2woman', 'woman_2_woman', 'w2w']),
+      isAmbassadorFlag: pickBool(['isAmbassador', 'ambassador', 'is_ambassador']),
+
+      rating: pickDouble(['rating', 'avg_rating', 'rating_avg', 'ratingAvg']),
+      reviewCount: pickInt(['reviewCount', 'review_count', 'count_reviews', 'reviews_count']),
+      clientsWith5PlusSessions: pickInt(['clientsWith5PlusSessions', 'clients_with_5_plus_sessions']),
+      avgResponseMinutes: pickDouble(['avgResponseMinutes', 'avg_response_minutes']),
+
+      diplomaVerifiedFlag: pickBool(['diplomaVerified', 'diploma_verified']),
+      specialistCategory: pickString(['specialistCategory', 'specialist_category', 'specialist', 'specialist_type']),
+      totalSessions: pickInt(['totalSessions', 'total_sessions']),
+      hasOwnLocationFlag: pickBool(['hasOwnLocation', 'has_own_location', 'own_location']),
+      offersDuoTrainingFlag: pickBool(['offersDuoTraining', 'offers_duo_training', 'duo_training']),
+      hasIntroOfferFlag: pickBool(['hasIntroOffer', 'has_intro_offer', 'intro_offer']),
+
+      profileCreatedAt: parseDate(['profileCreatedAt', 'profile_created_at', 'created_at']),
+      bookingsThisWeek: pickInt(['bookingsThisWeek', 'bookings_this_week']),
+      isFoundingPartnerFlag: pickBool(['isFoundingPartner', 'is_founding_partner', 'founding_partner']),
+
+      returnClientPercentage: pickDouble(['returnClientPercentage', 'return_client_percentage']),
+      isTopBookedFlag: pickBool(['isTopBooked', 'is_top_booked', 'top_booked']),
+      hasFreeTrialFlag: pickBool(['hasFreeTrial', 'has_free_trial', 'free_trial']),
+
+      offersOnlineSessionsFlag: pickBool(['offersOnlineSessions', 'offers_online_sessions', 'online_sessions']),
+      hasFlexibleHoursFlag: pickBool(['hasFlexibleHours', 'has_flexible_hours', 'flexible_hours']),
+      sameDayBookingFlag: pickBool(['sameDayBooking', 'same_day_booking']),
+      hasFreeCancellationFlag: pickBool(['hasFreeCancellation', 'has_free_cancellation', 'free_cancellation']),
+
+      city: pickString(['city', 'town', 'client_city']),
+      visibleBadgeIds: visibleBadges,
+
+      bio: pickString(['bio', 'trainer_bio']),
+      brandColor: pickString(['brandColor', 'brand_color']),
+      brandLogoUrl: pickString(['brandLogoUrl', 'brand_logo_url']),
+      specializationsTags: specializationsTags,
+      bookingAdvanceDays: pickInt(['bookingAdvanceDays', 'booking_advance_days']),
+      paymentMethodLabel: pickString(['paymentMethodLabel', 'payment_method_label']),
+      introOfferDescription: pickString(['introOfferDescription', 'intro_offer_description', 'intro_offer_label']),
+
+      hasCancellationPolicyFlag: pickBool(['hasCancellationPolicy', 'has_cancellation_policy']),
+      cancellationPolicyLabel: pickString(['cancellationPolicyLabel', 'cancellation_policy_label']),
+      cancellationExceptions: pickString(['cancellationExceptions', 'cancellation_exceptions']),
+
+      instagramUrl: pickString(['instagramUrl', 'instagram_url']),
+      snapchatUsername: pickString(['snapchatUsername', 'snapchat_username']),
+      facebookUrl: pickString(['facebookUrl', 'facebook_url']),
+
+      profileSlug: pickString(['profileSlug', 'profile_slug']),
+
+      categories: categories,
+      lessonTypes: lessonTypes,
+      distanceKm: pickDouble(['distanceKm', 'distance_km', 'distance']),
+      isBoosted: pickBool(['isBoosted', 'is_boosted', 'boosted']) ?? false,
     );
   }
 
-  /// Label voor betaalmethode op profiel.
-  String get paymentMethodLabel {
-    final m = (paymentMethod ?? 'transfer_and_cash').toLowerCase();
-    if (m == 'transfer_only') return 'Accepteert alleen overboekingen';
-    if (m == 'cash_only') return 'Accepteert alleen cash';
-    return 'Accepteert overboekingen & cash';
-  }
+  // ---------------- Getters expected by UI (computed, NO field name clashes) ----------------
 
-  static List<Map<String, dynamic>> _listOfMaps(dynamic raw) {
-    if (raw is! List) return [];
-    return raw
-        .map((e) {
-          if (e is Map<String, dynamic>) return e;
-          if (e is Map) return Map<String, dynamic>.from(e);
-          return null;
-        })
-        .whereType<Map<String, dynamic>>()
-        .toList();
-  }
+  String get nameOrEmail => name;
+  String get displayName => name;
+  String get userId => id.toString();
 
-  /// Label voor de prijs-badge: "Op aanvraag" bij prijs op aanvraag.
-  String get priceBadgeLabel => hourlyRateCents != null
-      ? '€${(hourlyRateCents! / 100).toStringAsFixed(0)}/sessie'
-      : 'Op aanvraag';
-
-  /// Leesbaar label voor annuleringsbeleid op openbaar profiel.
-  String? get cancellationPolicyLabel {
-    if (cancellationHours == null) return null;
-    final hours = cancellationHours!;
-    final refund = cancellationRefundPercent ?? 100;
-    final termijn = hours >= 48
-        ? '${hours ~/ 24} dagen'
-        : '$hours uur';
-    return 'Annuleer tot $termijn van tevoren — $refund% restitutie';
-  }
-
-  /// Heeft de trainer een annuleringsbeleid ingesteld?
-  bool get hasCancellationPolicy => cancellationHours != null;
-
-  /// Heeft de trainer Pro+ branding ingesteld?
-  bool get hasBranding =>
-      (brandColor != null && brandColor!.isNotEmpty) ||
-      (brandLogoUrl != null && brandLogoUrl!.isNotEmpty) ||
-      (brandBannerUrl != null && brandBannerUrl!.isNotEmpty);
-
-  /// Heeft de trainer een intro video?
-  bool get hasIntroVideo =>
-      introVideoUrl != null && introVideoUrl!.isNotEmpty;
-
-  /// Is dit een Pro+ trainer?
-  bool get isProPlus => tierNormalized == 'pro_plus' || tierNormalized == 'studio';
-
-  String get nameOrEmail => displayName.isNotEmpty ? displayName : email;
-  String get priceLabel => hourlyRateCents != null
-      ? '€${(hourlyRateCents! / 100).toStringAsFixed(0)}/sessie'
-      : 'Prijs op aanvraag';
+  bool get trainerVerified => trainerVerifiedFlag ?? false;
+  bool get woman2woman => woman2womanFlag ?? false;
+  bool get isAmbassador => isAmbassadorFlag ?? false;
+  bool get isFoundingPartner => isFoundingPartnerFlag ?? false;
 
   String get tierNormalized {
-    final raw = (subscriptionTier ?? '').trim().toLowerCase();
-    if (raw.contains('studio')) return 'studio';
-    if (raw.contains('pro_plus') || raw.contains('proplus') || raw.contains('pro+')) return 'pro_plus';
-    if (raw.contains('elite')) return 'studio'; // legacy: elite is nu studio (gym-only)
+    final raw = (tierRaw ?? '').toLowerCase().trim();
+    if (raw.isEmpty) return 'starter';
+    if (raw == 'proplus' || raw == 'pro-plus') return 'pro_plus';
+    if (raw.contains('pro_plus') || raw.contains('proplus')) return 'pro_plus';
     if (raw.contains('pro')) return 'pro';
-    if (raw.contains('starter') || raw.contains('basic')) return 'starter';
-    return 'starter';
+    if (raw == 'studio') return 'studio';
+    return raw;
   }
 
-  bool get coachToolsEnabled => tierNormalized == 'pro' || tierNormalized == 'pro_plus' || tierNormalized == 'studio';
+  bool get isProPlus => tierNormalized == 'pro_plus' || tierNormalized == 'studio';
+  bool get isPro => tierNormalized == 'pro';
+  bool get isProOrHigher => isPro || isProPlus;
 
-  String get coachToolsLabel {
-    return coachToolsEnabled
-        ? 'Doelen & progressie beschikbaar'
-        : 'Doelen & progressie niet beschikbaar';
+  String get priceBadgeLabel {
+    return formatEuroShort(hourlyRateCents);
   }
+
+  String get priceLabel {
+    return formatEuroShort(hourlyRateCents);
+  }
+
+  bool get diplomaVerified => diplomaVerifiedFlag ?? false;
+  bool get hasOwnLocation => hasOwnLocationFlag ?? false;
+  bool get offersDuoTraining => offersDuoTrainingFlag ?? false;
+  bool get hasIntroOffer => hasIntroOfferFlag ?? false;
+
+  bool get hasCancellationPolicy => hasCancellationPolicyFlag ?? false;
+
+  // Nieuwe badge getters
+  bool get isTopBooked => isTopBookedFlag ?? false;
+  bool get hasFreeTrial => hasFreeTrialFlag ?? false;
+  bool get offersOnlineSessions => offersOnlineSessionsFlag ?? false;
+  bool get hasFlexibleHours => hasFlexibleHoursFlag ?? false;
+  bool get sameDayBooking => sameDayBookingFlag ?? false;
+  bool get hasFreeCancellation => hasFreeCancellationFlag ?? false;
+
+  /// Terugkerende klanten: ≥80% is badge-waardig.
+  bool get hasHighRetention =>
+      returnClientPercentage != null && returnClientPercentage! >= 80.0;
+
+  /// Platform anciënniteit in dagen.
+  int get daysOnPlatform =>
+      profileCreatedAt != null
+          ? DateTime.now().difference(profileCreatedAt!).inDays
+          : 0;
+
+  /// Categorieën / specialisaties als lowercase set voor badge matching.
+  Set<String> get _allTags {
+    final tags = <String>{};
+    for (final c in categories) {
+      tags.add(c.toLowerCase().trim());
+    }
+    for (final s in specializationsTags) {
+      tags.add(s.toLowerCase().trim());
+    }
+    final spec = (specialty ?? '').toLowerCase().trim();
+    if (spec.isNotEmpty) tags.add(spec);
+    final specCat = (specialistCategory ?? '').toLowerCase().trim();
+    if (specCat.isNotEmpty) tags.add(specCat);
+    return tags;
+  }
+
+  bool _matchesAnyTag(List<String> keywords) {
+    final tags = _allTags;
+    for (final kw in keywords) {
+      for (final tag in tags) {
+        if (tag.contains(kw)) return true;
+      }
+    }
+    return false;
+  }
+
+  bool get isSeniorenSpecialist =>
+      _matchesAnyTag(['senior', '55+', '65+', 'ouderen']);
+  bool get isRevalidatieSpecialist =>
+      _matchesAnyTag(['revalidatie', 'rehabilitatie', 'herstel', 'fysiotherapie', 'blessure']);
+  bool get isZwangerschapSpecialist =>
+      _matchesAnyTag(['zwanger', 'prenatal', 'postnatal', 'mama', 'pregnancy']);
+  bool get isJeugdSpecialist =>
+      _matchesAnyTag(['jeugd', 'kids', 'kinderen', 'tiener', 'youth', 'junior']);
+  bool get isAfvallenSpecialist =>
+      _matchesAnyTag(['afvallen', 'gewichtsverlies', 'weight loss', 'vetverbranding', 'slank']);
+  bool get isKrachtSpecialist =>
+      _matchesAnyTag(['kracht', 'powerlifting', 'strength', 'weightlifting', 'bodybuilding']);
 }

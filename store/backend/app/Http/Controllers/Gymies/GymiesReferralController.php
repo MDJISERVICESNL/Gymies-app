@@ -112,17 +112,20 @@ final class GymiesReferralController extends Controller
             ->first();
 
         if (!$row) {
-            // Genereer nieuwe permanente code
-            $code = $this->generatePermanentCode((int) $user->id);
-            DB::table('gymies_referrals')->insert([
-                'referrer_user_id' => (int) $user->id,
-                'referral_code' => $code,
-                'permanent' => 1,
-                'max_uses' => 999,
-                'uses_count' => 0,
-                'status' => 'active',
-                'created_at' => now(),
-            ]);
+            // Genereer nieuwe permanente code (wrapped in transaction)
+            $code = DB::transaction(function() use ($user) {
+                $newCode = $this->generatePermanentCode((int) $user->id);
+                DB::table('gymies_referrals')->insert([
+                    'referrer_user_id' => (int) $user->id,
+                    'referral_code' => $newCode,
+                    'permanent' => 1,
+                    'max_uses' => 999,
+                    'uses_count' => 0,
+                    'status' => 'active',
+                    'created_at' => now(),
+                ]);
+                return $newCode;
+            });
             $row = (object) ['referral_code' => $code];
         }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// Veilige URL launcher met domein-whitelist voor betalingen.
 ///
@@ -88,7 +89,7 @@ class SafeUrlLauncher {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Onbekend domein'),
+        title: const Text(S.of(context).onbekendDomein),
         content: Text(
           'Je wordt doorgestuurd naar ${uri.host}.\n\n'
           'Dit domein staat niet in onze vertrouwde lijst. '
@@ -97,7 +98,7 @@ class SafeUrlLauncher {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Annuleren'),
+            child: const Text(S.of(context).annuleren),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),

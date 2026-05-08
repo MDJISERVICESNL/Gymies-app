@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_jailbreak_detection/flutter_jailbreak_detection.dart';
 import 'package:safe_device/safe_device.dart';
 
@@ -56,12 +55,12 @@ class AppSecurityService {
 
   /// ── HMAC Secret ──────────────────────────────────────────────────────
   /// Compile-time secret voor request signing.
-  /// VERPLICHT bij build: --dart-define=GYMIES_HMAC_SECRET=<jouw-secret>
+  /// VERPLICHT bij build: --dart-define=GYMIES_HMAC_SECRET=[jouw-secret]
   /// BELANGRIJK: Dit moet hetzelfde secret zijn als op je Laravel backend.
   ///
   /// Productie build commando:
-  ///   flutter build apk --dart-define=GYMIES_HMAC_SECRET=<secret>
-  ///   flutter build ios --dart-define=GYMIES_HMAC_SECRET=<secret>
+  ///   flutter build apk --dart-define=GYMIES_HMAC_SECRET=[secret]
+  ///   flutter build ios --dart-define=GYMIES_HMAC_SECRET=[secret]
   static const String _hmacSecret = String.fromEnvironment(
     'GYMIES_HMAC_SECRET',
     defaultValue: '',
@@ -136,8 +135,8 @@ class AppSecurityService {
         }),
       ]);
 
-      final isJailbroken = results[0] as bool;
-      final isRealDevice = results[1] as bool;
+      final isJailbroken = results[0];
+      final isRealDevice = results[1];
 
       if (isJailbroken) {
         threats.add(SecurityThreat.rootDetected);
@@ -173,7 +172,10 @@ class AppSecurityService {
         threats.add(SecurityThreat.debuggerAttached);
         if (kDebugMode) debugPrint('[Security] DEBUGGER GEDETECTEERD');
       }
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Debugger detection error, allow continuation
+      if (kDebugMode) debugPrint('[Security] Debugger check error: $e');
+    }
 
     // 5. Hooking framework detectie (Frida, Xposed — met timeout)
     if (Platform.isAndroid) {
@@ -238,14 +240,18 @@ class AppSecurityService {
     for (final path in suspiciousPaths) {
       try {
         if (await File(path).exists()) return true;
-      } catch (_) {}
+      } catch (_) {
+        // Fail-open: Check failed, continue to next indicator
+      }
     }
 
     // Check voor su binary via which
     try {
       final result = await Process.run('which', ['su']);
       if (result.stdout.toString().trim().isNotEmpty) return true;
-    } catch (_) {}
+    } catch (_) {
+      // Fail-open: Process execution check failed, assume not rooted
+    }
 
     return false;
   }
@@ -274,7 +280,9 @@ class AppSecurityService {
           final pid = int.tryParse(tracerLine.split(':').last.trim()) ?? 0;
           if (pid > 0) return true;
         }
-      } catch (_) {}
+      } catch (_) {
+        // Fail-open: /proc/self/status check failed, assume not debugged
+      }
     }
 
     return debuggerAttached;
@@ -293,7 +301,9 @@ class AppSecurityService {
     for (final path in fridaIndicators) {
       try {
         if (await File(path).exists()) return true;
-      } catch (_) {}
+      } catch (_) {
+        // Fail-open: Frida file check failed, continue to next indicator
+      }
     }
 
     // Frida default poort check
@@ -303,7 +313,7 @@ class AppSecurityService {
       await socket.close();
       return true; // Frida server draait
     } catch (_) {
-      // Goed — geen Frida server
+      // Fail-open: Port check failed, assume no Frida server
     }
 
     // Xposed detectie via stack trace analyse
@@ -313,7 +323,9 @@ class AppSecurityService {
           stack.contains('com.saurik.substrate')) {
         return true;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Fail-open: Stack trace check failed, assume no Xposed
+    }
 
     return false;
   }
@@ -322,11 +334,16 @@ class AppSecurityService {
   /// Signeert API requests zodat de backend kan verifiëren dat het request
   /// van de officiële app komt en niet is gemanipuleerd.
   ///
-  /// Signature format: HMAC-SHA256(timestamp:method:path:bodyHash)
-  /// De backend controleert:
+  /// Signature format: HMAC-SHA256(timestamp:nonce:method:path:bodyHash)
+  /// De backend MOET verifiëren (in deze volgorde):
   /// 1. Timestamp niet ouder dan 5 minuten (replay attack preventie)
-  /// 2. HMAC signature klopt met hetzelfde secret
-  /// 3. Body hash klopt met de daadwerkelijke request body
+  ///    - Server moet nonce-cache bijhouden (LRU, TTL=10 minuten)
+  ///    - Duplicate nonces met dezelfde timestamp → 400/401 reject
+  /// 2. Nonce (unieke per request) — voorkomen dat dezelfde request herhaald wordt
+  ///    - Nonce moet UNIEK zijn (check tegen cache)
+  ///    - Expired nonces (>10 min oud) kunnen uit cache verwijderd worden
+  /// 3. HMAC signature klopt met hetzelfde secret (constant-time comparison!)
+  /// 4. Body hash klopt met de daadwerkelijke request body (voorkomen tampering)
   static Map<String, String> signRequest({
     required String method,
     required String path,
@@ -340,16 +357,19 @@ class AppSecurityService {
     }
 
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    // FIX #8: Add nonce to prevent replay attacks (identical requests can't be replayed)
+    final nonce = Random().nextInt(0x7FFFFFFF).toRadixString(36);
     final bodyHash = body != null && body.isNotEmpty
         ? sha256.convert(utf8.encode(body)).toString()
         : sha256.convert(utf8.encode('')).toString();
 
-    final payload = '$timestamp:${method.toUpperCase()}:$path:$bodyHash';
+    final payload = '$timestamp:$nonce:${method.toUpperCase()}:$path:$bodyHash';
     final hmacSha256 = Hmac(sha256, utf8.encode(_hmacSecret));
     final signature = hmacSha256.convert(utf8.encode(payload)).toString();
 
     return {
       'X-Gymies-Timestamp': timestamp.toString(),
+      'X-Gymies-Nonce': nonce,
       'X-Gymies-Signature': signature,
       'X-Gymies-Body-Hash': bodyHash,
     };
@@ -363,15 +383,33 @@ class AppSecurityService {
     required String method,
     required String path,
     required String bodyHash,
+    String? nonce,
   }) {
-    final payload = '$timestamp:${method.toUpperCase()}:$path:$bodyHash';
+    // FIX #8: Include nonce in signature verification (same format as signRequest)
+    final payload = nonce != null
+        ? '$timestamp:$nonce:${method.toUpperCase()}:$path:$bodyHash'
+        : '$timestamp:${method.toUpperCase()}:$path:$bodyHash';
     final hmacSha256 = Hmac(sha256, utf8.encode(_hmacSecret));
     final expected = hmacSha256.convert(utf8.encode(payload)).toString();
-    // Constant-time comparison om timing attacks te voorkomen
-    if (signature.length != expected.length) return false;
+    // FIX #7: Constant-time comparison om timing attacks te voorkomen
+    // Compare length in constant time as well (not early return)
     var result = 0;
-    for (var i = 0; i < signature.length; i++) {
+    final sigLen = signature.length;
+    final expLen = expected.length;
+    result |= sigLen ^ expLen;
+    final minLen = sigLen < expLen ? sigLen : expLen;
+    for (var i = 0; i < minLen; i++) {
       result |= signature.codeUnitAt(i) ^ expected.codeUnitAt(i);
+    }
+    // Also check remaining chars if lengths differ (constant-time)
+    if (sigLen > expLen) {
+      for (var i = expLen; i < sigLen; i++) {
+        result |= signature.codeUnitAt(i);
+      }
+    } else if (expLen > sigLen) {
+      for (var i = sigLen; i < expLen; i++) {
+        result |= expected.codeUnitAt(i);
+      }
     }
     return result == 0;
   }

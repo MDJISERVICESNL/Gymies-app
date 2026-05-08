@@ -42,33 +42,55 @@ class PushNotificationService {
     _initialized = true;
     if (kDebugMode) debugPrint('[PushNotification] FCM start');
 
-    // iOS: vraag toestemming
-    if (Platform.isIOS) {
-      final settings = await FirebaseMessaging.instance.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-      if (kDebugMode) {
-        debugPrint('[PushNotification] iOS permission: ${settings.authorizationStatus}');
+    try {
+      // iOS: vraag toestemming
+      if (Platform.isIOS) {
+        final settings = await FirebaseMessaging.instance.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+        if (kDebugMode) {
+          debugPrint('[PushNotification] iOS permission: ${settings.authorizationStatus}');
+        }
       }
+
+      // BUG FIX: Add error handling for stream subscriptions
+      // Luister naar token refresh
+      _tokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen(
+        _registerToken,
+        onError: (e) {
+          if (kDebugMode) debugPrint('[PushNotification] tokenRefresh stream error: $e');
+        },
+      );
+
+      // Luister naar berichten (background/terminated: via top-level handler)
+      _foregroundSub = FirebaseMessaging.onMessage.listen(
+        _onForegroundMessage,
+        onError: (e) {
+          if (kDebugMode) debugPrint('[PushNotification] foregroundMessage stream error: $e');
+        },
+      );
+
+      _openedAppSub = FirebaseMessaging.onMessageOpenedApp.listen(
+        _onNotificationTap,
+        onError: (e) {
+          if (kDebugMode) debugPrint('[PushNotification] messageOpenedApp stream error: $e');
+        },
+      );
+
+      // Check of app geopend werd via notification (cold start)
+      final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+      if (initialMessage != null) {
+        _handleNotificationPayload(initialMessage);
+      }
+
+      // Eerste token ophalen
+      await _registerCurrentToken();
+    } catch (e) {
+      if (kDebugMode) debugPrint('[PushNotification] start() error: $e');
+      _initialized = false;
     }
-
-    // Luister naar token refresh
-    _tokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen(_registerToken);
-
-    // Luister naar berichten (background/terminated: via top-level handler)
-    _foregroundSub = FirebaseMessaging.onMessage.listen(_onForegroundMessage);
-    _openedAppSub = FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationTap);
-
-    // Check of app geopend werd via notification (cold start)
-    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (initialMessage != null) {
-      _handleNotificationPayload(initialMessage);
-    }
-
-    // Eerste token ophalen
-    await _registerCurrentToken();
   }
 
   void _onAuthChanged() {
@@ -111,7 +133,7 @@ class PushNotificationService {
     final title = message.notification?.title ?? 'GYMIES';
     final body = message.notification?.body ?? '';
     if (body.isNotEmpty && _localPush != null) {
-      _localPush!.show(title: title, body: body);
+      _localPush.show(title: title, body: body);
     }
   }
 
@@ -131,12 +153,29 @@ class PushNotificationService {
     _tapController.add(Map<String, dynamic>.from(data));
   }
 
-  /// Logout: token van server verwijderen (backend ondersteunt dit).
+  /// Logout: token van server verwijderen en lokaal verwijderen.
+  /// Stuurt eerst een DELETE request naar de backend, vervolgens verwijdert lokaal.
   Future<void> unregister() async {
+    // Stap 1: Informeer backend om token te verwijderen (voordat we het lokaal verwijderen)
+    if (_lastRegisteredToken != null && _lastRegisteredToken!.isNotEmpty) {
+      try {
+        await _api.unregisterDeviceToken(token: _lastRegisteredToken!);
+        if (kDebugMode) debugPrint('[PushNotification] Token unregistered from backend');
+      } catch (e) {
+        // Best-effort: fout bij backend unregister mag logout niet blokkeren
+        if (kDebugMode) debugPrint('[PushNotification] Backend unregister failed: $e');
+      }
+    }
+
+    // Stap 2: Verwijder lokaal token
     _lastRegisteredToken = null;
     try {
       await FirebaseMessaging.instance.deleteToken();
-    } catch (_) {}
+      if (kDebugMode) debugPrint('[PushNotification] Local token deleted');
+    } catch (e) {
+      // Fail-open: Token deletion can fail silently on logout
+      if (kDebugMode) debugPrint('[PushNotificationService] Local token deletion failed: $e');
+    }
   }
 
   void dispose() {
@@ -144,6 +183,9 @@ class PushNotificationService {
     _foregroundSub?.cancel();
     _openedAppSub?.cancel();
     _auth.removeListener(_onAuthChanged);
-    _tapController.close();
+    // BUG FIX: Ensure tap controller is not already closed before closing
+    if (!_tapController.isClosed) {
+      _tapController.close();
+    }
   }
 }

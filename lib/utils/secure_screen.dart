@@ -41,7 +41,9 @@ class SecureScreen {
     if (Platform.isAndroid) {
       try {
         await _channel.invokeMethod('disableSecure');
-      } catch (_) {}
+      } catch (_) {
+        // Fallback: als de native channel niet bestaat, geen crash
+      }
     }
   }
 }

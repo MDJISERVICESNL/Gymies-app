@@ -17,25 +17,30 @@ class ActionRetryQueueService {
     required Map<String, dynamic> payload,
     String? reason,
   }) async {
-    final queue = await _readList(_kQueueKey);
-    final now = DateTime.now().toIso8601String();
-    queue.add({
-      'id': '${DateTime.now().millisecondsSinceEpoch}_$actionType',
-      'action_type': actionType,
-      'payload': payload,
-      'status': 'pending',
-      'retries': 0,
-      'created_at': now,
-      'updated_at': now,
-      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
-    });
-    await _writeList(_kQueueKey, queue);
-    await log(
-      actionType: actionType,
-      status: 'queued',
-      payload: payload,
-      detail: reason ?? 'Actie in wachtrij geplaatst',
-    );
+    try {
+      // BUG FIX: Add try-catch to prevent crashes during enqueue
+      final queue = await _readList(_kQueueKey);
+      final now = DateTime.now().toIso8601String();
+      queue.add({
+        'id': '${DateTime.now().millisecondsSinceEpoch}_$actionType',
+        'action_type': actionType,
+        'payload': payload,
+        'status': 'pending',
+        'retries': 0,
+        'created_at': now,
+        'updated_at': now,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      });
+      await _writeList(_kQueueKey, queue);
+      await log(
+        actionType: actionType,
+        status: 'queued',
+        payload: payload,
+        detail: reason ?? 'Actie in wachtrij geplaatst',
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('[ActionRetryQueue] enqueue error: $e');
+    }
   }
 
   static Future<void> log({
@@ -44,19 +49,24 @@ class ActionRetryQueueService {
     Map<String, dynamic>? payload,
     String? detail,
   }) async {
-    final items = await _readList(_kHistoryKey);
-    items.add({
-      'id': '${DateTime.now().millisecondsSinceEpoch}_${status}_$actionType',
-      'action_type': actionType,
-      'status': status,
-      'created_at': DateTime.now().toIso8601String(),
-      ...?(payload == null ? null : {'payload': payload}),
-      if (detail != null && detail.trim().isNotEmpty) 'detail': detail.trim(),
-    });
-    if (items.length > _kMaxHistory) {
-      items.removeRange(0, items.length - _kMaxHistory);
+    try {
+      // BUG FIX: Add try-catch to prevent crashes in logging
+      final items = await _readList(_kHistoryKey);
+      items.add({
+        'id': '${DateTime.now().millisecondsSinceEpoch}_${status}_$actionType',
+        'action_type': actionType,
+        'status': status,
+        'created_at': DateTime.now().toIso8601String(),
+        ...?(payload == null ? null : {'payload': payload}),
+        if (detail != null && detail.trim().isNotEmpty) 'detail': detail.trim(),
+      });
+      if (items.length > _kMaxHistory) {
+        items.removeRange(0, items.length - _kMaxHistory);
+      }
+      await _writeList(_kHistoryKey, items);
+    } catch (e) {
+      if (kDebugMode) debugPrint('[ActionRetryQueue] log error: $e');
     }
-    await _writeList(_kHistoryKey, items);
   }
 
   static Future<List<Map<String, dynamic>>> getQueue() async {
@@ -292,14 +302,20 @@ ${topFailed.isEmpty ? '- geen details' : topFailed}
   }
 
   static Future<List<Map<String, dynamic>>> _readList(String key) async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(key);
-    if (raw == null || raw.trim().isEmpty) return <Map<String, dynamic>>[];
     try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! List) return <Map<String, dynamic>>[];
-      return decoded.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
-    } catch (_) {
+      // BUG FIX: Add try-catch for SharedPreferences.getInstance() which can throw
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(key);
+      if (raw == null || raw.trim().isEmpty) return <Map<String, dynamic>>[];
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is! List) return <Map<String, dynamic>>[];
+        return decoded.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
+      } catch (_) {
+        return <Map<String, dynamic>>[];
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[ActionRetryQueue] _readList error: $e');
       return <Map<String, dynamic>>[];
     }
   }
@@ -308,8 +324,14 @@ ${topFailed.isEmpty ? '- geen details' : topFailed}
     String key,
     List<Map<String, dynamic>> items,
   ) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(key, jsonEncode(items));
+    try {
+      // BUG FIX: Add try-catch for SharedPreferences operations
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(key, jsonEncode(items));
+    } catch (e) {
+      if (kDebugMode) debugPrint('[ActionRetryQueue] _writeList error: $e');
+      // Fail-open: log the error but don't crash
+    }
   }
 
   static Map<String, dynamic>? _asMap(dynamic v) {

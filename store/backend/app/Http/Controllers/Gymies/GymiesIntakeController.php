@@ -52,6 +52,19 @@ class GymiesIntakeController extends Controller
             return response()->json(["message" => "Intake niet beschikbaar."], 503);
         }
 
+        // Validate all input fields
+        $request->validate([
+            "fitness_level" => "nullable|in:beginner,intermediate,advanced",
+            "goals_text" => "nullable|string|max:2000",
+            "injuries_text" => "nullable|string|max:2000",
+            "medical_conditions_text" => "nullable|string|max:2000",
+            "training_frequency_preferred" => "nullable|integer|min:0|max:14",
+            "experience_description" => "nullable|string|max:2000",
+            "availability_notes" => "nullable|string|max:1000",
+            "emergency_contact_name" => "nullable|string|max:255",
+            "emergency_contact_phone" => "nullable|string|max:50",
+        ]);
+
         $fields = [
             "fitness_level" => in_array($request->input("fitness_level"), ["beginner", "intermediate", "advanced"], true)
                 ? $request->input("fitness_level") : null,
@@ -66,28 +79,31 @@ class GymiesIntakeController extends Controller
             "emergency_contact_phone" => mb_substr(trim((string) $request->input("emergency_contact_phone", "")), 0, 50) ?: null,
         ];
 
-        // Check of intake al bestaat
-        $existing = DB::table("gymies_client_intake_forms")
-            ->where("client_user_id", (int) $user->id)
-            ->first();
+        // Use transaction for atomicity
+        DB::transaction(function() use ($user, $fields) {
+            // Check of intake al bestaat
+            $existing = DB::table("gymies_client_intake_forms")
+                ->where("client_user_id", (int) $user->id)
+                ->first();
 
-        if ($existing) {
-            $fields["updated_at"] = now();
-            // Als alle velden gevuld zijn, markeer als voltooid
-            if ($fields["fitness_level"] && $fields["goals_text"]) {
-                $fields["completed_at"] = $existing->completed_at ?? now();
+            if ($existing) {
+                $fields["updated_at"] = now();
+                // Als alle velden gevuld zijn, markeer als voltooid
+                if ($fields["fitness_level"] && $fields["goals_text"]) {
+                    $fields["completed_at"] = $existing->completed_at ?? now();
+                }
+                DB::table("gymies_client_intake_forms")
+                    ->where("id", $existing->id)
+                    ->update($fields);
+            } else {
+                $fields["client_user_id"] = (int) $user->id;
+                $fields["created_at"] = now();
+                if ($fields["fitness_level"] && $fields["goals_text"]) {
+                    $fields["completed_at"] = now();
+                }
+                DB::table("gymies_client_intake_forms")->insert($fields);
             }
-            DB::table("gymies_client_intake_forms")
-                ->where("id", $existing->id)
-                ->update($fields);
-        } else {
-            $fields["client_user_id"] = (int) $user->id;
-            $fields["created_at"] = now();
-            if ($fields["fitness_level"] && $fields["goals_text"]) {
-                $fields["completed_at"] = now();
-            }
-            DB::table("gymies_client_intake_forms")->insert($fields);
-        }
+        });
 
         return response()->json(["data" => ["saved" => true]]);
     }

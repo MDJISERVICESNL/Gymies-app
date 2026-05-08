@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
@@ -25,34 +26,34 @@ class TrainerVerificationScreen extends StatefulWidget {
 class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
   bool _loading = true;
   Map<String, dynamic> _status = {};
-  Map<String, bool> _uploading = {};
+  final Map<String, bool> _uploading = {};
 
   static const _categories = [
     _DocCategory(
       key: 'kvk_extract',
       title: 'KvK-uittreksel',
-      subtitle: 'Upload je recente KvK-uittreksel (max 6 maanden oud)',
+      subtitle: S.of(context).uploadJeRecenteKvkuittrekselMax6,
       icon: Icons.business_center_rounded,
       color: Colors.blue,
     ),
     _DocCategory(
       key: 'id_document',
       title: 'ID-verificatie',
-      subtitle: 'Paspoort, rijbewijs of ID-kaart',
+      subtitle: S.of(context).paspoortRijbewijsOfIdkaart,
       icon: Icons.badge_rounded,
       color: Colors.teal,
     ),
     _DocCategory(
       key: 'certification',
       title: 'Certificering / Diploma',
-      subtitle: 'Upload je fitness-certificering of diploma',
+      subtitle: S.of(context).uploadJeFitnesscertificeringOfDiploma,
       icon: Icons.school_rounded,
       color: Colors.purple,
     ),
     _DocCategory(
       key: 'vog',
       title: 'VOG',
-      subtitle: 'Verklaring Omtrent het Gedrag',
+      subtitle: S.of(context).verklaringOmtrentHetGedrag,
       icon: Icons.verified_user_rounded,
       color: Colors.green,
     ),
@@ -117,6 +118,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
 
     setState(() => _uploading[category] = true);
     try {
+      // ignore: use_build_context_synchronously
       final api = context.read<GymiesApi>();
       await api.uploadOnboardingDocument(
         category: category,
@@ -125,9 +127,10 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
       );
       Haptics.success();
       if (!mounted) return;
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Document geüpload! We controleren het zo snel mogelijk.'),
+          content: const Text(S.of(context).documentGeploadWeControlerenHetZoSnelMogelijk),
           backgroundColor: Colors.green.shade700,
           behavior: SnackBarBehavior.floating,
         ),
@@ -137,7 +140,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Upload mislukt: $e'),
+          content: Text(S.of(context).uploadMisluktMsg(e.toString())),
           backgroundColor: Colors.red.shade600,
         ),
       );
@@ -154,7 +157,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
         backgroundColor: GymiesColors.darkBlue,
         foregroundColor: Colors.white,
         title: Text(
-          'Verificatie',
+          S.of(context).verificatie,
           style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 18),
         ),
         centerTitle: true,
@@ -190,7 +193,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [GymiesColors.darkBlue, GymiesColors.darkBlue.withValues(alpha: 0.85)],
+          colors: [GymiesColors.darkBlue, GymiesColors.darkBlue.withOpacity(0.85)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -205,7 +208,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
               Container(
                 width: 48, height: 48,
                 decoration: BoxDecoration(
-                  color: GymiesColors.primary.withValues(alpha: 0.2),
+                  color: GymiesColors.primary.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: const Icon(Icons.verified_rounded, color: GymiesColors.primary, size: 26),
@@ -216,13 +219,13 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Verificatie status',
+                      S.of(context).verificatieStatus,
                       style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '$uploaded van ${_categories.length} documenten',
-                      style: GoogleFonts.sora(fontSize: 12, color: Colors.white.withValues(alpha: 0.6)),
+                      style: GoogleFonts.sora(fontSize: 12, color: Colors.white.withOpacity(0.6)),
                     ),
                   ],
                 ),
@@ -234,7 +237,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
               value: progress,
-              backgroundColor: Colors.white.withValues(alpha: 0.15),
+              backgroundColor: Colors.white.withOpacity(0.15),
               valueColor: const AlwaysStoppedAnimation(GymiesColors.primary),
               minHeight: 8,
             ),
@@ -244,7 +247,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.2),
+                color: Colors.green.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -253,7 +256,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
                   const Icon(Icons.check_circle_rounded, size: 16, color: Colors.greenAccent),
                   const SizedBox(width: 6),
                   Text(
-                    'Alle documenten ingediend!',
+                    S.of(context).alleDocumentenIngediend,
                     style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.greenAccent),
                   ),
                 ],
@@ -286,7 +289,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
         break;
       case 'pending':
         statusColor = Colors.orange.shade600;
-        statusLabel = 'In behandeling';
+        statusLabel = S.of(context).statusInBehandeling;
         statusIcon = Icons.hourglass_top_rounded;
         break;
       default:
@@ -303,7 +306,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: Colors.black.withOpacity(0.04),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -349,7 +352,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.12),
+                      color: statusColor.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Row(
@@ -390,7 +393,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
                     isUploading
                         ? 'Uploaden...'
                         : uploaded
-                            ? 'Opnieuw uploaden'
+                            ? S.of(context).opnieuwUploaden
                             : 'Document uploaden',
                     style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600),
                   ),
@@ -411,7 +414,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Dit document is afgekeurd. Upload een nieuw document.',
+                          S.of(context).ditDocumentIsAfgekeurdUploadEenNieuwDocument,
                           style: GoogleFonts.sora(fontSize: 11, color: Colors.red.shade700),
                         ),
                       ),
@@ -443,7 +446,7 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Waarom verificatie?',
+                  S.of(context).waaromVerificatie,
                   style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.blue.shade800),
                 ),
               ),
@@ -451,14 +454,14 @@ class _TrainerVerificationScreenState extends State<TrainerVerificationScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Geverifieerde trainers krijgen een badge op hun profiel, '
-            'worden hoger getoond in zoekresultaten en winnen meer vertrouwen bij klanten. '
-            'Documenten worden vertrouwelijk behandeld en alleen door ons team bekeken.',
+            S.of(context).geverifieerdeTrainersKrijgenEenBadgeOp
+            S.of(context).wordenHogerGetoondInZoekresultatenEn
+            S.of(context).documentenWordenVertrouwelijkBehandeldEnAlleen,
             style: GoogleFonts.sora(fontSize: 12, color: Colors.blue.shade900, height: 1.5),
           ),
           const SizedBox(height: 8),
           Text(
-            'Toegestane formaten: PDF, JPG, PNG (max 10MB per bestand)',
+            S.of(context).toegestaneFormatenPdfJpgPngmax10mbPerBestand,
             style: GoogleFonts.sora(fontSize: 11, color: Colors.blue.shade600),
           ),
         ],

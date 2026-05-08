@@ -42,67 +42,63 @@ class EnsureGymiesAuthPreempt
 
         $plainToken = str_contains($token, '|') ? substr($token, strpos($token, '|') + 1) : $token;
 
-        // 64-hex sessietoken: zoek in gymies_sessions
+        // Try strategies in order: gymies_sessions, personal_access_tokens, api_token
+
+        // 1. Check 64-hex session token in gymies_sessions
         if (strlen($plainToken) === 64 && ctype_xdigit($plainToken) && Schema::hasTable('gymies_sessions')) {
             $session = $this->findSessionInGymiesSessions($token, $plainToken);
             if ($session !== null && isset($session->user_id)) {
-                $usersTable = Schema::hasTable('gymies_users') ? 'gymies_users' : 'users';
-                $row = \Illuminate\Support\Facades\DB::table($usersTable)->where('id', (int) $session->user_id)->first();
-                if ($row !== null) {
-                    $request->setUserResolver(fn () => new \Illuminate\Auth\GenericUser((array) $row));
+                $user = $this->loadUserById((int) $session->user_id);
+                if ($user !== null) {
+                    $request->setUserResolver(fn () => $user);
                     return $next($request);
                 }
             }
         }
 
-        $tokenableId = null;
-        $accessToken = null;
-        if (Schema::hasTable('gymies_users') && Schema::hasTable('gymies_personal_access_tokens')) {
-            $accessToken = $this->findTokenViaDb($plainToken);
-            $tokenableId = $accessToken?->tokenable_id ?? null;
-        }
-        if ($tokenableId === null && class_exists(PersonalAccessToken::class)) {
-            try {
-                $pat = PersonalAccessToken::findToken($token);
-                $tokenableId = $pat?->tokenable_id;
-            } catch (\Throwable $e) {
-                // ignore
+        // 2. Check personal_access_tokens
+        $accessToken = $this->findTokenViaDb($plainToken);
+        if ($accessToken !== null) {
+            // Verify token not expired
+            // FIX-AUD-005: Always use UTC for token expiry comparisons to prevent DST boundary issues
+            if (isset($accessToken->expires_at) && $accessToken->expires_at !== null) {
+                $expiryTime = \Carbon\Carbon::parse($accessToken->expires_at)->setTimezone('UTC');
+                $currentTime = \Carbon\Carbon::now('UTC');
+                if ($expiryTime->isPast($currentTime)) {
+                    return $next($request);
+                }
+            }
+            if (isset($accessToken->tokenable_id)) {
+                $user = $this->loadUserById((int) $accessToken->tokenable_id);
+                if ($user !== null) {
+                    $request->setUserResolver(fn () => $user);
+                    return $next($request);
+                }
             }
         }
-        if ($tokenableId === null) {
-            $accessToken = $this->findTokenViaDb($plainToken);
-            $tokenableId = $accessToken?->tokenable_id ?? null;
-        }
-        if ($tokenableId === null && Schema::hasTable('gymies_sessions')) {
-            $plainToken = preg_match('/^[a-fA-F0-9]{64}$/', $token) ? $token : null;
-            if ($plainToken !== null) {
-                $session = $this->findSessionInGymiesSessions($token, $plainToken);
-                if ($session !== null && isset($session->user_id)) {
-                    $usersTable = Schema::hasTable('gymies_users') ? 'gymies_users' : 'users';
-                    $row = DB::table($usersTable)->where('id', (int) $session->user_id)->first();
-                    if ($row !== null) {
-                        $user = new \Illuminate\Auth\GenericUser((array) $row);
+
+        // 3. Fallback to Sanctum's PersonalAccessToken model
+        if (class_exists(PersonalAccessToken::class)) {
+            try {
+                $pat = PersonalAccessToken::findToken($token);
+                if ($pat !== null && isset($pat->tokenable_id)) {
+                    $user = $this->loadUserById((int) $pat->tokenable_id);
+                    if ($user !== null) {
                         $request->setUserResolver(fn () => $user);
                         return $next($request);
                     }
                 }
+            } catch (\Throwable $e) {
+                // ignore
             }
-        }
-        if ($tokenableId === null) {
-            $row = $this->findUserByApiToken($token);
-            if ($row !== null) {
-                $user = new \Illuminate\Auth\GenericUser((array) $row);
-                $request->setUserResolver(fn () => $user);
-                return $next($request);
-            }
-            return $next($request);
         }
 
-        $usersTable = Schema::hasTable('gymies_users') ? 'gymies_users' : 'users';
-        $row = DB::table($usersTable)->where('id', (int) $tokenableId)->first();
+        // 4. Check api_token column in users table
+        $row = $this->findUserByApiToken($token);
         if ($row !== null) {
             $user = new \Illuminate\Auth\GenericUser((array) $row);
             $request->setUserResolver(fn () => $user);
+            return $next($request);
         }
 
         return $next($request);
@@ -181,8 +177,10 @@ class EnsureGymiesAuthPreempt
             foreach ($tokensToTry as $t) {
                 $q = DB::table('gymies_sessions')->where($col, $t);
                 if (Schema::hasColumn('gymies_sessions', 'expires_at')) {
+                    // FIX-AUD-005: Use UTC for session expiry to prevent DST issues
+                    // Compare against UTC now() to avoid timezone-dependent behavior
                     $q->where(function ($sq) {
-                        $sq->whereNull('expires_at')->orWhere('expires_at', '>', now());
+                        $sq->whereNull('expires_at')->orWhere('expires_at', '>', now('UTC'));
                     });
                 }
                 $row = $q->first();
@@ -212,5 +210,15 @@ class EnsureGymiesAuthPreempt
             }
         }
         return null;
+    }
+
+    private function loadUserById(int $userId): ?\Illuminate\Contracts\Auth\Authenticatable
+    {
+        $usersTable = Schema::hasTable('gymies_users') ? 'gymies_users' : 'users';
+        $row = DB::table($usersTable)->where('id', $userId)->first();
+        if ($row === null) {
+            return null;
+        }
+        return new \Illuminate\Auth\GenericUser((array) $row);
     }
 }

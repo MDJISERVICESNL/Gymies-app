@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../theme/gymies_theme.dart';
 
 /// Vervangt het herhaalde patroon:
@@ -92,7 +93,7 @@ class TrainerErrorView extends StatelessWidget {
                   backgroundColor: GymiesColors.primary,
                   foregroundColor: GymiesColors.darkBlue,
                 ),
-                child: const Text('Log opnieuw in'),
+                child: Text(S.of(context).logInAgain),
               ),
             if (onLogout != null) const SizedBox(height: 8),
             FilledButton(
@@ -101,7 +102,7 @@ class TrainerErrorView extends StatelessWidget {
                 backgroundColor: GymiesColors.primary,
                 foregroundColor: GymiesColors.darkBlue,
               ),
-              child: const Text('Opnieuw proberen'),
+              child: Text(S.of(context).retryAction),
             ),
           ],
         ),
@@ -179,7 +180,7 @@ class TrainerEmptyState extends StatelessWidget {
               onPressed: onSecondaryAction,
               style: OutlinedButton.styleFrom(
                 foregroundColor: GymiesColors.darkBlue,
-                side: BorderSide(color: GymiesColors.darkBlue.withValues(alpha: 0.4)),
+                side: BorderSide(color: GymiesColors.darkBlue.withOpacity(0.4)),
               ),
               icon: Icon(secondaryActionIcon, size: 18),
               label: Text(secondaryActionLabel!),

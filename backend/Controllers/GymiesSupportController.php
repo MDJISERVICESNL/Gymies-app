@@ -89,13 +89,13 @@ final class GymiesSupportController extends Controller
 
         $category = trim((string) ($request->input('category') ?? 'general'));
         $priority = trim((string) ($request->input('priority') ?? 'medium'));
-        $subject = trim((string) $request->input('subject'));
-        $message = trim((string) $request->input('message'));
+        $subject = strip_tags(trim((string) $request->input('subject')));
+        $message = strip_tags(trim((string) $request->input('message')));
 
         $userRow = DB::table('gymies_users')->where('id', (int) $user->id)->first(['email', 'display_name', 'first_name', 'last_name', 'phone']);
-        $submitterName = trim((string) ($request->input('contact_name') ?? ''));
+        $submitterName = strip_tags(trim((string) ($request->input('contact_name') ?? '')));
         $submitterEmail = trim((string) ($request->input('contact_email') ?? ''));
-        $submitterPhone = trim((string) ($request->input('contact_phone') ?? ''));
+        $submitterPhone = strip_tags(trim((string) ($request->input('contact_phone') ?? '')));
         if ($submitterName === '' && $userRow) {
             $submitterName = trim(($userRow->first_name ?? '') . ' ' . ($userRow->last_name ?? '')) ?: (string) ($userRow->display_name ?? '');
         }

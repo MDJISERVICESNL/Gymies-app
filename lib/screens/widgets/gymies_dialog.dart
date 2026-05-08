@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../config/ui_constants.dart';
 import '../../theme/gymies_theme.dart';
+import '../../l10n/generated/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GymiesDialog — herbruikbare gestylede dialog voor de hele app
@@ -71,8 +72,8 @@ class GymiesDialog extends StatelessWidget {
     required String title,
     required String message,
     IconData icon = Icons.help_outline_rounded,
-    String confirmLabel = 'Bevestigen',
-    String cancelLabel = 'Annuleren',
+    String confirmLabel = S.of(context).bevestigen,
+    String cancelLabel = S.of(context).annuleren,
     IconData? confirmIcon,
   }) {
     return showDialog<bool>(
@@ -105,8 +106,8 @@ class GymiesDialog extends StatelessWidget {
     required String title,
     required String message,
     IconData icon = Icons.warning_amber_rounded,
-    String confirmLabel = 'Verwijderen',
-    String cancelLabel = 'Annuleren',
+    String confirmLabel = S.of(context).verwijderen,
+    String cancelLabel = S.of(context).annuleren,
     IconData? confirmIcon,
   }) {
     return showDialog<bool>(
@@ -116,7 +117,7 @@ class GymiesDialog extends StatelessWidget {
         title: title,
         subtitle: message,
         headerIconColor: UiConstants.errorRed,
-        headerIconBgColor: UiConstants.errorRed.withValues(alpha: 0.1),
+        headerIconBgColor: UiConstants.errorRed.withOpacity(0.1),
         actions: [
           GymiesDialogAction(
             label: confirmLabel,
@@ -178,7 +179,7 @@ class GymiesDialog extends StatelessWidget {
         title: title,
         subtitle: message,
         headerIconColor: const Color(0xFF2E7D32),
-        headerIconBgColor: const Color(0xFF2E7D32).withValues(alpha: 0.1),
+        headerIconBgColor: const Color(0xFF2E7D32).withOpacity(0.1),
         actions: [
           GymiesDialogAction(
             label: buttonLabel,
@@ -199,8 +200,8 @@ class GymiesDialog extends StatelessWidget {
     String? subtitle,
     required Widget content,
     IconData icon = Icons.edit_rounded,
-    String confirmLabel = 'Opslaan',
-    String cancelLabel = 'Annuleren',
+    String confirmLabel = S.of(context).opslaan,
+    String cancelLabel = S.of(context).annuleren,
     IconData? confirmIcon,
     VoidCallback? onConfirm,
     double? maxContentHeight,
@@ -269,7 +270,7 @@ class GymiesDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final iconFg = headerIconColor ?? GymiesColors.primary;
     final iconBg =
-        headerIconBgColor ?? GymiesColors.primary.withValues(alpha: 0.1);
+        headerIconBgColor ?? GymiesColors.primary.withOpacity(0.1);
 
     return Dialog(
       shape: RoundedRectangleBorder(

@@ -159,7 +159,7 @@ trait SubscriptionEntitlementsTrait
 
     private function getTrainerProfileForUser(int $userId): ?array
     {
-        if (!$userId || !\Illuminate\Support\Facades\Schema::hasTable('gymies_trainer_profiles')) {
+        if (!$userId || !Schema::hasTable('gymies_trainer_profiles')) {
             return null;
         }
         $row = \Illuminate\Support\Facades\DB::table('gymies_trainer_profiles')

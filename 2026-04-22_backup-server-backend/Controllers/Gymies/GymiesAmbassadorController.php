@@ -204,14 +204,14 @@ final class GymiesAmbassadorController extends Controller
                 ...(Schema::hasColumn('gymies_ambassadors', 'slug') ? ['slug', 'avatar_url', 'bio', 'specialiteit'] : []),
             ])
             ->map(fn ($a) => [
-                'id'               => (int) $a->id,
-                'naam'             => $a->voornaam . ' ' . mb_substr($a->achternaam, 0, 1) . '.',
-                'stad'             => $a->stad,
-                'platform'         => $a->platform,
-                'handle'           => $a->handle,
-                'tier'             => $a->tier,
-                'is_founding_partner' => (bool) $a->is_founding_partner,
-                'conversions'      => (int) $a->trainer_conversions + (int) $a->sporter_conversions,
+                'id'               => (int) ($a->id ?? 0),
+                'naam'             => ($a->voornaam ?? 'Unknown') . ' ' . mb_substr(($a->achternaam ?? 'U'), 0, 1) . '.',
+                'stad'             => $a->stad ?? '',
+                'platform'         => $a->platform ?? '',
+                'handle'           => $a->handle ?? '',
+                'tier'             => $a->tier ?? 'starter',
+                'is_founding_partner' => (bool) ($a->is_founding_partner ?? false),
+                'conversions'      => (int) ($a->trainer_conversions ?? 0) + (int) ($a->sporter_conversions ?? 0),
                 'slug'             => $a->slug ?? null,
                 'avatar_url'       => $a->avatar_url ?? null,
                 'bio'              => $a->bio ?? null,
@@ -538,7 +538,7 @@ final class GymiesAmbassadorController extends Controller
 
             // Bepaal de definitieve kortingscode
             $rawCode = $data['custom_code'] ?? $app->gewenste_code ?? null;
-            $code    = $rawCode ? strtoupper(trim($rawCode)) : $this->generateCodeFromName($app->voornaam);
+            $code    = $rawCode ? strtoupper(trim((string) $rawCode)) : $this->generateCodeFromName((string) ($app->voornaam ?? 'Unknown'));
 
             // Als code toch al bestaat → genereer alternatief
             if ($this->codeExists($code)) {
@@ -629,7 +629,7 @@ final class GymiesAmbassadorController extends Controller
             DB::commit();
 
             // Stuur welkomstmail (queue-based; mislukt niet als mail-config ontbreekt)
-            $this->sendApprovalNotification((int) $ambId, $app->email, $app->voornaam, $code, $userId === null);
+            $this->sendApprovalNotification((int) $ambId, (string) ($app->email ?? ''), (string) ($app->voornaam ?? 'Ambassadeur'), $code, $userId === null);
 
             Log::info('[Ambassador] Goedgekeurd', [
                 'application_id' => $id,

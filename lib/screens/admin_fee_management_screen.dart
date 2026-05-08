@@ -7,6 +7,7 @@ import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
 import 'widgets/trainer_state_views.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// Admin scherm voor het beheren van platform service fees.
 /// Bereikbaar vanuit Vault-Console.
@@ -33,12 +34,12 @@ class _AdminFeeManagementScreenState extends State<AdminFeeManagementScreen> {
 
   Future<void> _load() async {
     if (!mounted) return;
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
       final data = await api.getAdminFees();
       if (!mounted) return;
       setState(() {
@@ -56,7 +57,7 @@ class _AdminFeeManagementScreenState extends State<AdminFeeManagementScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon fees niet laden.';
+        _error = S.of(context).konFeesNietLaden;
         _loading = false;
       });
     }
@@ -66,25 +67,26 @@ class _AdminFeeManagementScreenState extends State<AdminFeeManagementScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Verwijderen', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
-        content: Text('Weet je zeker dat je deze fee setting wilt verwijderen?',
+        title: Text(S.of(context).verwijderen, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+        content: Text(S.of(context).weetJeZekerDatJeDezeFeeSettingWiltVerwijderen,
             style: GoogleFonts.sora()),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Annuleren', style: GoogleFonts.sora()),
+            child: Text(S.of(context).annuleren, style: GoogleFonts.sora()),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Verwijderen',
+            child: Text(S.of(context).verwijderen,
                 style: GoogleFonts.sora(color: Colors.red)),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
+    final api = context.read<GymiesApi>();
     try {
-      await context.read<GymiesApi>().deleteAdminFee(id);
+      await api.deleteAdminFee(id);
       if (mounted) await _load();
     } on ApiException catch (e) {
       if (mounted) _showError(e.message);
@@ -101,7 +103,7 @@ class _AdminFeeManagementScreenState extends State<AdminFeeManagementScreen> {
     if (result == null || !mounted) return;
     try {
       await context.read<GymiesApi>().createAdminFee(
-            trainerUserId: result['trainer_user_id'] as int?,
+            trainerUserId: result[S.of(context).traineruserid] as int?,
             planSlug: result['plan_slug'] as String?,
             feeType: result['fee_type'] as String,
             feeValue: result['fee_value'] as int,
@@ -119,7 +121,7 @@ class _AdminFeeManagementScreenState extends State<AdminFeeManagementScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _FeeFormSheet(
-        isOverride: fee['trainer_user_id'] != null,
+        isOverride: fee[S.of(context).traineruserid] != null,
         existing: fee,
       ),
     );
@@ -176,7 +178,7 @@ class _AdminFeeManagementScreenState extends State<AdminFeeManagementScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Fee-beheer',
+                        S.of(context).feebeheer,
                         style: GoogleFonts.sora(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -205,7 +207,7 @@ class _AdminFeeManagementScreenState extends State<AdminFeeManagementScreen> {
                       padding: const EdgeInsets.all(12),
                       margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.1),
+                        color: GymiesColors.primary.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
@@ -229,12 +231,12 @@ class _AdminFeeManagementScreenState extends State<AdminFeeManagementScreen> {
                   // ── Platform Defaults ──
                   _SectionHeader(
                     title: 'Platform defaults',
-                    subtitle: 'Per abonnements-plan',
+                    subtitle: S.of(context).perAbonnementsPlan,
                     onAdd: () => _showCreateDialog(isOverride: false),
                   ),
                   const SizedBox(height: 8),
                   if (_defaults.isEmpty)
-                    _EmptyCard(label: 'Geen plan defaults ingesteld')
+                    _EmptyCard(label: S.of(context).geenPlanDefaultsIngesteld)
                   else
                     ..._defaults.map((f) => _FeeCard(
                           fee: f,
@@ -246,13 +248,13 @@ class _AdminFeeManagementScreenState extends State<AdminFeeManagementScreen> {
 
                   // ── Trainer Overrides ──
                   _SectionHeader(
-                    title: 'Trainer overrides',
-                    subtitle: 'Per trainer een custom fee',
+                    title: S.of(context).trainerOverrides,
+                    subtitle: S.of(context).perTrainerEenCustomFee,
                     onAdd: () => _showCreateDialog(isOverride: true),
                   ),
                   const SizedBox(height: 8),
                   if (_overrides.isEmpty)
-                    _EmptyCard(label: 'Geen trainer overrides')
+                    _EmptyCard(label: S.of(context).geenTrainerOverrides)
                   else
                     ..._overrides.map((f) => _FeeCard(
                           fee: f,
@@ -325,7 +327,7 @@ class _SectionHeader extends StatelessWidget {
                 const Icon(Icons.add_rounded, size: 16, color: GymiesColors.darkBlue),
                 const SizedBox(width: 4),
                 Text(
-                  'Toevoegen',
+                  S.of(context).toevoegen,
                   style: GoogleFonts.sora(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -353,9 +355,9 @@ class _FeeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isOverride = fee['trainer_user_id'] != null;
+    final isOverride = fee[S.of(context).traineruserid] != null;
     final name = isOverride
-        ? (fee['trainer_name'] ?? 'Trainer #${fee['trainer_user_id']}')
+        ? (fee[S.of(context).trainername] ?? 'Trainer #${fee[S.of(context).traineruserid]}')
         : _planLabel(fee['plan_slug'] as String?);
     final feeDisplay = fee['fee_display'] ?? '?';
     final clientPays = fee['client_pays'] == true;
@@ -369,7 +371,7 @@ class _FeeCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: Colors.black.withOpacity(0.04),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),
@@ -411,7 +413,7 @@ class _FeeCard extends StatelessWidget {
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              'Inactief',
+                              S.of(context).inactief,
                               style: GoogleFonts.sora(
                                 fontSize: 10,
                                 color: Colors.grey.shade600,
@@ -424,8 +426,8 @@ class _FeeCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       isOverride
-                          ? '${_planLabel(fee['plan_slug'] as String?)} plan — ${clientPays ? 'client' : 'trainer'} betaalt'
-                          : '${clientPays ? 'Client' : 'Trainer'} betaalt',
+                          ? '${_planLabel(fee['plan_slug'] as String?)} plan — ${clientPays ? 'client' : S.of(context).trainer2} betaalt'
+                          : '${clientPays ? 'Client' : S.of(context).trainer} betaalt',
                       style: GoogleFonts.sora(
                         fontSize: 12,
                         color: Colors.grey.shade500,
@@ -440,7 +442,7 @@ class _FeeCard extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: isOverride
-                      ? GymiesColors.darkBlue.withValues(alpha: 0.1)
+                      ? GymiesColors.darkBlue.withOpacity(0.1)
                       : GymiesColors.primary,
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -464,11 +466,11 @@ class _FeeCard extends StatelessWidget {
                 itemBuilder: (_) => [
                   PopupMenuItem(
                     value: 'edit',
-                    child: Text('Bewerken', style: GoogleFonts.sora(fontSize: 14)),
+                    child: Text(S.of(context).bewerken, style: GoogleFonts.sora(fontSize: 14)),
                   ),
                   PopupMenuItem(
                     value: 'delete',
-                    child: Text('Verwijderen',
+                    child: Text(S.of(context).verwijderen,
                         style: GoogleFonts.sora(fontSize: 14, color: Colors.red)),
                   ),
                 ],
@@ -483,13 +485,13 @@ class _FeeCard extends StatelessWidget {
   String _planLabel(String? slug) {
     switch (slug) {
       case 'starter':
-        return 'Starter';
+        return S.of(context).starter;
       case 'pro':
-        return 'Pro';
+        return S.of(context).pro;
       case 'studio':
-        return 'Studio';
+        return S.of(context).studio;
       default:
-        return 'Alle plans';
+        return S.of(context).allePlans;
     }
   }
 }
@@ -549,8 +551,8 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
     _feeValue = (e?['fee_value'] ?? 49) as int;
     _clientPays = (e?['client_pays'] ?? true) as bool;
     _planSlug = e?['plan_slug'] as String?;
-    if (e?['trainer_user_id'] != null) {
-      _trainerIdController.text = e!['trainer_user_id'].toString();
+    if (e?[S.of(context).traineruserid] != null) {
+      _trainerIdController.text = e![S.of(context).traineruserid].toString();
     }
     _feeValueController.text = _feeValue.toString();
   }
@@ -575,7 +577,7 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
       if (widget.isOverride) {
         final tid = int.tryParse(_trainerIdController.text.trim());
         if (tid == null || tid <= 0) return;
-        result['trainer_user_id'] = tid;
+        result[S.of(context).traineruserid] = tid;
       }
       result['plan_slug'] = _planSlug;
     }
@@ -612,7 +614,7 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
                         width: 36,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.3),
+                          color: Colors.white.withOpacity(0.3),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -621,7 +623,7 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
                         _isEdit
                             ? 'Fee bewerken'
                             : widget.isOverride
-                                ? 'Trainer override'
+                                ? S.of(context).trainerOverride
                                 : 'Plan default',
                         style: GoogleFonts.sora(
                           fontSize: 18,
@@ -643,7 +645,7 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
                 children: [
                   // Trainer ID (alleen bij override + nieuw)
                   if (widget.isOverride && !_isEdit) ...[
-                    Text('Trainer user ID',
+                    Text(S.of(context).trainerUserId,
                         style: GoogleFonts.sora(
                             fontSize: 13, fontWeight: FontWeight.w500)),
                     const SizedBox(height: 6),
@@ -652,7 +654,7 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
                       keyboardType: TextInputType.number,
                       style: GoogleFonts.sora(fontSize: 14),
                       decoration: InputDecoration(
-                        hintText: 'Bijv. 42',
+                        hintText: S.of(context).bijv42,
                         hintStyle: GoogleFonts.sora(
                             fontSize: 14, color: Colors.grey.shade400),
                         filled: true,
@@ -674,12 +676,12 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
 
                   // Plan selectie (alleen bij default + nieuw)
                   if (!widget.isOverride && !_isEdit) ...[
-                    Text('Plan',
+                    Text(S.of(context).plan,
                         style: GoogleFonts.sora(
                             fontSize: 13, fontWeight: FontWeight.w500)),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String?>(
-                      value: _planSlug,
+                      initialValue: _planSlug,
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: Colors.grey.shade50,
@@ -694,14 +696,14 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 12),
                       ),
-                      items: const [
+                      items: [
                         DropdownMenuItem(
-                            value: null, child: Text('Alle plans')),
+                            value: null, child: Text(S.of(context).allePlans)),
                         DropdownMenuItem(
-                            value: 'starter', child: Text('Starter')),
-                        DropdownMenuItem(value: 'pro', child: Text('Pro')),
+                            value: 'starter', child: Text(S.of(context).starter)),
+                        DropdownMenuItem(value: 'pro', child: Text(S.of(context).pro)),
                         DropdownMenuItem(
-                            value: 'studio', child: Text('Studio')),
+                            value: 'studio', child: Text(S.of(context).studio)),
                       ],
                       onChanged: (v) => setState(() => _planSlug = v),
                     ),
@@ -709,7 +711,7 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
                   ],
 
                   // Fee type toggle
-                  Text('Fee type',
+                  Text(S.of(context).feeType,
                       style: GoogleFonts.sora(
                           fontSize: 13, fontWeight: FontWeight.w500)),
                   const SizedBox(height: 6),
@@ -766,7 +768,7 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
                   const SizedBox(height: 16),
 
                   // Wie betaalt
-                  Text('Wie betaalt de fee?',
+                  Text(S.of(context).wieBetaaltDeFee,
                       style: GoogleFonts.sora(
                           fontSize: 13, fontWeight: FontWeight.w500)),
                   const SizedBox(height: 6),
@@ -779,7 +781,7 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
                       ),
                       const SizedBox(width: 8),
                       _ToggleChip(
-                        label: 'Trainer betaalt',
+                        label: S.of(context).trainerBetaalt,
                         isSelected: !_clientPays,
                         onTap: () => setState(() => _clientPays = false),
                       ),
@@ -804,7 +806,7 @@ class _FeeFormSheetState extends State<_FeeFormSheet> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      child: Text(_isEdit ? 'Opslaan' : 'Aanmaken'),
+                      child: Text(_isEdit ? S.of(context).opslaan : 'Aanmaken'),
                     ),
                   ),
                   SizedBox(

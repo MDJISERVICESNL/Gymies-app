@@ -8,6 +8,7 @@ import '../services/api_client.dart';
 import '../utils/map_utils.dart';
 import '../utils/haptics.dart';
 import 'widgets/gymies_app_bar.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// Admin ticket detail – berichten bekijken en beantwoorden.
 class AdminTicketDetailScreen extends StatefulWidget {
@@ -41,7 +42,7 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
         'author_name',
         'user_name',
         'client_name',
-        'trainer_name',
+        S.of(context).trainername,
         'created_by_name',
       ]);
   String get _authorEmail =>
@@ -61,23 +62,25 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
   }
 
   Future<void> _load() async {
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
       final list = await api.getAdminTicketMessages(_ticketId);
       if (!mounted) return;
       setState(() {
         _messages = list;
         _loading = false;
       });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-        }
-      });
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+          }
+        });
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -87,7 +90,7 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon berichten niet laden.';
+        _error = S.of(context).konBerichtenNietLaden;
         _loading = false;
       });
     }
@@ -96,17 +99,18 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
   Future<void> _sendReply() async {
     final body = _replyController.text.trim();
     if (body.isEmpty || _sending) return;
+    final api = context.read<GymiesApi>();
     Haptics.light();
     setState(() => _sending = true);
     try {
-      final api = context.read<GymiesApi>();
       await api.addAdminTicketMessage(_ticketId, body);
+      if (!mounted) return;
       _replyController.clear();
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Bericht verstuurd'),
+          content: Text(S.of(context).berichtVerstuurd),
           backgroundColor: Colors.green.shade700,
           behavior: SnackBarBehavior.floating,
         ),
@@ -133,7 +137,7 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
       await api.updateAdminTicket(_ticketId, {
         'status': status,
         'priority': 'medium',
-        'reason': status == 'resolved' ? 'Afgehandeld door medewerker' : 'Status gewijzigd',
+        'reason': status == 'resolved' ? 'Afgehandeld door medewerker' : S.of(context).statusGewijzigd,
       });
       if (!mounted) return;
       Navigator.of(context).pop({'status': status});
@@ -166,7 +170,7 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.15),
+                      color: GymiesColors.primary.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(Icons.edit_outlined, color: GymiesColors.darkBlue, size: 22),
@@ -174,7 +178,7 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Status wijzigen',
+                      S.of(context).statusWijzigen,
                       style: GoogleFonts.sora(fontSize: 18, color: GymiesColors.darkBlue),
                     ),
                   ),
@@ -197,7 +201,7 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
               ),
               const SizedBox(height: 8),
               _StatusOption(
-                label: 'In behandeling',
+                label: S.of(context).statusInBehandeling,
                 onTap: () {
                   Navigator.pop(ctx);
                   _updateStatus('in_progress');
@@ -261,7 +265,7 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen> {
                     : _messages.isEmpty
                         ? Center(
                             child: Text(
-                              'Nog geen berichten',
+                              S.of(context).nogGeenBerichten,
                               style: GoogleFonts.inter(
                                 color: Colors.grey.shade600,
                               ),
@@ -336,7 +340,7 @@ class _HeaderCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
+              color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -357,7 +361,7 @@ class _HeaderCard extends StatelessWidget {
     final lower = s.toLowerCase();
     if (lower.contains('open') || lower.contains('new')) return 'Open';
     if (lower.contains('pending') || lower.contains('waiting')) {
-      return 'In behandeling';
+      return S.of(context).statusInBehandeling;
     }
     if (lower.contains('closed') || lower.contains('resolved')) return 'Afgehandeld';
     return s.isEmpty ? 'Open' : s;
@@ -395,12 +399,12 @@ class _MessageBubble extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: isAdmin
-                    ? GymiesColors.primary.withValues(alpha: 0.25)
+                    ? GymiesColors.primary.withOpacity(0.25)
                     : Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
+                    color: Colors.black.withOpacity(0.06),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -472,7 +476,7 @@ class _ReplyBar extends StatelessWidget {
                 minLines: 1,
                 enabled: !sending,
                 decoration: InputDecoration(
-                  hintText: 'Typ je antwoord...',
+                  hintText: S.of(context).typJeAntwoord,
                   filled: true,
                   fillColor: Colors.grey.shade100,
                   border: OutlineInputBorder(
@@ -543,7 +547,7 @@ class _ErrorView extends StatelessWidget {
                 onRetry();
               },
               icon: const Icon(Icons.refresh),
-              label: const Text('Opnieuw proberen'),
+              label: Text(S.of(context).opnieuwProberen),
               style: FilledButton.styleFrom(
                 backgroundColor: GymiesColors.darkBlue,
                 foregroundColor: GymiesColors.primary,
@@ -586,7 +590,7 @@ class _StatusOption extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.12),
+                color: GymiesColors.primary.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(Icons.check_circle_outline_rounded, color: GymiesColors.darkBlue, size: 20),

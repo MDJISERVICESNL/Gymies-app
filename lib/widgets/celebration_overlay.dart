@@ -23,14 +23,14 @@ class CelebrationOverlay {
   /// Toon de celebration overlay als een dialog.
   static Future<void> show(BuildContext context, Milestone milestone) async {
     Haptics.celebration();
-    return showGeneralDialog(
+    await showGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Celebration',
       barrierColor: Colors.black54,
       transitionDuration: const Duration(milliseconds: 400),
-      pageBuilder: (_, __, ___) => _CelebrationDialog(milestone: milestone),
-      transitionBuilder: (_, animation, __, child) {
+      pageBuilder: (_, _, _) => _CelebrationDialog(milestone: milestone),
+      transitionBuilder: (_, animation, _, child) {
         return ScaleTransition(
           scale: CurvedAnimation(parent: animation, curve: Curves.elasticOut),
           child: child,

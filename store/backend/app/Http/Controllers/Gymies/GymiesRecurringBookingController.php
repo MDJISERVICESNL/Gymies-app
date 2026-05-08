@@ -203,21 +203,27 @@ class GymiesRecurringBookingController
         }
 
         // Create recurring booking
-        $id = DB::table(self::TABLE)->insertGetId([
-            'client_user_id' => (int) $user->id,
-            'trainer_user_id' => $trainerId,
-            'day_of_week' => $dayOfWeek,
-            'start_time' => $startTime,
-            'duration_minutes' => $durationMinutes,
-            'repeat_until' => $repeatUntil,
-            'repeat_every_weeks' => $repeatEveryWeeks,
-            'package_id' => $packageId,
-            'status' => 'active',
-            'generated_until' => null,
-            'amount_cents' => $amountCents,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        try {
+            $id = DB::table(self::TABLE)->insertGetId([
+                'client_user_id' => (int) $user->id,
+                'trainer_user_id' => $trainerId,
+                'day_of_week' => $dayOfWeek,
+                'start_time' => $startTime,
+                'duration_minutes' => $durationMinutes,
+                'repeat_until' => $repeatUntil,
+                'repeat_every_weeks' => $repeatEveryWeeks,
+                'package_id' => $packageId,
+                'status' => 'active',
+                'generated_until' => null,
+                'amount_cents' => $amountCents,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Fout bij aanmaken wekelijkse boeking: ' . $e->getMessage(),
+            ], 500);
+        }
 
         return response()->json([
             'data' => [

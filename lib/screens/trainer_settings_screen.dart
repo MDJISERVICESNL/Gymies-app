@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/auth_service.dart';
 import '../services/biometric_auth_service.dart';
 import '../services/calendar_service.dart';
+import '../services/locale_provider.dart';
 import '../services/subscription_entitlements_service.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
@@ -26,7 +28,9 @@ class TrainerSettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ent = context.watch<SubscriptionEntitlementsService>();
+    // ignore: unused_local_variable
     final hasDossier = ent.coachToolsEnabled;
+    // ignore: unused_local_variable
     final hasProHub = ent.proHubEnabled;
     final hasSuite = ent.suiteEnabled;
     final tierLabel = TrainerSubscriptionScreen.tierDisplayLabel(ent.tier);
@@ -36,9 +40,9 @@ class TrainerSettingsScreen extends StatelessWidget {
         final user = context.read<AuthService>().user;
         return user?['display_name']?.toString() ??
             user?['name']?.toString() ??
-            'Trainer';
+            S.of(context).trainer;
       } catch (_) {
-        return 'Trainer';
+        return S.of(context).trainer;
       }
     }
 
@@ -69,19 +73,19 @@ class TrainerSettingsScreen extends StatelessWidget {
       // ── ACCOUNT sectie ──
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: _buildSectionLabel('ACCOUNT'),
+        child: _buildSectionLabel(S.of(context).account),
       ),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: _buildGroupedTiles([
           _GroupedTileData(
             icon: Icons.person_outline_rounded,
-            title: 'Mijn profiel',
+            title: S.of(context).myProfile,
             onTap: () => push(const TrainerProfileScreen()),
           ),
           _GroupedTileData(
             icon: Icons.workspace_premium_outlined,
-            title: 'Abonnement',
+            title: S.of(context).subscription,
             trailing: tierLabel != 'Starter'
                 ? Container(
                     padding: const EdgeInsets.symmetric(
@@ -89,7 +93,7 @@ class TrainerSettingsScreen extends StatelessWidget {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.85),
+                      color: GymiesColors.primary.withOpacity(0.85),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -106,12 +110,12 @@ class TrainerSettingsScreen extends StatelessWidget {
           ),
           _GroupedTileData(
             icon: Icons.folder_outlined,
-            title: 'Documenten',
+            title: S.of(context).documents,
             onTap: () => push(const TrainerDocumentsScreen()),
           ),
           _GroupedTileData(
             icon: Icons.verified_rounded,
-            title: 'Verificatie',
+            title: S.of(context).verification,
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
@@ -119,7 +123,7 @@ class TrainerSettingsScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'Nieuw',
+                S.of(context).newLabel,
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
@@ -136,7 +140,7 @@ class TrainerSettingsScreen extends StatelessWidget {
       // ── TOOLS sectie ──
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: _buildSectionLabel('TOOLS'),
+        child: _buildSectionLabel(S.of(context).tools),
       ),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -144,25 +148,32 @@ class TrainerSettingsScreen extends StatelessWidget {
           if (hasSuite) ...[
             _GroupedTileData(
               icon: Icons.local_offer_outlined,
-              title: 'Promocodes',
+              title: S.of(context).promoCodes,
               onTap: () => push(const TrainerPromoCodesScreen()),
             ),
           ],
           if (kDebugMode)
             _GroupedTileData(
               icon: Icons.history_rounded,
-              title: 'Actiegeschiedenis',
+              title: S.of(context).actionHistory,
               onTap: () => push(const ActionHistoryScreen()),
             ),
         ]),
       ),
       const SizedBox(height: 20),
 
-      // ── VOORKEUREN sectie (agenda sync toggle) ──
+      // ── VOORKEUREN sectie (agenda sync + taal) ──
       const Padding(
         padding: EdgeInsets.symmetric(horizontal: 16),
         child: _TrainerCalendarSyncSection(),
       ),
+
+      // ── TAAL ──
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: _TrainerLanguagePickerSection(),
+      ),
+      const SizedBox(height: 20),
 
       // ── BEVEILIGING sectie (biometric toggle) ──
       const Padding(
@@ -173,14 +184,14 @@ class TrainerSettingsScreen extends StatelessWidget {
       // ── PRIVACY & VEILIGHEID sectie ──
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: _buildSectionLabel('PRIVACY & VEILIGHEID'),
+        child: _buildSectionLabel(S.of(context).privacySafety),
       ),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: _buildGroupedTiles([
           _GroupedTileData(
             icon: Icons.privacy_tip_rounded,
-            title: 'Privacy & gegevens',
+            title: S.of(context).privacyData,
             onTap: () => _showPrivacySheet(context),
           ),
         ]),
@@ -217,6 +228,7 @@ class TrainerSettingsScreen extends StatelessWidget {
   // NAVY HEADER
   // ═══════════════════════════════════════════════════════════════════
 
+  // Note: _buildHeader uses S.of(context).instellingen as static — localized via S
   static Widget _buildHeader({
     required String name,
     required String email,
@@ -251,7 +263,7 @@ class TrainerSettingsScreen extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Text(
-                'Instellingen',
+                S.of(context).instellingen,
                 style: GoogleFonts.sora(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
@@ -300,7 +312,7 @@ class TrainerSettingsScreen extends StatelessWidget {
                         email,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: Colors.white.withOpacity(0.6),
                         ),
                       ),
                     ],
@@ -314,7 +326,7 @@ class TrainerSettingsScreen extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.85),
+                    color: GymiesColors.primary.withOpacity(0.85),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
@@ -360,7 +372,7 @@ class TrainerSettingsScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -388,7 +400,7 @@ class TrainerSettingsScreen extends StatelessWidget {
                       Icon(
                         t.icon,
                         size: 20,
-                        color: GymiesColors.darkBlue.withValues(alpha: 0.7),
+                        color: GymiesColors.darkBlue.withOpacity(0.7),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -448,7 +460,7 @@ class TrainerSettingsScreen extends StatelessWidget {
                   Icon(Icons.privacy_tip, color: Colors.teal.shade600, size: 22),
                   const SizedBox(width: 10),
                   Text(
-                    'Privacy & gegevens',
+                    S.of(context).privacyGegevens,
                     style: GoogleFonts.sora(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
@@ -476,10 +488,10 @@ class TrainerSettingsScreen extends StatelessWidget {
                   border: Border.all(color: Colors.teal.shade100),
                 ),
                 child: Text(
-                  'GYMIES verwerkt je persoonsgegevens conform de AVG (GDPR). '
-                  'Je data wordt niet met derden gedeeld en uitsluitend gebruikt '
-                  'voor het leveren van onze diensten. Je hebt te allen tijde '
-                  'het recht je gegevens in te zien, te corrigeren of te verwijderen.',
+                  S.of(context).gymiesVerwerktJePersoonsgegevensConformDe
+                  S.of(context).jeDataWordtNietMetDerden
+                  S.of(context).voorHetLeverenVanOnzeDiensten
+                  S.of(context).hetRechtJeGegevensInTe,
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.teal.shade800,
@@ -491,14 +503,14 @@ class TrainerSettingsScreen extends StatelessWidget {
               _PrivacyTile(
                 icon: Icons.download_outlined,
                 iconColor: Colors.cyan.shade600,
-                title: 'Mijn gegevens opvragen',
-                subtitle: 'Ontvang een export van alle data die wij over je hebben',
+                title: S.of(context).mijnGegevensOpvragen,
+                subtitle: S.of(context).requestMyDataSubtitle,
                 onTap: () {
                   Haptics.light();
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Gegevensexport aangevraagd — je ontvangt een e-mail'),
+                      content: Text(S.of(context).gegevensexportAangevraagdJeOntvangtEenEmail),
                     ),
                   );
                 },
@@ -507,26 +519,26 @@ class TrainerSettingsScreen extends StatelessWidget {
               _PrivacyTile(
                 icon: Icons.delete_forever_outlined,
                 iconColor: Colors.red.shade600,
-                title: 'Account verwijderen',
-                subtitle: 'Verwijder permanent je account en al je gegevens (AVG Art. 17)',
+                title: S.of(context).accountVerwijderen,
+                subtitle: S.of(context).deleteAccountSubtitle,
                 danger: true,
                 onTap: () async {
                   Haptics.selection();
                   Navigator.pop(ctx);
                   final confirmed = await GymiesDialog.destructive(
                     context,
-                    title: 'Account verwijderen',
+                    title: S.of(context).accountVerwijderen,
                     message:
-                        'Dit verwijdert je account en alle bijbehorende gegevens permanent. '
-                        'Deze actie kan niet ongedaan worden gemaakt.',
-                    confirmLabel: 'Verwijderen',
-                    cancelLabel: 'Annuleren',
+                        S.of(context).ditVerwijdertJeAccountEnAlle
+                        S.of(context).dezeActieKanNietOngedaanWorden,
+                    confirmLabel: S.of(context).verwijderen,
+                    cancelLabel: S.of(context).annuleren,
                   );
                   if (confirmed == true && context.mounted) {
                     Haptics.heavy();
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Account verwijderaanvraag ingediend'),
+                        content: Text(S.of(context).accountVerwijderaanvraagIngediend),
                       ),
                     );
                     await context.read<AuthService>().logout();
@@ -603,7 +615,7 @@ class _TrainerCalendarSyncSectionState
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
+                color: Colors.black.withOpacity(0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -625,7 +637,7 @@ class _TrainerCalendarSyncSectionState
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.15),
+                      color: GymiesColors.primary.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(
@@ -635,14 +647,14 @@ class _TrainerCalendarSyncSectionState
                     ),
                   ),
                   title: Text(
-                    'Agenda sync',
+                    S.of(context).agendaSync,
                     style: GoogleFonts.sora(
                       fontWeight: FontWeight.w600,
                       fontSize: 15,
                     ),
                   ),
                   subtitle: Text(
-                    'Nieuwe boekingen automatisch aan je kalender toevoegen',
+                    S.of(context).nieuweBoekingenAutomatischAanJeKalenderToevoegen,
                     style: GoogleFonts.sora(
                       fontSize: 12,
                       color: Colors.grey.shade600,
@@ -650,7 +662,7 @@ class _TrainerCalendarSyncSectionState
                   ),
                   value: _enabled,
                   onChanged: _toggle,
-                  activeColor: GymiesColors.primary,
+                  activeThumbColor: GymiesColors.primary,
                 ),
         ),
         const SizedBox(height: 20),
@@ -722,7 +734,7 @@ class _TrainerBiometricSectionState extends State<_TrainerBiometricSection> {
         Padding(
           padding: const EdgeInsets.only(bottom: 8, left: 4),
           child: Text(
-            'BEVEILIGING',
+            S.of(context).beveiliging,
             style: GoogleFonts.sora(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -737,7 +749,7 @@ class _TrainerBiometricSectionState extends State<_TrainerBiometricSection> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
+                color: Colors.black.withOpacity(0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -754,7 +766,7 @@ class _TrainerBiometricSectionState extends State<_TrainerBiometricSection> {
                           ? Icons.fingerprint
                           : Icons.lock_outline_rounded,
                   size: 20,
-                  color: GymiesColors.darkBlue.withValues(alpha: 0.7),
+                  color: GymiesColors.darkBlue.withOpacity(0.7),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -772,7 +784,7 @@ class _TrainerBiometricSectionState extends State<_TrainerBiometricSection> {
                       Text(
                         _enabled
                             ? 'Ingeschakeld — log snel in'
-                            : 'Schakel in voor snelle toegang',
+                            : S.of(context).biometricDisabled,
                         style: TextStyle(
                           fontSize: 11,
                           color: Colors.grey.shade500,
@@ -784,7 +796,6 @@ class _TrainerBiometricSectionState extends State<_TrainerBiometricSection> {
                 Switch.adaptive(
                   value: _enabled,
                   onChanged: _toggle,
-                  activeColor: GymiesColors.primary,
                   activeTrackColor: GymiesColors.darkBlue,
                 ),
               ],
@@ -838,7 +849,7 @@ class _PrivacyTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: Colors.black.withOpacity(0.04),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -850,7 +861,7 @@ class _PrivacyTile extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.12),
+                color: iconColor.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, color: iconColor, size: 20),
@@ -883,6 +894,79 @@ class _PrivacyTile extends StatelessWidget {
               Icons.chevron_right,
               color: danger ? Colors.red.shade300 : Colors.grey.shade400,
               size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LANGUAGE PICKER SECTION
+// ═══════════════════════════════════════════════════════════════════
+
+class _TrainerLanguagePickerSection extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final lp = context.watch<LocaleProvider>();
+    final t = S.of(context);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200, width: 0.5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(Icons.language_rounded, size: 20, color: Colors.grey.shade600),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                t.language,
+                style: GoogleFonts.sora(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: GymiesColors.darkBlue,
+                ),
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: LocaleProvider.supportedLocales.map((locale) {
+                final isSelected = lp.locale.languageCode == locale.languageCode;
+                return Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: GestureDetector(
+                    onTap: () {
+                      Haptics.selection();
+                      lp.setLocale(locale);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? GymiesColors.darkBlue
+                            : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        locale.languageCode.toUpperCase(),
+                        style: GoogleFonts.sora(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected ? Colors.white : Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
             ),
           ],
         ),

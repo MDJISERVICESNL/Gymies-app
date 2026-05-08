@@ -346,6 +346,11 @@ class GymiesWaitlistController
             return response()->json(['message' => 'Niet ingelogd.'], 401);
         }
 
+        // Validate id parameter
+        if (!ctype_digit($id) || (int) $id < 1) {
+            return response()->json(['message' => 'Ongeldige wachtlijst-ID.'], 422);
+        }
+
         $schemaVersion = $this->getSchemaVersion();
         if ($schemaVersion !== 'v2') {
             return response()->json([

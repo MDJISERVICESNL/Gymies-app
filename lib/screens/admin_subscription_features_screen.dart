@@ -7,15 +7,17 @@ import '../theme/gymies_theme.dart';
 import '../services/gymies_api.dart';
 import '../services/api_client.dart';
 import '../utils/haptics.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// Default feature-matrix wanneer backend nog geen endpoint heeft.
-List<Map<String, dynamic>> _defaultFeatures() {
+/// Vraagt context om gelokaliseerde labels op te halen.
+List<Map<String, dynamic>> _defaultFeatures(BuildContext context) {
   return [
     // ── Starter features ──
-    {'key': 'sessions', 'label': 'Sessiebeheer', 'enabled_from': 'starter'},
-    {'key': 'messages', 'label': 'Berichten', 'enabled_from': 'starter'},
-    {'key': 'agenda', 'label': 'Agenda', 'enabled_from': 'starter'},
-    {'key': 'invoice', 'label': 'Factuur opstellen', 'enabled_from': 'starter'},
+    {'key': 'sessions', 'label': S.of(context).sessiebeheer, 'enabled_from': 'starter'},
+    {'key': 'messages', 'label': S.of(context).messages, 'enabled_from': 'starter'},
+    {'key': 'agenda', 'label': S.of(context).agenda, 'enabled_from': 'starter'},
+    {'key': 'invoice', 'label': S.of(context).factuurOpstellen, 'enabled_from': 'starter'},
     {'key': 'documents', 'label': 'Documenten', 'enabled_from': 'starter'},
     {'key': 'income', 'label': 'Inkomstenoverzicht', 'enabled_from': 'starter'},
     {'key': 'checkin', 'label': 'Check-in scanner', 'enabled_from': 'starter'},
@@ -23,37 +25,37 @@ List<Map<String, dynamic>> _defaultFeatures() {
     {'key': 'waitlist', 'label': 'Wachtlijst', 'enabled_from': 'starter'},
     // ── Pro features ──
     {'key': 'search_priority', 'label': 'Zoekprioriteit', 'enabled_from': 'pro'},
-    {'key': 'group_sessions', 'label': 'Groepslessen', 'enabled_from': 'pro'},
+    {'key': 'group_sessions', 'label': S.of(context).groepslessen, 'enabled_from': 'pro'},
     {'key': 'packages', 'label': 'Pakketten', 'enabled_from': 'pro'},
     {'key': 'promo_codes', 'label': 'Promo codes', 'enabled_from': 'pro'},
     {'key': 'crm', 'label': 'CRM', 'enabled_from': 'pro'},
     {'key': 'income_dashboard', 'label': 'Inkomsten dashboard', 'enabled_from': 'pro'},
     {'key': 'marketing_tools', 'label': 'Marketing tools', 'enabled_from': 'pro'},
     {'key': 'priority_support', 'label': 'Priority support', 'enabled_from': 'pro'},
-    {'key': 'dossier', 'label': 'Dossier per klant', 'enabled_from': 'pro'},
-    {'key': 'goals', 'label': 'Doelen per klant', 'enabled_from': 'pro'},
+    {'key': 'dossier', 'label': S.of(context).dossierPerKlant, 'enabled_from': 'pro'},
+    {'key': 'goals', 'label': S.of(context).doelenPerKlant, 'enabled_from': 'pro'},
     {'key': 'health_score', 'label': 'Client health score', 'enabled_from': 'pro'},
     {'key': 'upsell', 'label': 'Upsell suggesties', 'enabled_from': 'pro'},
     {'key': 'rebook', 'label': 'Herboek suggesties', 'enabled_from': 'pro'},
     {'key': 'bulk_message', 'label': 'Bulk bericht', 'enabled_from': 'pro'},
-    {'key': 'client_tags', 'label': 'Klanttags/labels', 'enabled_from': 'pro'},
+    {'key': 'client_tags', 'label': S.of(context).klanttagslabels, 'enabled_from': 'pro'},
     // ── Pro+ features ──
-    {'key': 'branded_profile', 'label': 'Branded profiel', 'enabled_from': 'pro_plus'},
+    {'key': 'branded_profile', 'label': S.of(context).brandedProfiel, 'enabled_from': 'pro_plus'},
     {'key': 'custom_url', 'label': 'Eigen URL', 'enabled_from': 'pro_plus'},
-    {'key': 'profile_branding', 'label': 'Profiel branding', 'enabled_from': 'pro_plus'},
+    {'key': 'profile_branding', 'label': S.of(context).profielBranding, 'enabled_from': 'pro_plus'},
     {'key': 'intro_video', 'label': 'Intro video', 'enabled_from': 'pro_plus'},
     {'key': 'verified_badge', 'label': 'Verified badge', 'enabled_from': 'pro_plus'},
-    {'key': 'newsletter', 'label': 'Nieuwsbrief', 'enabled_from': 'pro_plus'},
-    {'key': 'booking_widget', 'label': 'Boekingswidget', 'enabled_from': 'pro_plus'},
-    {'key': 'profile_qr', 'label': 'Profiel QR-code', 'enabled_from': 'pro_plus'},
-    {'key': 'client_analytics', 'label': 'Klantanalytics', 'enabled_from': 'pro_plus'},
+    {'key': 'newsletter', 'label': S.of(context).newsletterLabel, 'enabled_from': 'pro_plus'},
+    {'key': 'booking_widget', 'label': S.of(context).boekingswidget, 'enabled_from': 'pro_plus'},
+    {'key': 'profile_qr', 'label': S.of(context).profielQrcode, 'enabled_from': 'pro_plus'},
+    {'key': 'client_analytics', 'label': S.of(context).klantanalytics, 'enabled_from': 'pro_plus'},
     // ── Studio features (gym only) ──
     {'key': 'advanced_reporting', 'label': 'Geavanceerde rapportage', 'enabled_from': 'studio'},
     {'key': 'suite_tools', 'label': 'Suite tools', 'enabled_from': 'studio'},
     // ── Limits ──
-    {'key': 'profile_videos', 'label': 'Videos op profiel', 'enabled_from': 'pro', 'limit_pro': 1, 'limit_pro_plus': -1},
+    {'key': 'profile_videos', 'label': S.of(context).videosOpProfiel, 'enabled_from': 'pro', 'limit_pro': 1, 'limit_pro_plus': -1},
     {'key': 'profile_stories', 'label': 'Story (foto/video)', 'enabled_from': 'pro', 'limit_pro': 1, 'limit_pro_plus': -1},
-    {'key': 'max_clients', 'label': 'Max actieve klanten', 'enabled_from': 'starter', 'limit_starter': -1, 'limit_pro': -1, 'limit_pro_plus': -1},
+    {'key': 'max_clients', 'label': S.of(context).maxActieveKlanten, 'enabled_from': 'starter', 'limit_starter': -1, 'limit_pro': -1, 'limit_pro_plus': -1},
   ];
 }
 
@@ -101,22 +103,22 @@ class _AdminSubscriptionFeaturesScreenState
           _fromApi = true;
         });
       } else {
-        throw ApiException(404, 'Geen features van backend');
+        throw ApiException(404, S.of(context).geenFeaturesVanBackend);
       }
     } on ApiException catch (e) {
       if (e.statusCode == 404 || e.statusCode >= 500) {
         if (!mounted) return;
         setState(() {
-          _features = _defaultFeatures();
+          _features = _defaultFeatures(context);
           _loading = false;
           _fromApi = false;
-          _error = 'Backend endpoint niet beschikbaar. Toon defaults.';
+          _error = S.of(context).backendEndpointNietBeschikbaarToonDefaults;
         });
       } else {
         if (!mounted) return;
         setState(() {
           _error = e.message;
-          _features = _defaultFeatures();
+          _features = _defaultFeatures(context);
           _loading = false;
           _fromApi = false;
         });
@@ -124,10 +126,10 @@ class _AdminSubscriptionFeaturesScreenState
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _features = _defaultFeatures();
+        _features = _defaultFeatures(context);
         _loading = false;
         _fromApi = false;
-        _error = 'Kon features niet laden. Toon defaults.';
+        _error = S.of(context).konFeaturesNietLadenToonDefaults;
       });
     }
   }
@@ -141,8 +143,8 @@ class _AdminSubscriptionFeaturesScreenState
       await context.read<GymiesApi>().updateAdminSubscriptionFeatures(_features);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Features opgeslagen'),
+        SnackBar(
+          content: Text(S.of(context).featuresOpgeslagen),
           backgroundColor: Colors.green,
         ),
       );
@@ -151,7 +153,7 @@ class _AdminSubscriptionFeaturesScreenState
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Opslaan mislukt: ${e.message}'),
+          content: Text(S.of(context).opslaanMisluktMsg(e.message ?? '')),
           backgroundColor: Colors.red,
         ),
       );
@@ -159,7 +161,7 @@ class _AdminSubscriptionFeaturesScreenState
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Opslaan mislukt. Controleer backend.'),
+          content: Text(S.of(context).opslaanMisluktControleerBackend),
           backgroundColor: Colors.red,
         ),
       );
@@ -192,7 +194,7 @@ class _AdminSubscriptionFeaturesScreenState
         backgroundColor: UiConstants.darkNavyBackground,
         elevation: 0,
         title: Text(
-          'Abonnement features',
+          S.of(context).abonnementFeatures,
           style: GoogleFonts.sora(
             fontSize: 20,
             fontWeight: FontWeight.bold,
@@ -221,7 +223,7 @@ class _AdminSubscriptionFeaturesScreenState
                     )
                   : const Icon(Icons.save, color: GymiesColors.primary),
               label: Text(
-                _saving ? 'Opslaan…' : 'Opslaan',
+                _saving ? S.of(context).opslaan3 : S.of(context).opslaan,
                 style: const TextStyle(color: GymiesColors.primary),
               ),
             ),
@@ -247,10 +249,9 @@ class _AdminSubscriptionFeaturesScreenState
                     padding: const EdgeInsets.all(16),
                     children: [
                       Text(
-                        'Pas aan welke features bij Starter, Pro, Pro+ of Studio horen. '
-                        'De app toont deze instellingen aan trainers.',
+                        '${S.of(context).pasAanWelkeFeaturesBijStarter} ${S.of(context).deAppToontDezeInstellingenAan}',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.8),
+                          color: Colors.white.withOpacity(0.8),
                           fontSize: 14,
                         ),
                       ),

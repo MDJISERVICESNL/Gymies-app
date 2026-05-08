@@ -1,10 +1,11 @@
-import 'package:flutter/foundation.dart';
-import 'dart:async';
-import 'dart:convert';
 
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../config/timing_constants.dart';
 import '../config/ui_constants.dart';
 import '../models/booking.dart';
@@ -16,11 +17,12 @@ import '../services/pusher_websocket_service.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
 import '../utils/map_utils.dart';
+import 'dart:async';
+import 'dart:convert';
 import 'widgets/gymies_app_bar.dart';
 import 'widgets/reschedule_card_widget.dart';
 import 'widgets/reschedule_slot_picker.dart';
 import 'widgets/trainer_state_views.dart';
-
 class ClientMessagesScreen extends StatefulWidget {
   const ClientMessagesScreen({super.key});
 
@@ -61,12 +63,13 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
   }
 
   Future<void> _load() async {
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final list = await context.read<GymiesApi>().getClientConversations();
+      final list = await api.getClientConversations();
       final normalized = list.where((c) => !_isSupportConversation(c)).toList()
         ..sort((a, b) {
           final aUnread = mapInt(a, ['unread_count', 'unreadCount']);
@@ -95,11 +98,12 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
         _error = e.message;
         _loading = false;
       });
-    } catch (e) {
+    } catch (e, st) {
       if (kDebugMode) debugPrint('[ClientMessages] Gesprekken laden fout: $e');
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': 'ClientMessages', 'action': 'loadConversations'}));
       if (!mounted) return;
       setState(() {
-        _error = 'Kon gesprekken niet laden.';
+        _error = S.of(context).konGesprekkenNietLaden;
         _loading = false;
       });
     }
@@ -114,13 +118,13 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
     if (type.contains('support')) return true;
     final isSupportFlag = mapPick(c, ['is_support', 'isSupport']);
     if (isSupportFlag == true || isSupportFlag?.toString() == '1') return true;
-    final name = mapStr(c, ['trainer_name', 'trainerName', 'name']).toLowerCase();
+    final name = mapStr(c, [S.of(context).trainername, S.of(context).trainername2, 'name']).toLowerCase();
     return name.contains('gymies') || name.contains('support');
   }
 
   String _conversationDisplayName(Map<String, dynamic> c) {
-    final regular = mapStr(c, ['trainer_name', 'trainerName', 'name']);
-    return regular.isEmpty ? 'Trainer' : regular;
+    final regular = mapStr(c, [S.of(context).trainername, S.of(context).trainername2, 'name']);
+    return regular.isEmpty ? S.of(context).trainer : regular;
   }
 
   /// Formatteer timestamp naar leesbaar label (vandaag → tijd, gisteren, of datum).
@@ -135,7 +139,7 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
       return '${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}';
     }
     if (dateOnly == today.subtract(const Duration(days: 1))) {
-      return 'gisteren';
+      return S.of(context).gisterenLower;
     }
     const months = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
     return '${parsed.day} ${months[parsed.month - 1]}';
@@ -160,7 +164,7 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
                     Row(
                       children: [
                         Text(
-                          'Inbox',
+                          S.of(context).inbox,
                           style: GoogleFonts.sora(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
@@ -191,9 +195,9 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
                     Container(
                       height: 38,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: Colors.white.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 0.5),
+                        border: Border.all(color: Colors.white.withOpacity(0.15), width: 0.5),
                       ),
                       child: TextField(
                         controller: _searchController,
@@ -202,14 +206,14 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
                           fontSize: 14,
                         ),
                         decoration: InputDecoration(
-                          hintText: 'Zoek gesprekken...',
+                          hintText: S.of(context).zoekGesprekken,
                           hintStyle: GoogleFonts.sora(
-                            color: Colors.white.withValues(alpha: 0.5),
+                            color: Colors.white.withOpacity(0.5),
                             fontSize: 14,
                           ),
                           prefixIcon: Icon(
                             Icons.search_rounded,
-                            color: Colors.white.withValues(alpha: 0.5),
+                            color: Colors.white.withOpacity(0.5),
                             size: 20,
                           ),
                           border: InputBorder.none,
@@ -235,9 +239,9 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
                   ? ListView(
                       children: const [
                         _EmptyView(
-                          title: 'Nog geen gesprekken',
+                          title: S.of(context).nogGeenGesprekken,
                           subtitle:
-                              'Zodra je een trainer bericht, verschijnt het gesprek hier.',
+                              S.of(context).zodraJeEenTrainerBerichtVerschijnt,
                         ),
                       ],
                     )
@@ -245,7 +249,7 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
                       ? ListView(
                           children: [
                             _EmptyView(
-                              title: 'Geen resultaten',
+                              title: S.of(context).noResults,
                               subtitle:
                                   'Geen gesprekken gevonden voor "${_searchController.text}".',
                             ),
@@ -275,7 +279,7 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
                         ]);
                         final timeLabel = _formatTimestamp(lastAt);
                         final hasUnread = unread > 0;
-                        final avatarUrl = mapStr(c, ['avatar_url', 'avatarUrl', 'trainer_avatar', 'trainerAvatar']);
+                        final avatarUrl = mapStr(c, ['avatar_url', 'avatarUrl', S.of(context).traineravatar, S.of(context).traineravatar2]);
 
                         return TweenAnimationBuilder<double>(
                           tween: Tween(begin: 0.0, end: 1.0),
@@ -303,9 +307,10 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
                                   } catch (e) {
                                     if (kDebugMode) debugPrint('[ClientMessages] Gesprek verwijderen API fout: $e');
                                     if (mounted) {
+                                      // ignore: use_build_context_synchronously
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(
-                                          content: const Text('Kon gesprek niet verwijderen'),
+                                          content: const Text(S.of(context).konGesprekNietVerwijderen),
                                           backgroundColor: Colors.red.shade600,
                                         ),
                                       );
@@ -323,10 +328,10 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
                                   });
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: const Text('Gesprek verwijderd'),
+                                      content: const Text(S.of(context).gesprekVerwijderd),
                                       backgroundColor: GymiesColors.darkBlue,
                                       action: SnackBarAction(
-                                        label: 'Herstellen',
+                                        label: S.of(context).herstellen,
                                         textColor: GymiesColors.primary,
                                         onPressed: () => _load(),
                                       ),
@@ -377,7 +382,7 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
                                           padding: const EdgeInsets.all(12),
                                           decoration: BoxDecoration(
                                             color: hasUnread
-                                                ? GymiesColors.primary.withValues(alpha: 0.04)
+                                                ? GymiesColors.primary.withOpacity(0.04)
                                                 : Colors.white,
                                             borderRadius: const BorderRadius.only(
                                               topRight: Radius.circular(10),
@@ -410,7 +415,7 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
                                                           width: 40,
                                                           height: 40,
                                                           fit: BoxFit.cover,
-                                                          errorBuilder: (_, __, ___) => Center(
+                                                          errorBuilder: (_, _, _) => Center(
                                                             child: Text(
                                                               initials,
                                                               style: GoogleFonts.sora(
@@ -470,7 +475,7 @@ class _ClientMessagesScreenState extends State<ClientMessagesScreen> {
                                                       lastMessage.isEmpty
                                                           ? 'Open gesprek'
                                                           : lastMessage.startsWith('__GYMIES_CARD__:')
-                                                              ? 'Verplaatsingsverzoek'
+                                                              ? S.of(context).verplaatsingsverzoek
                                                               : lastMessage,
                                                       maxLines: 1,
                                                       overflow: TextOverflow.ellipsis,
@@ -593,8 +598,8 @@ class _ClientChatScreenState extends State<ClientChatScreen>
         _myChannel = 'private-gymies.chat.$_myUserId';
         if (kDebugMode) debugPrint('[Chat] Cached myUserId: $_myUserId, channel: $_myChannel');
       }
-    } catch (_) {
-      if (kDebugMode) debugPrint('[Chat] Kon myUserId niet cachen');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Chat] Failed to cache user ID: $e');
     }
   }
 
@@ -654,10 +659,11 @@ class _ClientChatScreenState extends State<ClientChatScreen>
         _error = e.message;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e, st) {
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': 'ClientMessages', 'action': 'loadMessages'}));
       if (!mounted) return;
       setState(() {
-        _error = 'Kon chat niet laden.';
+        _error = S.of(context).konChatNietLaden;
         _loading = false;
       });
     }
@@ -726,9 +732,10 @@ class _ClientChatScreenState extends State<ClientChatScreen>
         _mergeMessages(list);
       });
       _jumpToBottom();
-    } catch (e) {
+    } catch (e, st) {
       if (kDebugMode) debugPrint('[ClientMessages] Silent message refresh fout: $e');
-      // Stil falen voor achtergrond sync.
+      Sentry.addBreadcrumb(Breadcrumb(message: 'ClientMessages silent refresh failed: $e', category: 'chat'));
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': 'ClientMessages', 'action': 'refreshSilently'}));
     }
   }
 
@@ -766,11 +773,13 @@ class _ClientChatScreenState extends State<ClientChatScreen>
     try {
       config = await api.getBroadcastConfig();
       if (config['enabled'] != true) {
-        if (kDebugMode) debugPrint('[Chat] Broadcasting niet enabled op backend, alleen polling');
+        if (kDebugMode) debugPrint(S.of(context).chatBroadcastingNietEnabledOpBackend);
         return;
       }
-    } catch (e) {
+    } catch (e, st) {
       if (kDebugMode) debugPrint('[Chat] Broadcasting config ophalen mislukt: $e — alleen polling');
+      Sentry.addBreadcrumb(Breadcrumb(message: 'Broadcast config fetch failed: $e', category: 'websocket', level: SentryLevel.warning));
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': 'ClientMessages', 'action': 'fetchBroadcastConfig'}));
       return;
     }
 
@@ -816,8 +825,9 @@ class _ClientChatScreenState extends State<ClientChatScreen>
       );
       await _pusher!.subscribe(_myChannel);
       if (kDebugMode) debugPrint('[Chat] Pusher gestart — subscribed op $_myChannel');
-    } catch (e) {
+    } catch (e, st) {
       if (kDebugMode) debugPrint('[Chat] Pusher verbinding fout: $e');
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': 'ClientMessages', 'action': 'pusherConnect'}));
     }
   }
 
@@ -863,6 +873,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
       'id': messageId,
       'body': data['body_preview'] ?? '',
       'from_user_id': fromUserId,
+      'sender_type': data['sender_type'] ?? S.of(context).trainer2,
       'created_at': data['created_at'] ?? DateTime.now().toIso8601String(),
     };
 
@@ -943,7 +954,10 @@ class _ClientChatScreenState extends State<ClientChatScreen>
           ['id', 'user_id', 'userId'],
         );
         if (myId.isNotEmpty) _myUserId = myId; // Cache voor volgende keer
-      } catch (_) {}
+      } catch (e) {
+        // Fail-open: Fetch user ID optional, continue with empty value
+        if (kDebugMode) debugPrint('[ClientMessages] Fetch user ID failed: $e');
+      }
     }
 
     if (myId.isNotEmpty) {
@@ -956,10 +970,10 @@ class _ClientChatScreenState extends State<ClientChatScreen>
       if (senderId.isNotEmpty) return senderId == myId;
     }
 
-    // 3. Fallback: check rol
-    final senderRole = mapStr(message, ['sender_role', 'role']).toLowerCase();
-    if (senderRole == 'client' || senderRole == 'user' || senderRole == 'klant') return true;
-    if (senderRole == 'trainer') return false;
+    // 3. Fallback: check sender_type / sender_role
+    final senderType = mapStr(message, ['sender_type', 'senderType', 'sender_role', 'role']).toLowerCase();
+    if (senderType == 'client' || senderType == 'user' || senderType == S.of(context).klant) return true;
+    if (senderType == S.of(context).trainer2) return false;
 
     // 4. Laatste fallback: notification-type berichten zijn nooit van de klant
     final msgType = mapStr(message, ['type']).toLowerCase();
@@ -1031,13 +1045,14 @@ class _ClientChatScreenState extends State<ClientChatScreen>
         }
       });
       Haptics.error();
-    } catch (_) {
+    } catch (e, st) {
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': 'ClientMessages', 'action': 'sendMessage'}));
       if (!mounted) return;
       setState(() {
         final idx = _messages.indexWhere((m) => m['id'] == tempId);
         if (idx >= 0) {
           _messages[idx]['_delivery_status'] = 'failed';
-          _messages[idx]['_error'] = 'Versturen mislukt. Tik om opnieuw te proberen.';
+          _messages[idx]['_error'] = S.of(context).versturenMisluktTikOmOpnieuwTe;
         }
       });
       Haptics.error();
@@ -1081,13 +1096,14 @@ class _ClientChatScreenState extends State<ClientChatScreen>
         }
       });
       Haptics.success();
-    } catch (_) {
+    } catch (e, st) {
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': 'ClientMessages', 'action': 'retrySend'}));
       if (!mounted) return;
       setState(() {
         final idx = _messages.indexWhere((m) => m['id'] == tempId);
         if (idx >= 0) {
           _messages[idx]['_delivery_status'] = 'failed';
-          _messages[idx]['_error'] = 'Versturen mislukt. Tik om opnieuw te proberen.';
+          _messages[idx]['_error'] = S.of(context).versturenMisluktTikOmOpnieuwTe;
         }
       });
     }
@@ -1153,8 +1169,8 @@ class _ClientChatScreenState extends State<ClientChatScreen>
               action == 'accept'
                   ? 'Verplaatsing geaccepteerd'
                   : action == 'reject'
-                      ? 'Verzoek afgewezen'
-                      : 'Tegenvoorstel verstuurd',
+                      ? S.of(context).verzoekAfgewezen
+                      : S.of(context).tegenvoorstelVerstuurd,
             ),
             backgroundColor: GymiesColors.darkBlue,
           ),
@@ -1203,7 +1219,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Kon sessies niet laden'),
+          content: const Text(S.of(context).konSessiesNietLaden),
           backgroundColor: Colors.red.shade600,
         ),
       );
@@ -1216,7 +1232,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
     if (bookings.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Geen verplaatsbare sessies bij ${widget.title}'),
+          content: Text(S.of(context).geenVerplaatsbareSessiesBij(widget.title)),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -1257,7 +1273,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Sessie begint zo',
+                  S.of(context).sessieBegintZo,
                   style: GoogleFonts.sora(fontSize: 17, fontWeight: FontWeight.w700),
                 ),
               ),
@@ -1265,14 +1281,14 @@ class _ClientChatScreenState extends State<ClientChatScreen>
           ),
           content: Text(
             hoursUntil < 1
-                ? 'Deze sessie begint over minder dan een uur. Weet je zeker dat je wilt verplaatsen?'
-                : 'Deze sessie is vandaag. Weet je zeker dat je wilt verplaatsen?',
+                ? S.of(context).dezeSessieBegintOverMinderDan
+                : S.of(context).dezeSessieIsVandaagWeetJe,
             style: GoogleFonts.sora(fontSize: 14, color: Colors.grey.shade700),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Annuleren'),
+              child: const Text(S.of(context).annuleren),
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
@@ -1280,7 +1296,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
                 backgroundColor: Colors.orange.shade700,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Toch verplaatsen'),
+              child: const Text(S.of(context).tochVerplaatsen),
             ),
           ],
         ),
@@ -1293,7 +1309,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
     if (trainerId == null || trainerId.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: const Text('Trainer-ID ontbreekt'), backgroundColor: Colors.red.shade600),
+          SnackBar(content: const Text(S.of(context).traineridOntbreekt), backgroundColor: Colors.red.shade600),
         );
       }
       return;
@@ -1330,7 +1346,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
         'booking_id': selected.id,
         'scheduled_at': selected.scheduledAt.toIso8601String(),
         'requested_at': newDateTime.toIso8601String(),
-        'trainer_name': selected.trainerName,
+        S.of(context).trainername: selected.trainerName,
         'session_type': selected.sessionType,
         'duration_minutes': selected.durationMinutes,
         'status': 'pending',
@@ -1363,12 +1379,15 @@ class _ClientChatScreenState extends State<ClientChatScreen>
           );
           await CalendarService.instance.addBookingToCalendar(updatedBooking);
         }
-      } catch (_) {}
+      } catch (e) {
+        // Fail-open: Calendar sync optional, booking updated anyway
+        if (kDebugMode) debugPrint('[ClientMessages] Calendar sync failed: $e');
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Verplaatsingsverzoek verstuurd'),
+          content: const Text(S.of(context).verplaatsingsverzoekVerstuurd),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -1383,7 +1402,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
       Haptics.error();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Verplaatsen mislukt. Probeer het opnieuw.'),
+          content: const Text(S.of(context).verplaatsenMisluktProbeerHetOpnieuw),
           backgroundColor: Colors.red.shade600,
         ),
       );
@@ -1444,48 +1463,49 @@ class _ClientChatScreenState extends State<ClientChatScreen>
     final lastMsgTime = lastTrainerMsg != null
         ? DateTime.tryParse(mapStr(lastTrainerMsg, ['created_at', 'createdAt']))
         : null;
+    // ignore: unused_local_variable
     final isRecentMsg = lastMsgTime != null &&
         now.difference(lastMsgTime).inHours < 4;
 
     // ── 1. Reactief: reageer op wat de trainer zei ──
 
     // Trainer vraagt iets / stelt voor
-    if (trainerText.contains('verplaats') || trainerText.contains('verzet') ||
-        trainerText.contains('ander tijdstip') || trainerText.contains('andere dag')) {
-      chips.add(_QuickReplyChip(label: 'Prima!', icon: Icons.check_rounded, onTap: () => _send('Prima, dat is goed!')));
-      chips.add(_QuickReplyChip(label: 'Liever niet', icon: Icons.close_rounded, onTap: () => _send('Liever niet, kan het op de huidige tijd?')));
-      chips.add(_QuickReplyChip(label: 'Welke opties?', icon: Icons.calendar_today_rounded, onTap: () => _send('Welke tijden heb je beschikbaar?')));
+    if (trainerText.contains('verplaats') ||
+        trainerText.contains('ander tijdstip')) {
+      chips.add(_QuickReplyChip(label: 'Prima!', icon: Icons.check_rounded, onTap: () => _send(S.of(context).primaDatIsGoed)));
+      chips.add(_QuickReplyChip(label: 'Liever niet', icon: Icons.close_rounded, onTap: () => _send(S.of(context).lieverNietKanHetOpDe)));
+      chips.add(_QuickReplyChip(label: 'Welke opties?', icon: Icons.calendar_today_rounded, onTap: () => _send(S.of(context).welkeTijdenHebJeBeschikbaar)));
     }
-    else if (trainerText.contains('hoe was') || trainerText.contains('hoe ging') ||
-             trainerText.contains('hoe vond je') || trainerText.contains('feedback')) {
+    else if (trainerText.contains(S.of(context).hoeWas) || trainerText.contains(S.of(context).hoeGing) ||
+             trainerText.contains(S.of(context).hoeVondJe) || trainerText.contains('feedback')) {
       chips.add(_QuickReplyChip(label: 'Super!', icon: Icons.star_rounded, onTap: () => _send('Super les, bedankt!')));
-      chips.add(_QuickReplyChip(label: 'Was goed', icon: Icons.thumb_up_outlined, onTap: () => _send('Was goed! Ik merk vooruitgang.')));
-      chips.add(_QuickReplyChip(label: 'Pittig!', icon: Icons.fitness_center_rounded, onTap: () => _send('Pittig maar goed! Voel het nog 😅')));
+      chips.add(_QuickReplyChip(label: S.of(context).wasGoed, icon: Icons.thumb_up_outlined, onTap: () => _send('Was goed! Ik merk vooruitgang.')));
+      chips.add(_QuickReplyChip(label: 'Pittig!', icon: Icons.fitness_center_rounded, onTap: () => _send(S.of(context).pittigMaarGoedVoelHetNog)));
     }
-    else if (trainerText.contains('tot zo') || trainerText.contains('tot straks') ||
-             trainerText.contains('zie je zo') || trainerText.contains('we zien')) {
+    else if (trainerText.contains('tot zo') ||
+             trainerText.contains(S.of(context).zieJeZo) || trainerText.contains('we zien')) {
       chips.add(_QuickReplyChip(label: 'Tot zo!', icon: Icons.waving_hand_outlined, onTap: () => _send('Tot zo!')));
       chips.add(_QuickReplyChip(label: 'Ik ben onderweg', icon: Icons.directions_run_rounded, onTap: () => _send('Ik ben onderweg!')));
     }
-    else if (trainerText.contains('afzeg') || trainerText.contains('cancel') ||
-             trainerText.contains('annule') || trainerText.contains('niet doorgaan')) {
+    else if (trainerText.contains('afzeg') ||
+             trainerText.contains('annule') || trainerText.contains(S.of(context).nietDoorgaan)) {
       chips.add(_QuickReplyChip(label: 'Jammer, begrijp ik', icon: Icons.sentiment_neutral_rounded, onTap: () => _send('Jammer, maar ik begrijp het!')));
-      chips.add(_QuickReplyChip(label: 'Nieuwe afspraak?', icon: Icons.event_rounded, onTap: () => _send('Kunnen we een nieuwe afspraak inplannen?')));
+      chips.add(_QuickReplyChip(label: 'Nieuwe afspraak?', icon: Icons.event_rounded, onTap: () => _send(S.of(context).kunnenWeEenNieuweAfspraakInplannen)));
     }
-    else if (trainerText.contains('goed bezig') || trainerText.contains('trots') ||
-             trainerText.contains('top') || trainerText.contains('geweldig')) {
+    else if (trainerText.contains('goed bezig') ||
+             trainerText.contains('top')) {
       chips.add(_QuickReplyChip(label: 'Dankjewel!', icon: Icons.favorite_outline_rounded, onTap: () => _send('Dankjewel! Dat motiveert!')));
       chips.add(_QuickReplyChip(label: 'Komt door jou!', icon: Icons.emoji_events_outlined, onTap: () => _send('Komt door jouw begeleiding!')));
     }
-    else if (trainerText.contains('schema') || trainerText.contains('oefening') ||
-             trainerText.contains('programma') || trainerText.contains('plan')) {
+    else if (trainerText.contains('schema') ||
+             trainerText.contains('programma')) {
       chips.add(_QuickReplyChip(label: 'Top, duidelijk!', icon: Icons.check_circle_outline_rounded, onTap: () => _send('Top, duidelijk!')));
-      chips.add(_QuickReplyChip(label: 'Vraagje hierover', icon: Icons.help_outline_rounded, onTap: () => _send('Ik heb hier nog een vraagje over...')));
+      chips.add(_QuickReplyChip(label: S.of(context).vraagjeHierover, icon: Icons.help_outline_rounded, onTap: () => _send(S.of(context).ikHebHierNogEenVraagje)));
     }
-    else if (trainerText.contains('betaal') || trainerText.contains('factuur') ||
-             trainerText.contains('pakket') || trainerText.contains('prijs')) {
+    else if (trainerText.contains('betaal') || trainerText.contains(S.of(context).factuur) ||
+             trainerText.contains('pakket')) {
       chips.add(_QuickReplyChip(label: 'Is geregeld', icon: Icons.check_rounded, onTap: () => _send('Is geregeld!')));
-      chips.add(_QuickReplyChip(label: 'Meer info?', icon: Icons.info_outline_rounded, onTap: () => _send('Kun je me meer info geven over de opties?')));
+      chips.add(_QuickReplyChip(label: 'Meer info?', icon: Icons.info_outline_rounded, onTap: () => _send(S.of(context).kunJeMeMeerInfoGeven)));
     }
 
     // ── 2. Sessie-context chips (als er geen reactieve match was) ──
@@ -1493,27 +1513,27 @@ class _ClientChatScreenState extends State<ClientChatScreen>
     if (chips.isEmpty) {
       // Ochtend → sessie-dag chips
       if (hour >= 6 && hour < 12) {
-        chips.add(_QuickReplyChip(label: 'Goedemorgen!', icon: Icons.wb_sunny_outlined, onTap: () => _send('Goedemorgen!')));
+        chips.add(_QuickReplyChip(label: S.of(context).goedemorgen, icon: Icons.wb_sunny_outlined, onTap: () => _send('Goedemorgen!')));
         chips.add(_QuickReplyChip(label: 'Ik kom eraan', icon: Icons.directions_run_rounded, onTap: () => _send('Ik kom eraan!')));
-        chips.add(_QuickReplyChip(label: 'Moet afzeggen', icon: Icons.event_busy_rounded, onTap: () => _send('Ik moet helaas afzeggen voor vandaag, sorry!')));
+        chips.add(_QuickReplyChip(label: 'Moet afzeggen', icon: Icons.event_busy_rounded, onTap: () => _send(S.of(context).ikMoetHelaasAfzeggenVoorVandaag)));
       }
       // Middag → na-sessie chips
       else if (hour >= 12 && hour < 18) {
-        chips.add(_QuickReplyChip(label: 'Goede les!', icon: Icons.star_outline_rounded, onTap: () => _send('Goede les vandaag, bedankt!')));
+        chips.add(_QuickReplyChip(label: S.of(context).goedeLes, icon: Icons.star_outline_rounded, onTap: () => _send('Goede les vandaag, bedankt!')));
         chips.add(_QuickReplyChip(label: 'Verplaatsen?', icon: Icons.swap_horiz_rounded, onTap: () => _send('Kunnen we de les verplaatsen?')));
-        chips.add(_QuickReplyChip(label: 'Wanneer weer?', icon: Icons.calendar_today_rounded, onTap: () => _send('Wanneer is de volgende sessie?')));
+        chips.add(_QuickReplyChip(label: 'Wanneer weer?', icon: Icons.calendar_today_rounded, onTap: () => _send(S.of(context).wanneerIsDeVolgendeSessie)));
       }
       // Avond → reflectie chips
       else {
-        chips.add(_QuickReplyChip(label: 'Bedankt!', icon: Icons.favorite_outline_rounded, onTap: () => _send('Bedankt voor vandaag!')));
-        chips.add(_QuickReplyChip(label: 'Tot de volgende', icon: Icons.emoji_events_outlined, onTap: () => _send('Tot de volgende sessie!')));
-        chips.add(_QuickReplyChip(label: 'Vraagje', icon: Icons.help_outline_rounded, onTap: () => _send('Ik heb een vraagje...')));
+        chips.add(_QuickReplyChip(label: 'Bedankt!', icon: Icons.favorite_outline_rounded, onTap: () => _send(S.of(context).bedanktVoorVandaag)));
+        chips.add(_QuickReplyChip(label: 'Tot de volgende', icon: Icons.emoji_events_outlined, onTap: () => _send(S.of(context).totDeVolgendeSessie)));
+        chips.add(_QuickReplyChip(label: 'Vraagje', icon: Icons.help_outline_rounded, onTap: () => _send(S.of(context).ikHebEenVraagje)));
       }
     }
 
     // ── 3. "Verplaats sessie" chip – opent de reschedule flow ──
     chips.add(_QuickReplyChip(
-      label: 'Verplaats sessie',
+      label: S.of(context).verplaatsSessie,
       icon: Icons.event_repeat_rounded,
       onTap: _openClientRescheduleFlow,
     ));
@@ -1634,7 +1654,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
         ),
         if (_trainerIsTyping)
           Text(
-            'aan het typen...',
+            S.of(context).aanHetTypen,
             style: GoogleFonts.sora(
               fontSize: 11,
               fontWeight: FontWeight.w500,
@@ -1669,7 +1689,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
               onPressed: _openClientRescheduleFlow,
               icon: const Icon(Icons.event_repeat_rounded, size: 16),
               label: Text(
-                'Verplaats',
+                S.of(context).verplaats,
                 style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600),
               ),
               style: TextButton.styleFrom(
@@ -1718,6 +1738,13 @@ class _ClientChatScreenState extends State<ClientChatScreen>
                         }
                         final mine = _isMine(m);
                         final body = mapStr(m, ['body', 'message', 'text']);
+
+                        // ── Verberg lege berichten ──
+                        final bodyTrimmed = body.trim();
+                        if (bodyTrimmed.isEmpty || bodyTrimmed == '-' || bodyTrimmed == '–') {
+                          return const SizedBox.shrink();
+                        }
+
                         final createdAtStr = mapStr(m, ['created_at', 'createdAt']);
                         final createdAt = DateTime.tryParse(createdAtStr);
                         final ts = createdAt != null
@@ -1777,7 +1804,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
                                         margin: const EdgeInsets.only(right: 6),
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
-                                          color: GymiesColors.darkBlue.withValues(alpha: 0.1),
+                                          color: GymiesColors.darkBlue.withOpacity(0.1),
                                         ),
                                         child: Center(
                                           child: Text(
@@ -1798,8 +1825,8 @@ class _ClientChatScreenState extends State<ClientChatScreen>
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
                                         color: mine
-                                            ? GymiesColors.darkBlue.withValues(alpha: 0.5)
-                                            : GymiesColors.darkBlue.withValues(alpha: 0.7),
+                                            ? GymiesColors.darkBlue.withOpacity(0.5)
+                                            : GymiesColors.darkBlue.withOpacity(0.7),
                                       ),
                                     ),
                                   ],
@@ -1837,7 +1864,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
                                         : Border.all(color: Colors.grey.shade200),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.04),
+                                        color: Colors.black.withOpacity(0.04),
                                         blurRadius: 4,
                                         offset: const Offset(0, 1),
                                       ),
@@ -1849,7 +1876,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
                                       Align(
                                         alignment: Alignment.centerLeft,
                                         child: Text(
-                                          body.isEmpty ? '-' : body,
+                                          body,
                                           style: GoogleFonts.sora(
                                             color: isFailed
                                                 ? Colors.red.shade700
@@ -1905,7 +1932,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
                                             Icon(Icons.refresh_rounded, size: 12, color: Colors.red.shade500),
                                             const SizedBox(width: 4),
                                             Text(
-                                              'Tik om opnieuw te versturen',
+                                              S.of(context).tikOmOpnieuwTeVersturen,
                                               style: GoogleFonts.sora(fontSize: 10, color: Colors.red.shade500, fontWeight: FontWeight.w600),
                                             ),
                                           ],
@@ -1934,7 +1961,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
                     height: 20,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: GymiesColors.darkBlue.withValues(alpha: 0.1),
+                      color: GymiesColors.darkBlue.withOpacity(0.1),
                     ),
                     child: Center(
                       child: Text(
@@ -1991,7 +2018,7 @@ class _ClientChatScreenState extends State<ClientChatScreen>
                       minLines: 1,
                       maxLines: 4,
                       decoration: InputDecoration(
-                        hintText: 'Typ een bericht...',
+                        hintText: S.of(context).typEenBericht,
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
@@ -2000,12 +2027,11 @@ class _ClientChatScreenState extends State<ClientChatScreen>
                         ),
                       ),
                       onChanged: (_) => _sendTypingEvent(),
-                      onSubmitted: (_) => _send(),
                     ),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: _sending ? null : _send,
+                    onPressed: (_sending || _controller.text.trim().isEmpty) ? null : _send,
                     style: FilledButton.styleFrom(
                       backgroundColor: GymiesColors.primary,
                       foregroundColor: GymiesColors.darkBlue,
@@ -2061,10 +2087,10 @@ class _QuickReplyChip extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: GymiesColors.primary.withValues(alpha: 0.4)),
+              border: Border.all(color: GymiesColors.primary.withOpacity(0.4)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
+                  color: Colors.black.withOpacity(0.03),
                   blurRadius: 4,
                   offset: const Offset(0, 1),
                 ),
@@ -2112,14 +2138,14 @@ class _ClientRescheduleBookingPicker extends StatelessWidget {
         '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
   }
 
-  String _formatSessionType(String? type) {
-    if (type == null || type.isEmpty) return 'Sessie';
+  String _formatSessionType(String? type, BuildContext ctx) {
+    if (type == null || type.isEmpty) return S.of(ctx).sessionSingle;
     switch (type.toLowerCase()) {
       case 'duo':
-        return 'Duo sessie';
+        return S.of(ctx).duoSessie;
       case 'groepsles':
       case 'group':
-        return 'Groepsles';
+        return S.of(ctx).groepsles;
       case '1-op-1':
       case '1op1':
       case 'personal':
@@ -2148,7 +2174,7 @@ class _ClientRescheduleBookingPicker extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                    color: GymiesColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
@@ -2163,7 +2189,7 @@ class _ClientRescheduleBookingPicker extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Sessie verplaatsen',
+                        S.of(context).sessieVerplaatsen,
                         style: GoogleFonts.sora(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
@@ -2199,10 +2225,10 @@ class _ClientRescheduleBookingPicker extends StatelessWidget {
               shrinkWrap: true,
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
               itemCount: bookings.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (ctx, i) {
                 final b = bookings[i];
-                final typeLabel = _formatSessionType(b.sessionType);
+                final typeLabel = _formatSessionType(b.sessionType, ctx);
                 return Material(
                   color: Colors.transparent,
                   child: InkWell(
@@ -2222,7 +2248,7 @@ class _ClientRescheduleBookingPicker extends StatelessWidget {
                             width: 48,
                             height: 48,
                             decoration: BoxDecoration(
-                              color: GymiesColors.primary.withValues(alpha: 0.15),
+                              color: GymiesColors.primary.withOpacity(0.15),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Column(
@@ -2320,13 +2346,13 @@ class _EmptyView extends StatelessWidget {
                     width: 64,
                     height: 64,
                     decoration: BoxDecoration(
-                      color: GymiesColors.darkBlue.withValues(alpha: 0.08),
+                      color: GymiesColors.darkBlue.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(18),
                     ),
                     child: Icon(
                       Icons.chat_bubble_outline_rounded,
                       size: 28,
-                      color: GymiesColors.darkBlue.withValues(alpha: 0.3),
+                      color: GymiesColors.darkBlue.withOpacity(0.3),
                     ),
                   ),
                 ),
@@ -2337,7 +2363,7 @@ class _EmptyView extends StatelessWidget {
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.2),
+                      color: GymiesColors.primary.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: const Icon(
@@ -2372,11 +2398,11 @@ class _EmptyView extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            'Ontdek trainers bij jou in de buurt',
+            S.of(context).ontdekTrainersBijJouInDeBuurt,
             textAlign: TextAlign.center,
             style: GoogleFonts.sora(
               fontSize: 13,
-              color: GymiesColors.darkBlue.withValues(alpha: 0.5),
+              color: GymiesColors.darkBlue.withOpacity(0.5),
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -2415,7 +2441,7 @@ class _TypingDotsState extends State<_TypingDots>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _controller,
-      builder: (_, __) => Row(
+      builder: (_, _) => Row(
         mainAxisSize: MainAxisSize.min,
         children: List.generate(3, (i) {
           final phase = (_controller.value + i * 0.25) % 1.0;
@@ -2431,9 +2457,7 @@ class _TypingDotsState extends State<_TypingDots>
                 height: 7,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: GymiesColors.darkBlue.withValues(
-                    alpha: 0.4 + 0.3 * bounce,
-                  ),
+                  color: GymiesColors.darkBlue.withOpacity(0.4 + 0.3 * bounce),
                 ),
               ),
             ),

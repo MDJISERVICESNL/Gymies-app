@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,6 +9,7 @@ import '../services/gymies_api.dart';
 import '../services/subscription_entitlements_service.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/map_utils.dart';
+import '../l10n/generated/app_localizations.dart';
 import 'trainer_client_dossier_screen.dart';
 import 'widgets/gymies_app_bar.dart';
 import 'widgets/gymies_segment_tab_bar.dart';
@@ -27,6 +29,7 @@ class TrainerClientsScreen extends StatefulWidget {
 class _TrainerClientsScreenState extends State<TrainerClientsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  Timer? _searchDebounce;
 
   // ── Overzicht data ──
   bool _clientsLoading = true;
@@ -70,6 +73,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
@@ -94,12 +98,13 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
 
   // ── Load Clients (Overzicht) ──
   Future<void> _loadClients() async {
+    final api = context.read<GymiesApi>();
     setState(() {
       _clientsLoading = true;
       _clientsError = null;
     });
     try {
-      final list = await context.read<GymiesApi>().getTrainerSleepingClients();
+      final list = await api.getTrainerSleepingClients();
       if (!mounted) return;
       setState(() {
         _clients = list;
@@ -114,7 +119,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _clientsError = 'Kon klantenoverzicht niet laden.';
+        _clientsError = S.of(context).couldNotLoadClients;
         _clientsLoading = false;
       });
     }
@@ -135,15 +140,9 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
       ]);
       if (!mounted) return;
       setState(() {
-        _health = (results[0] is List)
-            ? List<Map<String, dynamic>>.from(results[0] as List)
-            : <Map<String, dynamic>>[];
-        _upsell = (results[1] is List)
-            ? List<Map<String, dynamic>>.from(results[1] as List)
-            : <Map<String, dynamic>>[];
-        _rebook = (results[2] is List)
-            ? List<Map<String, dynamic>>.from(results[2] as List)
-            : <Map<String, dynamic>>[];
+        _health = List<Map<String, dynamic>>.from(results[0] as List);
+        _upsell = List<Map<String, dynamic>>.from(results[1] as List);
+        _rebook = List<Map<String, dynamic>>.from(results[2] as List);
         _insightsLoading = false;
       });
       // Also load rebook settings & expiring packages
@@ -157,7 +156,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _insightsError = 'Kon inzichten niet laden.';
+        _insightsError = S.of(context).clientInsightsCouldNotLoad;
         _insightsLoading = false;
       });
     }
@@ -165,12 +164,13 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
 
   // ── Load Analytics (Pro+) ──
   Future<void> _loadAnalytics() async {
+    final api = context.read<GymiesApi>();
     setState(() {
       _analyticsLoading = true;
       _analyticsError = null;
     });
     try {
-      final data = await context.read<GymiesApi>().getClientAnalytics();
+      final data = await api.getClientAnalytics();
       if (!mounted) return;
       final summary = data['summary'] as Map<String, dynamic>? ?? {};
       final clientsRaw = data['clients'];
@@ -206,7 +206,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _analyticsError = 'Kon analytics niet laden.';
+        _analyticsError = S.of(context).clientAnalyticsCouldNotLoad;
         _analyticsLoading = false;
       });
     }
@@ -219,11 +219,11 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
     } else {
       _filteredAnalyticsClients = _analyticsClients.where((c) {
         final status = mapStr(c, ['status', 'client_status']).toLowerCase();
-        if (_analyticsFilter == 'active') return status == 'active' || status == 'actief';
+        if (_analyticsFilter == 'active') return status == 'active' || status == S.of(context).actiefLower;
         if (_analyticsFilter == 'risk') {
           return status == 'risk' || status == 'at_risk' || status == 'risico';
         }
-        if (_analyticsFilter == 'inactive') return status == 'inactive' || status == 'inactief';
+        if (_analyticsFilter == 'inactive') return status == 'inactive' || status == S.of(context).inactiefLower;
         return true;
       }).toList();
     }
@@ -244,18 +244,18 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
 
   Color _statusColor(String status) {
     final s = status.toLowerCase();
-    if (s == 'active' || s == 'actief') return Colors.green.shade700;
+    if (s == 'active' || s == S.of(context).actiefLower) return Colors.green.shade700;
     if (s == 'new' || s == 'nieuw') return Colors.blue.shade700;
     if (s == 'risk' || s == 'at_risk' || s == 'risico') return Colors.orange.shade800;
-    if (s == 'inactive' || s == 'inactief') return Colors.red.shade700;
+    if (s == 'inactive' || s == S.of(context).inactiefLower) return Colors.red.shade700;
     return GymiesColors.darkBlue;
   }
 
   String _statusLabel(String status) {
     final s = status.toLowerCase();
-    if (s == 'active' || s == 'actief') return 'Actief';
+    if (s == 'active' || s == S.of(context).actiefLower) return 'Actief';
     if (s == 'risk' || s == 'at_risk' || s == 'risico') return 'Risico';
-    if (s == 'inactive' || s == 'inactief') return 'Inactief';
+    if (s == 'inactive' || s == S.of(context).inactiefLower) return 'Inactief';
     if (s == 'new' || s == 'nieuw') return 'Nieuw';
     return status;
   }
@@ -264,8 +264,8 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
     final dt = DateTime.tryParse(dateStr);
     if (dt == null) return dateStr;
     final diff = DateTime.now().difference(dt);
-    if (diff.inDays == 0) return 'Vandaag';
-    if (diff.inDays == 1) return 'Gisteren';
+    if (diff.inDays == 0) return S.of(context).vandaag;
+    if (diff.inDays == 1) return S.of(context).gisteren;
     if (diff.inDays < 7) return '${diff.inDays} dagen geleden';
     if (diff.inDays < 30) return '${(diff.inDays / 7).floor()} weken geleden';
     return '${(diff.inDays / 30).floor()} maanden geleden';
@@ -276,13 +276,13 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
     final clientId = mapStr(client, ['client_user_id', 'clientUserId', 'id']);
     if (clientId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Klant-ID ontbreekt.'), backgroundColor: Colors.red),
+        const SnackBar(content: Text(S.of(context).klantidOntbreekt), backgroundColor: Colors.red),
       );
       return;
     }
     final name = mapStr(client, ['name', 'full_name']).isNotEmpty
         ? mapStr(client, ['name', 'full_name'])
-        : 'Klant';
+        : S.of(context).clientSingle;
     final email = mapStr(client, ['email', 'email_address']);
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -309,7 +309,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Upsell voorstel verstuurd'), backgroundColor: GymiesColors.darkBlue),
+        const SnackBar(content: Text(S.of(context).upsellVoorstelVerstuurd), backgroundColor: GymiesColors.darkBlue),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -330,11 +330,11 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
     try {
       await context.read<GymiesApi>().sendTrainerBulkMessage(
         clientUserIds: [clientUserId],
-        body: 'We missen je! Plan je volgende sessie via Mijn afspraken in de app.',
+        body: S.of(context).weMissenJePlanJeVolgende,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('We missen je-bericht verstuurd'), backgroundColor: GymiesColors.darkBlue),
+        const SnackBar(content: Text(S.of(context).weMissenJeberichtVerstuurd), backgroundColor: GymiesColors.darkBlue),
       );
       _loadInsights();
     } on ApiException catch (e) {
@@ -366,9 +366,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
       final expiring = await api.getTrainerPackageExpiringSoon();
       if (!mounted) return;
       setState(() {
-        _packageExpiring = (expiring is List)
-            ? List<Map<String, dynamic>>.from(expiring)
-            : <Map<String, dynamic>>[];
+        _packageExpiring = List<Map<String, dynamic>>.from(expiring);
       });
     } catch (_) {
       // Graceful: empty list
@@ -390,8 +388,8 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(value
-              ? 'Auto-herboekingen ingeschakeld'
-              : 'Auto-herboekingen uitgeschakeld'),
+              ? S.of(context).autoherboekingenIngeschakeld
+              : S.of(context).autoherboekingenUitgeschakeld),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -452,7 +450,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Na hoeveel dagen inactiviteit ontvangen klanten automatisch een herinnering?',
+              S.of(context).naHoeveelDagenInactiviteitOntvangenKlantenAutomatischEenHerinnering,
               style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 16),
@@ -468,7 +466,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                     Navigator.of(ctx).pop();
                     _updateRebookInterval(d);
                   },
-                  selectedColor: GymiesColors.primary.withValues(alpha: 0.25),
+                  selectedColor: GymiesColors.primary.withOpacity(0.25),
                   checkmarkColor: GymiesColors.darkBlue,
                   labelStyle: GoogleFonts.sora(
                     fontSize: 13,
@@ -484,7 +482,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           ],
         ),
         actions: [
-          GymiesDialogAction(label: 'Sluiten', returnValue: null),
+          GymiesDialogAction(label: S.of(context).close, returnValue: null),
         ],
       ),
     );
@@ -502,8 +500,8 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
         style: GoogleFonts.sora(fontSize: 14),
       ),
       actions: [
-        GymiesDialogAction(label: 'Annuleren', returnValue: false),
-        GymiesDialogAction(label: 'Versturen', isPrimary: true, returnValue: true),
+        GymiesDialogAction(label: S.of(context).annuleren, returnValue: false),
+        GymiesDialogAction(label: S.of(context).submitLabel, isPrimary: true, returnValue: true),
       ],
     );
     if (confirm != true || !mounted) return;
@@ -516,13 +514,13 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
       if (ids.isEmpty) return;
       await context.read<GymiesApi>().sendTrainerBulkMessage(
         clientUserIds: ids,
-        body: 'We missen je! Plan je volgende sessie via Mijn afspraken in de app.',
+        body: S.of(context).weMissenJePlanJeVolgende,
       );
       if (!mounted) return;
       Haptics.success();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${ids.length} herinnering${ids.length == 1 ? '' : 'en'} verstuurd'),
+          content: Text('${ids.length} herinnering${ids.length == 1 ? '' : 'enS.of(context).verstuurd),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -548,7 +546,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
         var sending = false;
         return StatefulBuilder(
           builder: (ctx, setDialogState) => GymiesDialog(
-            title: 'Bulk bericht',
+            title: S.of(context).bulkBericht,
             headerIcon: Icons.campaign_outlined,
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -557,7 +555,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                   controller: controller,
                   maxLines: 4,
                   enabled: !sending,
-                  decoration: const InputDecoration(labelText: 'Bericht'),
+                  decoration: const InputDecoration(labelText: S.of(context).bericht),
                 ),
                 if (sending) ...[
                   const SizedBox(height: 16),
@@ -566,7 +564,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                     children: [
                       SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
                       SizedBox(width: 12),
-                      Text('Versturen…'),
+                      Text(S.of(context).versturen),
                     ],
                   ),
                 ],
@@ -578,7 +576,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                 returnValue: null,
               ),
               GymiesDialogAction(
-                label: sending ? 'Bezig…' : 'Versturen',
+                label: sending ? S.of(context).bezig : S.of(context).submitLabel,
                 isPrimary: true,
                 onPressed: sending
                     ? null
@@ -598,7 +596,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                           if (ctx.mounted) Navigator.of(ctx).pop();
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Bulk bericht verstuurd'), backgroundColor: GymiesColors.darkBlue),
+                            const SnackBar(content: Text(S.of(context).bulkBerichtVerstuurd), backgroundColor: GymiesColors.darkBlue),
                           );
                         } on ApiException catch (e) {
                           if (ctx.mounted) setDialogState(() => sending = false);
@@ -634,15 +632,15 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
             controller: issueCtrl,
             maxLines: 3,
             decoration: const InputDecoration(
-              labelText: 'Issue',
-              hintText: 'Beschrijf kort het urgente probleem',
+              labelText: S.of(context).issue,
+              hintText: S.of(context).beschrijfKortHetUrgenteProbleem,
             ),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: bookingCtrl,
             decoration: const InputDecoration(
-              labelText: 'Booking reference (optioneel)',
+              labelText: S.of(context).bookingReferenceoptioneel,
             ),
           ),
         ],
@@ -653,7 +651,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           returnValue: false,
         ),
         GymiesDialogAction(
-          label: 'Verstuur',
+          label: S.of(context).verstuur,
           isPrimary: true,
           returnValue: true,
         ),
@@ -671,7 +669,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Priority support ticket verstuurd'), backgroundColor: GymiesColors.darkBlue),
+        const SnackBar(content: Text(S.of(context).prioritySupportTicketVerstuurd), backgroundColor: GymiesColors.darkBlue),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -726,11 +724,11 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: GymiesAppBar(
-        title: 'Klanten',
+        title: S.of(context).klanten,
         actions: [
           GymiesAppBarAction(
             icon: Icons.search_rounded,
-            tooltip: 'Zoek klant',
+            tooltip: S.of(context).searchClientTooltip,
             onTap: () {
               _tabController.animateTo(0);
               // Focus will go to the search field in the overview tab
@@ -739,9 +737,11 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           const SizedBox(width: 8),
           GymiesAppBarAction(
             icon: Icons.person_add_outlined,
-            tooltip: 'Klant toevoegen',
+            tooltip: S.of(context).addClientTooltip,
             onTap: () {
-              // TODO: open add client flow
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text(S.of(context).klantToevoegenKomtBinnenkort)),
+              );
             },
           ),
           const SizedBox(width: 8),
@@ -760,9 +760,9 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
               ? _buildInsightsTab()
               : const GymiesUpgradePrompt(
                   icon: Icons.insights_rounded,
-                  feature: 'Klantinzichten',
+                  feature: S.of(context).clientInsightsFeature,
                   tier: 'Pro',
-                  description: 'Zie welke klanten dreigen af te haken en krijg AI-suggesties voor upsells en herboekingen.',
+                  description: S.of(context).zieWelkeKlantenDreigenAfTe,
                 ),
           isProPlus
               ? _buildMeerTab(isPro: isPro, isProPlus: isProPlus)
@@ -770,7 +770,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                   icon: Icons.analytics_outlined,
                   feature: 'Analytics & Communicatie',
                   tier: isPro ? 'Pro+' : 'Pro',
-                  description: 'Segmenteer je klanten en stuur bulk berichten.',
+                  description: S.of(context).segmenteerJeKlantenEnStuurBulk,
                 ),
         ],
       ),
@@ -789,10 +789,10 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: TextField(
-              onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
+              onChanged: _onSearchChanged,
               style: GoogleFonts.sora(fontSize: 13, color: GymiesColors.darkBlue),
               decoration: InputDecoration(
-                hintText: 'Zoek klant...',
+                hintText: S.of(context).zoekKlant,
                 hintStyle: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade400),
                 prefixIcon: Icon(Icons.search_rounded, color: Colors.grey.shade400, size: 20),
                 suffixIcon: Padding(
@@ -828,8 +828,8 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                     children: const [
                       TrainerEmptyState(
                         icon: Icons.people_alt_outlined,
-                        title: 'Geen klanten gevonden',
-                        subtitle: 'Klanten verschijnen hier zodra ze een sessie boeken.',
+                        title: S.of(context).geenKlantenGevonden,
+                        subtitle: S.of(context).clientsAppearAfterBooking,
                       ),
                     ],
                   )
@@ -840,7 +840,8 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                       final c = _filteredClients[i];
                       final name = mapStr(c, ['name', 'full_name']).isNotEmpty
                           ? mapStr(c, ['name', 'full_name'])
-                          : 'Klant';
+                          : S.of(context).clientSingle;
+                      // ignore: unused_local_variable
                       final email = mapStr(c, ['email', 'email_address']);
                       final sessionCount = mapInt(c, ['session_count', 'total_sessions', 'sessions']);
                       final status = mapStr(c, ['status', 'client_status']);
@@ -851,9 +852,9 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                       final lastSession = mapStr(c, ['last_session_at', 'lastSessionAt', 'last_active']);
                       final lastLabel = lastSession.isNotEmpty
                           ? _formatLastSession(lastSession)
-                          : (sessionCount > 0 ? '$sessionCount sessies' : 'Geen sessies');
+                          : (sessionCount > 0 ? '$sessionCount sessies' : S.of(context).noSessionsLabel);
 
-                      final isInactive = status.toLowerCase() == 'inactive' || status.toLowerCase() == 'inactief';
+                      final isInactive = status.toLowerCase() == 'inactive' || status.toLowerCase() == S.of(context).inactiefLower;
 
                       return GestureDetector(
                         onTap: () => _openClient(c),
@@ -935,7 +936,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                         decoration: BoxDecoration(
-                                                          color: statusClr.withValues(alpha: 0.08),
+                                                          color: statusClr.withOpacity(0.08),
                                                           borderRadius: BorderRadius.circular(6),
                                                         ),
                                                         child: Text(
@@ -981,6 +982,15 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
     );
   }
 
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        setState(() => _searchQuery = query.toLowerCase());
+      }
+    });
+  }
+
   List<Map<String, dynamic>> get _filteredClients {
     if (_searchQuery.isEmpty) return _clients;
     return _clients.where((c) {
@@ -1015,13 +1025,13 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           if (_health.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text('Nog geen health score data beschikbaar.',
+              child: Text(S.of(context).nogGeenHealthScoreDataBeschikbaar,
                 style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade600)),
             )
           else
             ..._health.map((item) {
               final name = mapStr(item, ['client_name', 'name', 'full_name']).isEmpty
-                  ? 'Klant'
+                  ? S.of(context).clientSingle
                   : mapStr(item, ['client_name', 'name', 'full_name']);
               final score = mapInt(item, ['health_score', 'score']);
               final retentionRisk = mapStr(item, ['retention_risk', 'risk_label', 'risk']);
@@ -1142,13 +1152,13 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           if (_upsell.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text('Nog geen upsell suggesties beschikbaar.',
+              child: Text(S.of(context).nogGeenUpsellSuggestiesBeschikbaar,
                 style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade600)),
             )
           else
             ..._upsell.map((item) {
               final name = mapStr(item, ['client_name', 'name']).isEmpty
-                  ? 'Klant'
+                  ? S.of(context).clientSingle
                   : mapStr(item, ['client_name', 'name']);
               final reason = mapStr(item, ['reason', 'explanation']);
               final packageName = mapStr(item, ['package_name', 'offer', 'target_package']);
@@ -1235,7 +1245,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                                     children: [
                                       const Icon(Icons.send_rounded, size: 13, color: GymiesColors.primary),
                                       const SizedBox(width: 4),
-                                      Text('Stuur',
+                                      Text(S.of(context).stuur,
                                         style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: GymiesColors.primary)),
                                     ],
                                   ),
@@ -1272,13 +1282,13 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Auto-herboekingen',
+                            Text(S.of(context).autoherboekingen,
                               style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14, color: GymiesColors.darkBlue)),
                             const SizedBox(height: 2),
                             Text(
                               _autoRebookEnabled
                                   ? 'Herinnering na $_rebookIntervalDays dagen inactiviteit'
-                                  : 'Schakel in voor automatische herinneringen',
+                                  : S.of(context).schakelInVoorAutomatischeHerinneringen,
                               style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade600),
                             ),
                           ],
@@ -1290,8 +1300,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                         Switch.adaptive(
                           value: _autoRebookEnabled,
                           onChanged: _toggleAutoRebook,
-                          activeColor: GymiesColors.primary,
-                          activeTrackColor: GymiesColors.primary.withValues(alpha: 0.3),
+                          activeTrackColor: GymiesColors.primary.withOpacity(0.3),
                         ),
                     ],
                   ),
@@ -1335,7 +1344,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              'Berichten worden automatisch verstuurd. Je kunt dit altijd uitschakelen.',
+                              S.of(context).berichtenWordenAutomatischVerstuurdJeKuntDitAltijdUitschakelen,
                               style: GoogleFonts.sora(fontSize: 12, color: Colors.green.shade700),
                             ),
                           ),
@@ -1353,7 +1362,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
             Row(
               children: [
                 Text(
-                  'PAKKETTEN BIJNA VERLOPEN',
+                  S.of(context).pakkettenBijnaVerlopen,
                   style: GoogleFonts.sora(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -1371,7 +1380,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
             const SizedBox(height: 8),
             ..._packageExpiring.map((pkg) {
               final clientName = mapStr(pkg, ['client_name', 'name']).isEmpty
-                  ? 'Klant'
+                  ? S.of(context).clientSingle
                   : mapStr(pkg, ['client_name', 'name']);
               final packageName = mapStr(pkg, ['package_name', 'packageName']);
               final daysLeft = mapInt(pkg, ['days_remaining', 'daysRemaining', 'days_left']);
@@ -1445,7 +1454,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: pkgColor.withValues(alpha: 0.1),
+                                  color: pkgColor.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
@@ -1473,7 +1482,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           Row(
             children: [
               Text(
-                'INACTIEVE KLANTEN',
+                S.of(context).inactieveKlanten,
                 style: GoogleFonts.sora(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
@@ -1501,7 +1510,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                       children: [
                         const Icon(Icons.send_rounded, size: 12, color: GymiesColors.primary),
                         const SizedBox(width: 4),
-                        Text('Alles',
+                        Text(S.of(context).alles,
                           style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w600, color: GymiesColors.primary)),
                       ],
                     ),
@@ -1522,7 +1531,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                 children: [
                   Icon(Icons.check_circle_outline, size: 36, color: Colors.green.shade400),
                   const SizedBox(height: 10),
-                  Text('Alle klanten zijn actief!',
+                  Text(S.of(context).alleKlantenZijnActief,
                     style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14, color: GymiesColors.darkBlue)),
                   const SizedBox(height: 4),
                   Text(
@@ -1536,7 +1545,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           else
             ..._rebook.map((item) {
               final name = mapStr(item, ['client_name', 'name']).isEmpty
-                  ? 'Klant'
+                  ? S.of(context).clientSingle
                   : mapStr(item, ['client_name', 'name']);
               final daysSince = mapInt(item, ['days_since_last', 'daysSinceLast']);
               final email = mapStr(item, ['email', 'client_email']);
@@ -1606,7 +1615,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: rebookColor.withValues(alpha: 0.1),
+                                            color: rebookColor.withOpacity(0.1),
                                             borderRadius: BorderRadius.circular(5),
                                           ),
                                           child: Text(
@@ -1645,7 +1654,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                                     children: [
                                       const Icon(Icons.favorite_rounded, size: 13, color: GymiesColors.primary),
                                       const SizedBox(width: 4),
-                                      Text('Herinner',
+                                      Text(S.of(context).herinner,
                                         style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: GymiesColors.primary)),
                                     ],
                                   ),
@@ -1676,27 +1685,27 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           children: [
             Container(
               width: 26, height: 26,
-              decoration: BoxDecoration(color: GymiesColors.darkBlue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(7)),
+              decoration: BoxDecoration(color: GymiesColors.darkBlue.withOpacity(0.1), borderRadius: BorderRadius.circular(7)),
               child: const Icon(Icons.analytics_outlined, size: 14, color: GymiesColors.darkBlue),
             ),
             const SizedBox(width: 10),
-            Text('Analytics', style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+            Text(S.of(context).analytics, style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
           ],
         ),
         const SizedBox(height: 10),
         Row(
           children: [
-            Expanded(child: _StripeSummaryCard(label: 'Actief', value: '$_activeCount', color: Colors.green.shade700)),
+            Expanded(child: _StripeSummaryCard(label: S.of(context).actief, value: '$_activeCount', color: Colors.green.shade700)),
             const SizedBox(width: 8),
             Expanded(child: _StripeSummaryCard(label: 'Risico', value: '$_riskCount', color: Colors.orange.shade800)),
             const SizedBox(width: 8),
-            Expanded(child: _StripeSummaryCard(label: 'Inactief', value: '$_inactiveCount', color: Colors.red.shade700)),
+            Expanded(child: _StripeSummaryCard(label: S.of(context).inactief, value: '$_inactiveCount', color: Colors.red.shade700)),
           ],
         ),
         const SizedBox(height: 8),
         Row(
           children: [
-            Expanded(child: _StripeSummaryCard(label: 'Sessies', value: '$_totalSessions', color: GymiesColors.darkBlue)),
+            Expanded(child: _StripeSummaryCard(label: S.of(context).sessionsCountLabel, value: '$_totalSessions', color: GymiesColors.darkBlue)),
             const SizedBox(width: 8),
             Expanded(child: _StripeSummaryCard(label: 'Omzet', value: '€${_totalRevenue.toStringAsFixed(0)}', color: GymiesColors.darkBlue)),
           ],
@@ -1708,11 +1717,11 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           children: [
             Container(
               width: 26, height: 26,
-              decoration: BoxDecoration(color: GymiesColors.primary.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(7)),
+              decoration: BoxDecoration(color: GymiesColors.primary.withOpacity(0.15), borderRadius: BorderRadius.circular(7)),
               child: const Icon(Icons.campaign_outlined, size: 14, color: GymiesColors.darkBlue),
             ),
             const SizedBox(width: 10),
-            Text('Communicatie', style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+            Text(S.of(context).communicatie, style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
           ],
         ),
         const SizedBox(height: 10),
@@ -1727,7 +1736,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Stuur een bericht naar al je klanten tegelijk.',
+              Text(S.of(context).stuurEenBerichtNaarAlJeKlantenTegelijk,
                 style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600)),
               const SizedBox(height: 12),
               SizedBox(
@@ -1745,7 +1754,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                       children: [
                         const Icon(Icons.send_rounded, size: 16, color: GymiesColors.primary),
                         const SizedBox(width: 8),
-                        Text('Bulk bericht versturen',
+                        Text(S.of(context).bulkBerichtVersturen,
                           style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600, color: GymiesColors.primary)),
                       ],
                     ),
@@ -1767,7 +1776,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Voor urgente operationele issues met contextpakket.',
+              Text(S.of(context).voorUrgenteOperationeleIssuesMetContextpakket,
                 style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600)),
               const SizedBox(height: 12),
               SizedBox(
@@ -1785,7 +1794,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                       children: [
                         const Icon(Icons.support_agent_rounded, size: 16, color: Colors.white),
                         const SizedBox(width: 8),
-                        Text('Open priority lane',
+                        Text(S.of(context).openPriorityLane,
                           style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
                       ],
                     ),
@@ -1801,6 +1810,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
   }
 
   // ── Tab 2: Analytics (Pro+) ──
+  // ignore: unused_element
   Widget _buildAnalyticsTab() {
     if (_analyticsLoading && _analyticsClients.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1818,17 +1828,17 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           // Summary cards — Stripe style
           Row(
             children: [
-              Expanded(child: _StripeSummaryCard(label: 'Actief', value: '$_activeCount', color: Colors.green.shade700)),
+              Expanded(child: _StripeSummaryCard(label: S.of(context).actief, value: '$_activeCount', color: Colors.green.shade700)),
               const SizedBox(width: 8),
               Expanded(child: _StripeSummaryCard(label: 'Risico', value: '$_riskCount', color: Colors.orange.shade800)),
               const SizedBox(width: 8),
-              Expanded(child: _StripeSummaryCard(label: 'Inactief', value: '$_inactiveCount', color: Colors.red.shade700)),
+              Expanded(child: _StripeSummaryCard(label: S.of(context).inactief, value: '$_inactiveCount', color: Colors.red.shade700)),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: _StripeSummaryCard(label: 'Sessies', value: '$_totalSessions', color: GymiesColors.darkBlue)),
+              Expanded(child: _StripeSummaryCard(label: S.of(context).sessionsCountLabel, value: '$_totalSessions', color: GymiesColors.darkBlue)),
               const SizedBox(width: 8),
               Expanded(child: _StripeSummaryCard(label: 'Omzet', value: '€${_totalRevenue.toStringAsFixed(0)}', color: GymiesColors.darkBlue)),
             ],
@@ -1862,7 +1872,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 32),
               child: Center(
-                child: Text('Geen klanten gevonden voor dit filter.', style: TextStyle(color: Colors.grey.shade500)),
+                child: Text(S.of(context).geenKlantenGevondenVoorDitFilter, style: TextStyle(color: Colors.grey.shade500)),
               ),
             )
           else
@@ -1874,7 +1884,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                   (client['total_revenue'] as num?)?.toDouble() ?? 0;
               final lastSession = mapStr(client, ['last_session_at', 'last_session', 'lastSessionAt']);
               final aStatusClr = _statusColor(status);
-              final aIsInactive = status.toLowerCase() == 'inactive' || status.toLowerCase() == 'inactief';
+              final aIsInactive = status.toLowerCase() == 'inactive' || status.toLowerCase() == S.of(context).inactiefLower;
               final aInitials = name.length >= 2
                   ? '${name[0]}${name.split(' ').length > 1 ? name.split(' ').last[0] : name[1]}'.toUpperCase()
                   : (name.isNotEmpty ? name[0].toUpperCase() : '?');
@@ -1935,7 +1945,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                                         children: [
                                           Flexible(
                                             child: Text(
-                                              name.isNotEmpty ? name : 'Klant',
+                                              name.isNotEmpty ? name : S.of(context).clientSingle,
                                               style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 13, color: GymiesColors.darkBlue),
                                               overflow: TextOverflow.ellipsis,
                                             ),
@@ -1944,7 +1954,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                                             decoration: BoxDecoration(
-                                              color: aStatusClr.withValues(alpha: 0.08),
+                                              color: aStatusClr.withOpacity(0.08),
                                               borderRadius: BorderRadius.circular(5),
                                             ),
                                             child: Text(
@@ -1991,7 +2001,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
           color: selected
-              ? GymiesColors.primary.withValues(alpha: 0.12)
+              ? GymiesColors.primary.withOpacity(0.12)
               : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
@@ -2012,6 +2022,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
   }
 
   // ── Tab 3: Communicatie (Pro+) ──
+  // ignore: unused_element
   Widget _buildCommunicationTab() {
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -2028,7 +2039,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                Text('Stuur een bericht naar al je klanten tegelijk.',
+                Text(S.of(context).stuurEenBerichtNaarAlJeKlantenTegelijk,
                   style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600)),
                 const SizedBox(height: 12),
                 SizedBox(
@@ -2046,7 +2057,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                         children: [
                           const Icon(Icons.send_rounded, size: 16, color: GymiesColors.primary),
                           const SizedBox(width: 8),
-                          Text('Bulk bericht versturen',
+                          Text(S.of(context).bulkBerichtVersturen,
                             style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600, color: GymiesColors.primary)),
                         ],
                       ),
@@ -2070,7 +2081,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                Text('Voor urgente operationele issues met contextpakket.',
+                Text(S.of(context).voorUrgenteOperationeleIssuesMetContextpakket,
                   style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600)),
                 const SizedBox(height: 12),
                 SizedBox(
@@ -2088,7 +2099,7 @@ class _TrainerClientsScreenState extends State<TrainerClientsScreen>
                         children: [
                           const Icon(Icons.support_agent_rounded, size: 16, color: Colors.white),
                           const SizedBox(width: 8),
-                          Text('Open priority lane',
+                          Text(S.of(context).openPriorityLane,
                             style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
                         ],
                       ),

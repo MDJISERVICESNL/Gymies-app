@@ -1,14 +1,16 @@
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../utils/haptics.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/map_utils.dart';
 import '../utils/safe_url_launcher.dart';
+import '../utils/currency_format.dart';
 import 'widgets/gymies_dialog.dart';
-
 /// Detail van een groepsles + inschrijven.
 class ClientGroupSessionDetailScreen extends StatefulWidget {
   const ClientGroupSessionDetailScreen({
@@ -38,13 +40,14 @@ class _ClientGroupSessionDetailScreenState
   }
 
   Future<void> _load() async {
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
       final session = await api.getPublicGroupSession(widget.groupSessionId);
+      if (!mounted) return;
       List<Map<String, dynamic>> myRegs = [];
       try {
         myRegs = await api.getMyGroupRegistrations();
@@ -60,6 +63,7 @@ class _ClientGroupSessionDetailScreenState
           break;
         }
       }
+      if (!mounted) return;
       setState(() {
         _session = session;
         _myRegistration = myReg;
@@ -74,17 +78,12 @@ class _ClientGroupSessionDetailScreenState
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon groepsles niet laden.';
+        _error = S.of(context).konGroepslesNietLaden;
         _loading = false;
       });
     }
   }
 
-  /// Formatteer bedrag in centen naar leesbaar euro-bedrag.
-  String _formatEuro(int cents) {
-    final euros = cents / 100.0;
-    return '€${euros.toStringAsFixed(2).replaceAll('.', ',')}';
-  }
 
   /// Haal prijs per deelnemer op uit sessie-data.
   int _pricePerParticipantCents() {
@@ -124,15 +123,15 @@ class _ClientGroupSessionDetailScreenState
     final confirmed = _isSessionConfirmed();
 
     // ── Bevestigingsdialog ──
-    final dialogTitle = confirmed ? 'Inschrijven & betalen' : 'Plek reserveren';
+    final dialogTitle = confirmed ? S.of(context).inschrijvenBetalen : 'Plek reserveren';
     final dialogBody = confirmed
-        ? 'De les gaat door! Je betaalt ${_formatEuro(priceCents)} voor deze groepsles.'
-        : 'Je reserveert een plek. Je betaalt pas als het minimum aantal deelnemers bereikt is.';
+        ? 'De les gaat door! Je betaalt ${formatEuro(priceCents)} voor deze groepsles.'
+        : S.of(context).jeReserveertEenPlekJeBetaalt;
     final dialogInfo = confirmed
-        ? 'Je wordt doorgestuurd naar de betaalpagina.'
-        : 'Je ontvangt een melding zodra de les doorgaat.';
+        ? S.of(context).jeWordtDoorgestuurdNaarDeBetaalpagina2
+        : S.of(context).jeOntvangtEenMeldingZodraDe;
     final buttonLabel = confirmed
-        ? 'Betaal ${_formatEuro(priceCents)}'
+        ? 'Betaal ${formatEuro(priceCents)}'
         : 'Reserveer plek';
 
     final ok = await showDialog<bool>(
@@ -174,7 +173,7 @@ class _ClientGroupSessionDetailScreenState
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('Annuleren', style: GoogleFonts.sora(color: Colors.grey.shade600)),
+            child: Text(S.of(context).annuleren, style: GoogleFonts.sora(color: Colors.grey.shade600)),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -211,8 +210,8 @@ class _ClientGroupSessionDetailScreenState
       await _load();
       if (mounted) {
         final msg = (participantStatus == 'payment_pending' || confirmed)
-            ? 'Inschrijving voltooid'
-            : 'Plek gereserveerd! Je ontvangt bericht als de les doorgaat.';
+            ? S.of(context).inschrijvingVoltooid
+            : S.of(context).plekGereserveerdJeOntvangtBerichtAls;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(msg), backgroundColor: GymiesColors.darkBlue,
           ),
@@ -256,9 +255,9 @@ class _ClientGroupSessionDetailScreenState
     if (_busy) return;
     final ok = await GymiesDialog.destructive(
       context,
-      title: 'Inschrijving annuleren',
-      message: 'Weet je zeker dat je je inschrijving wilt annuleren?',
-      confirmLabel: 'Ja, annuleren',
+      title: S.of(context).inschrijvingAnnuleren,
+      message: S.of(context).weetJeZekerDatJeJe,
+      confirmLabel: S.of(context).jaAnnuleren,
     );
     if (ok != true || !mounted) return;
     setState(() => _busy = true);
@@ -271,7 +270,7 @@ class _ClientGroupSessionDetailScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Inschrijving geannuleerd'),
+            content: Text(S.of(context).inschrijvingGeannuleerd),
             backgroundColor: GymiesColors.darkBlue,
           ),
         );
@@ -317,7 +316,7 @@ class _ClientGroupSessionDetailScreenState
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Groepsles',
+                        S.of(context).groepsles,
                         style: GoogleFonts.sora(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -368,7 +367,7 @@ class _ClientGroupSessionDetailScreenState
                               _load();
                             },
                             icon: const Icon(Icons.refresh_rounded, size: 18),
-                            label: const Text('Opnieuw proberen'),
+                            label: const Text(S.of(context).opnieuwProberen),
                             style: FilledButton.styleFrom(
                               backgroundColor: GymiesColors.primary,
                               foregroundColor: GymiesColors.darkBlue,
@@ -399,7 +398,7 @@ class _ClientGroupSessionDetailScreenState
                               // ── Titel ──
                               Text(
                                 mapStr(_session, ['title', 'name']).isEmpty
-                                    ? 'Groepsles'
+                                    ? S.of(context).groepsles
                                     : mapStr(_session, ['title', 'name']),
                                 style: GoogleFonts.sora(
                                   fontSize: 24,
@@ -419,7 +418,7 @@ class _ClientGroupSessionDetailScreenState
                                       vertical: 4,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.green.withValues(alpha: 0.12),
+                                      color: Colors.green.withOpacity(0.12),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Row(
@@ -429,7 +428,7 @@ class _ClientGroupSessionDetailScreenState
                                             size: 14, color: Colors.green.shade700),
                                         const SizedBox(width: 4),
                                         Text(
-                                          'Ingeschreven',
+                                          S.of(context).ingeschreven,
                                           style: GoogleFonts.sora(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
@@ -450,7 +449,7 @@ class _ClientGroupSessionDetailScreenState
                                   borderRadius: BorderRadius.circular(16),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.05),
+                                      color: Colors.black.withOpacity(0.05),
                                       blurRadius: 12,
                                       offset: const Offset(0, 3),
                                     ),
@@ -465,6 +464,8 @@ class _ClientGroupSessionDetailScreenState
                                       label: 'Datum & tijd',
                                       value: _formatDateTime(
                                         DateTime.tryParse(mapStr(_session, [
+                                              'scheduled_at',
+                                              'scheduledAt',
                                               'starts_at',
                                               'startsAt',
                                               'start_at',
@@ -477,10 +478,10 @@ class _ClientGroupSessionDetailScreenState
                                       icon: Icons.person_outline_rounded,
                                       iconColor: const Color(0xFF6A1B9A),
                                       iconBg: const Color(0xFFF3E5F5),
-                                      label: 'Trainer',
+                                      label: S.of(context).trainer,
                                       value: mapStr(_session, [
-                                        'trainer_name',
-                                        'trainerName',
+                                        S.of(context).trainername,
+                                        S.of(context).trainername2,
                                         'name',
                                       ]),
                                       showDivider: true,
@@ -509,7 +510,7 @@ class _ClientGroupSessionDetailScreenState
                                         iconColor: const Color(0xFF2E7D32),
                                         iconBg: const Color(0xFFE8F5E9),
                                         label: 'Prijs per persoon',
-                                        value: _formatEuro(_pricePerParticipantCents()),
+                                        value: formatEuro(_pricePerParticipantCents()),
                                         showDivider: false,
                                       ),
                                   ],
@@ -541,7 +542,7 @@ class _ClientGroupSessionDetailScreenState
                                   bannerBg = const Color(0xFFFFEBEE);
                                   bannerFg = const Color(0xFFC62828);
                                   bannerIcon = Icons.cancel_rounded;
-                                  bannerTitle = 'Les gaat niet door';
+                                  bannerTitle = S.of(context).lesGaatNietDoor;
                                   bannerSub = 'Te weinig deelnemers ($enrolled/$minP)';
                                 } else {
                                   // open — collecting
@@ -583,7 +584,7 @@ class _ClientGroupSessionDetailScreenState
                                                 style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w700, color: bannerFg)),
                                               const SizedBox(height: 2),
                                               Text(bannerSub,
-                                                style: GoogleFonts.sora(fontSize: 12, color: bannerFg.withValues(alpha: 0.8))),
+                                                style: GoogleFonts.sora(fontSize: 12, color: bannerFg.withOpacity(0.8))),
                                             ],
                                           ),
                                         ),
@@ -606,7 +607,7 @@ class _ClientGroupSessionDetailScreenState
                                     boxShadow: [
                                       BoxShadow(
                                         color:
-                                            Colors.black.withValues(alpha: 0.05),
+                                            Colors.black.withOpacity(0.05),
                                         blurRadius: 12,
                                         offset: const Offset(0, 3),
                                       ),
@@ -616,7 +617,7 @@ class _ClientGroupSessionDetailScreenState
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Beschrijving',
+                                        S.of(context).beschrijving,
                                         style: GoogleFonts.sora(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600,
@@ -652,7 +653,7 @@ class _ClientGroupSessionDetailScreenState
                                   ),
                                   child: Center(
                                     child: Text(
-                                      'Deze les is geannuleerd',
+                                      S.of(context).dezeLesIsGeannuleerd,
                                       style: GoogleFonts.sora(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600,
@@ -670,7 +671,7 @@ class _ClientGroupSessionDetailScreenState
                                         borderRadius: BorderRadius.circular(14),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: GymiesColors.primary.withValues(alpha: 0.35),
+                                            color: GymiesColors.primary.withOpacity(0.35),
                                             blurRadius: 12,
                                             offset: const Offset(0, 4),
                                           ),
@@ -682,7 +683,7 @@ class _ClientGroupSessionDetailScreenState
                                             ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: GymiesColors.darkBlue))
                                             : const Icon(Icons.payment_rounded, size: 20),
                                         label: Text(
-                                          'Betaal ${_formatEuro(_pricePerParticipantCents())}',
+                                          'Betaal ${formatEuro(_pricePerParticipantCents())}',
                                           style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700),
                                         ),
                                         style: FilledButton.styleFrom(
@@ -697,7 +698,7 @@ class _ClientGroupSessionDetailScreenState
                                     OutlinedButton.icon(
                                       onPressed: _busy ? null : () { Haptics.heavy(); _cancelRegistration(); },
                                       icon: const Icon(Icons.cancel_outlined, size: 18),
-                                      label: Text('Annuleren', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+                                      label: Text(S.of(context).annuleren, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
                                       style: OutlinedButton.styleFrom(
                                         foregroundColor: Colors.red.shade700,
                                         side: BorderSide(color: Colors.red.shade700),
@@ -724,7 +725,7 @@ class _ClientGroupSessionDetailScreenState
                                           const SizedBox(width: 10),
                                           Expanded(
                                             child: Text(
-                                              'Je plek is gereserveerd. Je ontvangt een melding zodra de les doorgaat.',
+                                              S.of(context).jePlekIsGereserveerdJeOntvangtEenMeldingZodraDeLesDoorgaat,
                                               style: GoogleFonts.sora(fontSize: 13, color: Colors.blue.shade700, height: 1.3),
                                             ),
                                           ),
@@ -737,7 +738,7 @@ class _ClientGroupSessionDetailScreenState
                                       icon: _busy
                                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                                           : const Icon(Icons.cancel_outlined, size: 18),
-                                      label: Text('Inschrijving annuleren', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+                                      label: Text(S.of(context).inschrijvingAnnuleren, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
                                       style: OutlinedButton.styleFrom(
                                         foregroundColor: Colors.red.shade700,
                                         side: BorderSide(color: Colors.red.shade700),
@@ -754,7 +755,7 @@ class _ClientGroupSessionDetailScreenState
                                     borderRadius: BorderRadius.circular(14),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: GymiesColors.primary.withValues(alpha: 0.35),
+                                        color: GymiesColors.primary.withOpacity(0.35),
                                         blurRadius: 12,
                                         offset: const Offset(0, 4),
                                       ),
@@ -767,8 +768,8 @@ class _ClientGroupSessionDetailScreenState
                                         : const Icon(Icons.event_available_rounded, size: 20),
                                     label: Text(
                                       _isSessionConfirmed()
-                                          ? 'Inschrijven · ${_formatEuro(_pricePerParticipantCents())}'
-                                          : 'Reserveer plek · ${_formatEuro(_pricePerParticipantCents())}',
+                                          ? 'Inschrijven · ${formatEuro(_pricePerParticipantCents())}'
+                                          : 'Reserveer plek · ${formatEuro(_pricePerParticipantCents())}',
                                       style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700),
                                     ),
                                     style: FilledButton.styleFrom(

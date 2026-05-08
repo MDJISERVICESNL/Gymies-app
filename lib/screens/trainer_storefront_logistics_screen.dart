@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../services/storefront_cms_provider.dart';
@@ -90,7 +91,7 @@ class _TrainerStorefrontLogisticsScreenState
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon logistiek niet laden.';
+        _error = S.of(context).konLogistiekNietLaden;
         _loading = false;
       });
     }
@@ -121,10 +122,13 @@ class _TrainerStorefrontLogisticsScreenState
         'cancellation_refund_percent': _cancellationRefundPercent,
         'cancellation_exceptions': _cancellationExceptionsController.text.trim(),
       });
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
       context.read<StorefrontCmsProvider>().invalidate();
 
       if (!mounted) return;
 
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -132,7 +136,7 @@ class _TrainerStorefrontLogisticsScreenState
               const Icon(Icons.check_circle_rounded,
                   color: Colors.white, size: 20),
               const SizedBox(width: 8),
-              Text('Instellingen opgeslagen',
+              Text(S.of(context).instellingenOpgeslagen,
                   style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
             ],
           ),
@@ -157,13 +161,16 @@ class _TrainerStorefrontLogisticsScreenState
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: const GymiesAppBar(title: 'Logistiek & Annulering'),
-      body: GymiesListBody(
-        loading: _loading,
-        error: _error,
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SafeArea(
+          child: GymiesListBody(
+            loading: _loading,
+            error: _error,
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
             // ══════════════════════════════════════════════════════════════
             // SECTION 1: LOGISTIEK
             // ══════════════════════════════════════════════════════════════
@@ -174,7 +181,7 @@ class _TrainerStorefrontLogisticsScreenState
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -184,7 +191,7 @@ class _TrainerStorefrontLogisticsScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Logistiek',
+                    S.of(context).logistiek,
                     style: GoogleFonts.sora(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
@@ -193,7 +200,7 @@ class _TrainerStorefrontLogisticsScreenState
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Stel je trainingslocatie, trainingsvormen en aanbiedingen in',
+                    S.of(context).stelJeTrainingslocatieTrainingsvormenEnAanbiedingenIn,
                     style: GoogleFonts.sora(
                       fontSize: 13,
                       color: Colors.grey.shade600,
@@ -205,7 +212,7 @@ class _TrainerStorefrontLogisticsScreenState
                   // ── Toggle: Eigen trainingslocatie ──
                   _buildToggleRow(
                     label: 'Eigen trainingslocatie',
-                    subtitle: 'Je hebt een vaste plek voor klanten',
+                    subtitle: S.of(context).jeHebtEenVastePlekVoor,
                     value: _hasOwnLocation,
                     onChanged: (val) {
                       Haptics.selection();
@@ -217,7 +224,7 @@ class _TrainerStorefrontLogisticsScreenState
                   // ── Toggle: Duo-training ──
                   _buildToggleRow(
                     label: 'Duo-training',
-                    subtitle: 'Training voor 2 personen tegelijk',
+                    subtitle: S.of(context).trainingVoor2PersonenTegelijk,
                     value: _offersDuoTraining,
                     onChanged: (val) {
                       Haptics.selection();
@@ -229,7 +236,7 @@ class _TrainerStorefrontLogisticsScreenState
                   // ── Toggle: Introductiekorting ──
                   _buildToggleRow(
                     label: 'Introductiekorting',
-                    subtitle: 'Nieuwe klanten krijgen korting',
+                    subtitle: S.of(context).nieuweKlantenKrijgenKorting,
                     value: _hasIntroOffer,
                     onChanged: (val) {
                       Haptics.selection();
@@ -263,7 +270,7 @@ class _TrainerStorefrontLogisticsScreenState
                             width: 2,
                           ),
                         ),
-                        hintText: 'Beschrijf je introductiekorting...',
+                        hintText: S.of(context).beschrijfJeIntroductiekorting,
                         hintStyle: GoogleFonts.sora(
                           fontSize: 13,
                           color: Colors.grey.shade400,
@@ -308,7 +315,7 @@ class _TrainerStorefrontLogisticsScreenState
                           width: 2,
                         ),
                       ),
-                      labelText: 'Boekingstermijn (dagen)',
+                      labelText: S.of(context).boekingstermijndagen,
                       labelStyle: GoogleFonts.sora(
                         fontSize: 13,
                         color: Colors.grey.shade600,
@@ -349,7 +356,7 @@ class _TrainerStorefrontLogisticsScreenState
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -359,7 +366,7 @@ class _TrainerStorefrontLogisticsScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Annuleringsbeleid',
+                    S.of(context).annuleringsbeleid,
                     style: GoogleFonts.sora(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
@@ -368,7 +375,7 @@ class _TrainerStorefrontLogisticsScreenState
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Bepaal onder welke voorwaarden klanten kunnen annuleren',
+                    S.of(context).bepaalOnderWelkeVoorwaardenKlantenKunnenAnnuleren,
                     style: GoogleFonts.sora(
                       fontSize: 13,
                       color: Colors.grey.shade600,
@@ -379,54 +386,54 @@ class _TrainerStorefrontLogisticsScreenState
 
                   // ── Cancellation Hours Dropdown ──
                   DropdownButtonFormField<int?>(
-                    value: _cancellationHours,
+                    initialValue: _cancellationHours,
                     items: [
                       DropdownMenuItem<int?>(
                         value: null,
                         child: Text(
-                          'Niet ingesteld',
+                          S.of(context).nietIngesteld,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem<int?>(
                         value: 0,
                         child: Text(
-                          'Altijd annuleerbaar',
+                          S.of(context).altijdAnnuleerbaar,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem<int?>(
                         value: 12,
                         child: Text(
-                          '12 uur van tevoren',
+                          S.of(context).12UurVanTevoren,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem<int?>(
                         value: 24,
                         child: Text(
-                          '24 uur van tevoren',
+                          S.of(context).24UurVanTevoren,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem<int?>(
                         value: 48,
                         child: Text(
-                          '48 uur (2 dagen)',
+                          S.of(context).48Uur2Dagen,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem<int?>(
                         value: 72,
                         child: Text(
-                          '72 uur (3 dagen)',
+                          S.of(context).72Uur3Dagen,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem<int?>(
                         value: 168,
                         child: Text(
-                          '1 week van tevoren',
+                          S.of(context).1WeekVanTevoren,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
@@ -453,7 +460,7 @@ class _TrainerStorefrontLogisticsScreenState
                           width: 2,
                         ),
                       ),
-                      labelText: 'Annuleringstermijn',
+                      labelText: S.of(context).annuleringstermijn,
                       labelStyle: GoogleFonts.sora(
                         fontSize: 13,
                         color: Colors.grey.shade600,
@@ -469,47 +476,47 @@ class _TrainerStorefrontLogisticsScreenState
 
                   // ── Cancellation Refund Dropdown ──
                   DropdownButtonFormField<int?>(
-                    value: _cancellationRefundPercent,
+                    initialValue: _cancellationRefundPercent,
                     items: [
                       DropdownMenuItem<int?>(
                         value: null,
                         child: Text(
-                          'Niet ingesteld',
+                          S.of(context).nietIngesteld,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem<int?>(
                         value: 100,
                         child: Text(
-                          '100% — Volledige restitutie',
+                          S.of(context).100VolledigeRestitutie,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem<int?>(
                         value: 75,
                         child: Text(
-                          '75% restitutie',
+                          S.of(context).75Restitutie,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem<int?>(
                         value: 50,
                         child: Text(
-                          '50% restitutie',
+                          S.of(context).50Restitutie,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem<int?>(
                         value: 25,
                         child: Text(
-                          '25% restitutie',
+                          S.of(context).25Restitutie,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem<int?>(
                         value: 0,
                         child: Text(
-                          '0% — Geen restitutie',
+                          S.of(context).0GeenRestitutie,
                           style: GoogleFonts.sora(fontSize: 13),
                         ),
                       ),
@@ -536,7 +543,7 @@ class _TrainerStorefrontLogisticsScreenState
                           width: 2,
                         ),
                       ),
-                      labelText: 'Restitutiepercentage',
+                      labelText: S.of(context).restitutiepercentage,
                       labelStyle: GoogleFonts.sora(
                         fontSize: 13,
                         color: Colors.grey.shade600,
@@ -555,10 +562,10 @@ class _TrainerStorefrontLogisticsScreenState
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.08),
+                        color: GymiesColors.primary.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: GymiesColors.primary.withValues(alpha: 0.3),
+                          color: GymiesColors.primary.withOpacity(0.3),
                           width: 1,
                         ),
                       ),
@@ -600,12 +607,12 @@ class _TrainerStorefrontLogisticsScreenState
                           width: 2,
                         ),
                       ),
-                      labelText: 'Uitzonderingen (optioneel)',
+                      labelText: S.of(context).uitzonderingenoptioneel,
                       labelStyle: GoogleFonts.sora(
                         fontSize: 13,
                         color: Colors.grey.shade600,
                       ),
-                      hintText: 'Beschrijf speciale gevallen of uitzonderingen...',
+                      hintText: S.of(context).beschrijfSpecialeGevallenOfUitzonderingen,
                       hintStyle: GoogleFonts.sora(
                         fontSize: 13,
                         color: Colors.grey.shade400,
@@ -655,7 +662,7 @@ class _TrainerStorefrontLogisticsScreenState
                         const Icon(Icons.save_rounded, size: 20),
                         const SizedBox(width: 8),
                         Text(
-                          'Instellingen opslaan',
+                          S.of(context).instellingenOpslaan,
                           style: GoogleFonts.sora(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -666,6 +673,8 @@ class _TrainerStorefrontLogisticsScreenState
             ),
             const SizedBox(height: 16),
           ],
+            ),
+          ),
         ),
       ),
     );
@@ -708,7 +717,7 @@ class _TrainerStorefrontLogisticsScreenState
         Switch(
           value: value,
           onChanged: onChanged,
-          activeColor: GymiesColors.primary,
+          activeThumbColor: GymiesColors.primary,
           inactiveThumbColor: Colors.grey.shade300,
           inactiveTrackColor: Colors.grey.shade200,
         ),
@@ -726,15 +735,15 @@ class _TrainerStorefrontLogisticsScreenState
     if (_cancellationHours == 0) {
       hoursText = 'altijd';
     } else if (_cancellationHours == 12) {
-      hoursText = '12 uur van tevoren';
+      hoursText = S.of(context).12UurVanTevoren;
     } else if (_cancellationHours == 24) {
-      hoursText = '24 uur van tevoren';
+      hoursText = S.of(context).24UurVanTevoren;
     } else if (_cancellationHours == 48) {
-      hoursText = '48 uur (2 dagen) van tevoren';
+      hoursText = S.of(context).n48Uur2DagenVanTevoren;
     } else if (_cancellationHours == 72) {
-      hoursText = '72 uur (3 dagen) van tevoren';
+      hoursText = S.of(context).n72Uur3DagenVanTevoren;
     } else if (_cancellationHours == 168) {
-      hoursText = '1 week van tevoren';
+      hoursText = S.of(context).1WeekVanTevoren;
     } else {
       hoursText = '$_cancellationHours uur van tevoren';
     }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../theme/gymies_theme.dart';
 import '../config/app_config.dart';
 import '../config/timing_constants.dart';
@@ -26,7 +27,6 @@ import 'widgets/gymies_dialog.dart';
 ///   - Witte form-area met rounded top die over de header valt
 ///   - Tab toggle (Inloggen / Registreren)
 ///   - Form content
-///   - Social login divider + Google/Apple knoppen
 class LoginRegisterScreen extends StatefulWidget {
   const LoginRegisterScreen({super.key});
 
@@ -87,11 +87,11 @@ class _LoginRegisterScreenState extends State<LoginRegisterScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Vind jouw personal trainer\nen boek direct',
+                      S.of(context).taglineText,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.sora(
                         fontSize: 14,
-                        color: Colors.white.withValues(alpha: 0.75),
+                        color: Colors.white.withOpacity(0.75),
                         height: 1.4,
                       ),
                     ),
@@ -145,9 +145,9 @@ class _LoginRegisterScreenState extends State<LoginRegisterScreen>
                         ),
                         unselectedLabelStyle: GoogleFonts.sora(fontSize: 15),
                         dividerHeight: 0,
-                        tabs: const [
-                          Tab(text: 'Inloggen'),
-                          Tab(text: 'Registreren'),
+                        tabs: [
+                          Tab(text: S.of(context).login),
+                          Tab(text: S.of(context).createAccount),
                         ],
                       ),
                     ),
@@ -247,7 +247,7 @@ class _LoginTabState extends State<_LoginTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Te veel mislukte pogingen. Probeer opnieuw over $remaining seconden.'),
+            content: Text(S.of(context).connectionFailed),
             backgroundColor: GymiesColors.darkBlue,
           ),
         );
@@ -314,7 +314,7 @@ class _LoginTabState extends State<_LoginTab> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Verbinding mislukt. Controleer je internet en probeer opnieuw.',
+              S.of(context).connectionFailed,
             ),
             backgroundColor: GymiesColors.darkBlue,
           ),
@@ -337,10 +337,11 @@ class _LoginTabState extends State<_LoginTab> {
 
     final label = await bio.biometricLabel;
 
+    if (!mounted) return;
     final accepted = await GymiesDialog.custom<bool>(
       context,
       title: '$label inschakelen?',
-      subtitle: 'Log sneller in met $label. Je kunt dit later altijd wijzigen in Instellingen.',
+      subtitle: S.of(context).logSnellerInMet(label),
       icon: label == 'Face ID'
           ? Icons.face
           : label == 'Touch ID'
@@ -393,32 +394,134 @@ class _LoginTabState extends State<_LoginTab> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // ── E-mail veld met icoon ──
-            _GymiesFormField(
+            TextFormField(
               controller: _email,
-              hint: 'E-mailadres',
-              prefixIcon: Icons.mail_outline_rounded,
               keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              style: GoogleFonts.sora(color: GymiesColors.darkBlue, fontSize: 15),
+              decoration: InputDecoration(
+                hintText: 'E-mailadres',
+                hintStyle: GoogleFonts.sora(
+                  color: const Color(0xFF9CA3AF),
+                  fontSize: 14,
+                ),
+                prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20, color: Color(0xFF9CA3AF)),
+                filled: false,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFE5E7EB),
+                    width: 1.5,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFE5E7EB),
+                    width: 1.5,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: GymiesColors.darkBlue,
+                    width: 1.5,
+                  ),
+                ),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Colors.red.shade400,
+                    width: 1.5,
+                  ),
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Colors.red.shade400,
+                    width: 1.5,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Vul je e-mail in';
+                if (v == null || v.trim().isEmpty) return S.of(context).vulJeEmailIn;
                 if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim())) {
-                  return 'Vul een geldig e-mailadres in';
+                  return S.of(context).vulEenGeldigEmailadresIn;
                 }
                 return null;
               },
             ),
             const SizedBox(height: 14),
             // ── Wachtwoord veld met icoon ──
-            _GymiesFormField(
+            TextFormField(
               controller: _password,
-              hint: 'Wachtwoord',
-              prefixIcon: Icons.lock_outline_rounded,
-              obscure: _obscurePassword,
-              onObscureToggle: () {
-                Haptics.selection();
-                setState(() => _obscurePassword = !_obscurePassword);
+              obscureText: _obscurePassword,
+              autofillHints: const [AutofillHints.password],
+              style: GoogleFonts.sora(color: GymiesColors.darkBlue, fontSize: 15),
+              decoration: InputDecoration(
+                hintText: 'Wachtwoord',
+                hintStyle: GoogleFonts.sora(
+                  color: const Color(0xFF9CA3AF),
+                  fontSize: 14,
+                ),
+                prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20, color: Color(0xFF9CA3AF)),
+                filled: false,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFE5E7EB),
+                    width: 1.5,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFE5E7EB),
+                    width: 1.5,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: GymiesColors.darkBlue,
+                    width: 1.5,
+                  ),
+                ),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Colors.red.shade400,
+                    width: 1.5,
+                  ),
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: Colors.red.shade400,
+                    width: 1.5,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                    color: const Color(0xFF9CA3AF),
+                    size: 20,
+                  ),
+                  onPressed: () {
+                    Haptics.selection();
+                    setState(() => _obscurePassword = !_obscurePassword);
+                  },
+                ),
+              ),
+              validator: (v) {
+                if (v == null || v.isEmpty) return S.of(context).vulJeWachtwoordIn;
+                if (v.length < 8) return 'Minimaal 8 tekens vereist';
+                return null;
               },
-              validator: (v) =>
-                  (v == null || v.isEmpty) ? 'Vul je wachtwoord in' : null,
             ),
             const SizedBox(height: 10),
             // ── Onthoud mij + wachtwoord vergeten op één rij ──
@@ -444,7 +547,7 @@ class _LoginTabState extends State<_LoginTab> {
                     setState(() => _rememberMe = !_rememberMe);
                   },
                   child: Text(
-                    'Onthoud mij',
+                    S.of(context).rememberMe,
                     style: GoogleFonts.sora(
                       fontSize: 13,
                       color: const Color(0xFF6B7280),
@@ -458,7 +561,7 @@ class _LoginTabState extends State<_LoginTab> {
                     _showForgotPasswordDialog(context);
                   },
                   child: Text(
-                    'Vergeten?',
+                    S.of(context).forgotten,
                     style: GoogleFonts.sora(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -478,64 +581,14 @@ class _LoginTabState extends State<_LoginTab> {
                   : 0;
               return _GymiesButton(
                 text: _submitting
-                    ? 'Bezig…'
+                    ? S.of(context).bezig
                     : isLocked
-                        ? 'Wacht $remaining sec…'
-                        : 'Inloggen',
+                        ? '${S.of(context).wait} $remaining ${S.of(context).seconds}…'
+                        : S.of(context).login,
                 onPressed: (_submitting || isLocked) ? null : _submit,
               );
             }),
             const SizedBox(height: 24),
-            // ── Social login divider ──
-            Row(
-              children: [
-                Expanded(child: Divider(color: Colors.grey.shade300, height: 1)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  child: Text(
-                    'of ga verder met',
-                    style: GoogleFonts.sora(
-                      fontSize: 12,
-                      color: const Color(0xFF9CA3AF),
-                    ),
-                  ),
-                ),
-                Expanded(child: Divider(color: Colors.grey.shade300, height: 1)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            // ── Google + Apple knoppen ──
-            Row(
-              children: [
-                Expanded(
-                  child: _SocialLoginButton(
-                    label: 'Google',
-                    icon: _googleIcon(),
-                    onTap: () {
-                      // TODO: Implement Google Sign-In
-                      Haptics.selection();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Google login komt binnenkort')),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _SocialLoginButton(
-                    label: 'Apple',
-                    icon: const Icon(Icons.apple_rounded, size: 20, color: Colors.black),
-                    onTap: () {
-                      // TODO: Implement Apple Sign-In
-                      Haptics.selection();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Apple login komt binnenkort')),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: 20),
             // ── Switch naar registreren ──
             Center(
@@ -548,9 +601,9 @@ class _LoginTabState extends State<_LoginTab> {
                   text: TextSpan(
                     style: GoogleFonts.sora(fontSize: 13, color: const Color(0xFF6B7280)),
                     children: [
-                      const TextSpan(text: 'Nog geen account? '),
+                      const TextSpan(text: S.of(context).nogGeenAccount),
                       TextSpan(
-                        text: 'Registreren',
+                        text: S.of(context).registerNow,
                         style: GoogleFonts.sora(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -596,6 +649,9 @@ class _RegisterTabState extends State<_RegisterTab> {
   final _displayName = TextEditingController();
   final _phone = TextEditingController();
   final _referralCode = TextEditingController();
+  final _inviteCode = TextEditingController();
+  final _cityController = TextEditingController();
+  String? _selectedCity;
   _UserRole _role = _UserRole.klant;
   _RegisterGender? _gender;
   bool _newsletterSubscribe = false;
@@ -625,6 +681,35 @@ class _RegisterTabState extends State<_RegisterTab> {
     return _PasswordStrength.weak;
   }
 
+  /// Beschikbare steden (actieve launch regio's in Nederland).
+  static const List<String> _availableCities = [
+    'Amsterdam',
+    'Rotterdam',
+    'Den Haag',
+    'Utrecht',
+    'Eindhoven',
+    'Groningen',
+    'Tilburg',
+    'Almere',
+    'Breda',
+    'Nijmegen',
+    'Arnhem',
+    'Haarlem',
+    'Enschede',
+    'Apeldoorn',
+    'Amersfoort',
+    'Zaanstad',
+    'Den Bosch',
+    'Haarlemmermeer',
+    'Zwolle',
+    'Zoetermeer',
+    'Leiden',
+    'Maastricht',
+    'Dordrecht',
+    'Ede',
+    'Leeuwarden',
+  ];
+
   @override
   void dispose() {
     _password.removeListener(_onPasswordChanged);
@@ -633,6 +718,8 @@ class _RegisterTabState extends State<_RegisterTab> {
     _displayName.dispose();
     _phone.dispose();
     _referralCode.dispose();
+    _inviteCode.dispose();
+    _cityController.dispose();
     super.dispose();
   }
 
@@ -644,8 +731,8 @@ class _RegisterTabState extends State<_RegisterTab> {
       // Stap 1: rol + geslacht
       if (_role == _UserRole.klant && _gender == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Kies of je als man of vrouw geregistreerd staat.'),
+          SnackBar(
+            content: Text(S.of(context).chooseGender),
             backgroundColor: GymiesColors.darkBlue,
           ),
         );
@@ -672,7 +759,7 @@ class _RegisterTabState extends State<_RegisterTab> {
     if (!_acceptedTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Je moet akkoord gaan met de Algemene voorwaarden.'),
+          content: Text(S.of(context).jeMoetAkkoordGaanMetDeAlgemeneVoorwaarden),
         ),
       );
       return;
@@ -680,7 +767,7 @@ class _RegisterTabState extends State<_RegisterTab> {
     if (!_acceptedPrivacy) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Je moet akkoord gaan met het Privacybeleid.'),
+          content: Text(S.of(context).jeMoetAkkoordGaanMetHetPrivacybeleid),
         ),
       );
       return;
@@ -707,6 +794,10 @@ class _RegisterTabState extends State<_RegisterTab> {
         referralCode: _referralCode.text.trim().isEmpty
             ? null
             : _referralCode.text.trim(),
+        inviteCode: _inviteCode.text.trim().isEmpty
+            ? null
+            : _inviteCode.text.trim(),
+        city: _selectedCity,
       );
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
@@ -759,57 +850,6 @@ class _RegisterTabState extends State<_RegisterTab> {
 
             const SizedBox(height: 24),
 
-            // ── Social login divider (alleen op stap 0) ──
-            if (_step == 0) ...[
-              Row(
-                children: [
-                  Expanded(child: Divider(color: Colors.grey.shade300, height: 1)),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    child: Text(
-                      'of',
-                      style: GoogleFonts.sora(
-                        fontSize: 12,
-                        color: const Color(0xFF9CA3AF),
-                      ),
-                    ),
-                  ),
-                  Expanded(child: Divider(color: Colors.grey.shade300, height: 1)),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: _SocialLoginButton(
-                      label: 'Google',
-                      icon: _googleIcon(),
-                      onTap: () {
-                        Haptics.selection();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Google login komt binnenkort')),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _SocialLoginButton(
-                      label: 'Apple',
-                      icon: const Icon(Icons.apple_rounded, size: 20, color: Colors.black),
-                      onTap: () {
-                        Haptics.selection();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Apple login komt binnenkort')),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ],
-
             // ── Switch naar inloggen ──
             Center(
               child: GestureDetector(
@@ -821,7 +861,7 @@ class _RegisterTabState extends State<_RegisterTab> {
                   text: TextSpan(
                     style: GoogleFonts.sora(fontSize: 13, color: const Color(0xFF6B7280)),
                     children: [
-                      const TextSpan(text: 'Al een account? '),
+                      const TextSpan(text: S.of(context).alEenAccount),
                       TextSpan(
                         text: 'Inloggen',
                         style: GoogleFonts.sora(
@@ -847,7 +887,7 @@ class _RegisterTabState extends State<_RegisterTab> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Wie ben je?',
+          S.of(context).whoAreYou,
           style: GoogleFonts.sora(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -856,7 +896,7 @@ class _RegisterTabState extends State<_RegisterTab> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Kies je rol om te beginnen',
+          S.of(context).chooseYourRole,
           style: GoogleFonts.sora(
             fontSize: 13,
             color: const Color(0xFF9CA3AF),
@@ -869,8 +909,8 @@ class _RegisterTabState extends State<_RegisterTab> {
             Expanded(
               child: _RoleCard(
                 icon: Icons.person_rounded,
-                title: 'Klant',
-                subtitle: 'Zoek en boek trainers',
+                title: S.of(context).clientSingle,
+                subtitle: S.of(context).zoekEnBoekTrainers,
                 selected: _role == _UserRole.klant,
                 onTap: () {
                   Haptics.selection();
@@ -882,8 +922,8 @@ class _RegisterTabState extends State<_RegisterTab> {
             Expanded(
               child: _RoleCard(
                 icon: Icons.fitness_center_rounded,
-                title: 'Trainer',
-                subtitle: 'Start je business',
+                title: S.of(context).trainer,
+                subtitle: S.of(context).startJeBusiness,
                 selected: _role == _UserRole.trainer,
                 onTap: () {
                   Haptics.selection();
@@ -900,7 +940,7 @@ class _RegisterTabState extends State<_RegisterTab> {
         if (_role == _UserRole.klant) ...[
           const SizedBox(height: 20),
           Text(
-            'Geslacht',
+            S.of(context).gender,
             style: GoogleFonts.sora(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -934,9 +974,114 @@ class _RegisterTabState extends State<_RegisterTab> {
             ],
           ),
         ],
+        // ── Stad selectie (voor zowel trainer als klant) ──
+        const SizedBox(height: 20),
+        Text(
+          'Jouw stad',
+          style: GoogleFonts.sora(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: GymiesColors.darkBlue,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'In welke stad ben je actief?',
+          style: GoogleFonts.sora(
+            fontSize: 12,
+            color: const Color(0xFF9CA3AF),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Autocomplete<String>(
+          optionsBuilder: (TextEditingValue textEditingValue) {
+            if (textEditingValue.text.isEmpty) {
+              return _availableCities;
+            }
+            return _availableCities.where((city) =>
+                city.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+          },
+          onSelected: (String selection) {
+            setState(() => _selectedCity = selection);
+          },
+          fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
+            // Sync met _cityController als er al een stad was geselecteerd
+            if (_selectedCity != null && controller.text.isEmpty) {
+              controller.text = _selectedCity!;
+            }
+            return TextFormField(
+              controller: controller,
+              focusNode: focusNode,
+              onFieldSubmitted: (_) => onSubmitted(),
+              onChanged: (value) {
+                // Als de gebruiker handmatig typt en het exact matcht, sla op
+                final match = _availableCities.where(
+                    (c) => c.toLowerCase() == value.toLowerCase().trim());
+                if (match.isNotEmpty) {
+                  _selectedCity = match.first;
+                } else {
+                  // Sta ook vrije invoer toe als het geen match is
+                  _selectedCity = value.trim().isNotEmpty ? value.trim() : null;
+                }
+              },
+              style: GoogleFonts.sora(color: GymiesColors.darkBlue, fontSize: 15),
+              decoration: InputDecoration(
+                hintText: 'Zoek je stad...',
+                hintStyle: GoogleFonts.sora(
+                  color: const Color(0xFF9CA3AF),
+                  fontSize: 14,
+                ),
+                prefixIcon: const Icon(Icons.location_city_rounded, size: 20, color: Color(0xFF9CA3AF)),
+                filled: false,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE5E7EB), width: 1.5),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE5E7EB), width: 1.5),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: GymiesColors.darkBlue, width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            );
+          },
+          optionsViewBuilder: (context, onSelected, options) {
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Material(
+                elevation: 4,
+                borderRadius: BorderRadius.circular(12),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 200, maxWidth: 300),
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    itemCount: options.length,
+                    itemBuilder: (context, index) {
+                      final option = options.elementAt(index);
+                      return ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.location_on_outlined, size: 18, color: GymiesColors.darkBlue),
+                        title: Text(
+                          option,
+                          style: GoogleFonts.sora(fontSize: 14, color: GymiesColors.darkBlue),
+                        ),
+                        onTap: () => onSelected(option),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
         const SizedBox(height: 24),
         _GymiesButton(
-          text: 'Volgende stap',
+          text: S.of(context).volgendeStapLogin,
           onPressed: _nextStep,
           showArrow: true,
         ),
@@ -954,15 +1099,15 @@ class _RegisterTabState extends State<_RegisterTab> {
           onTap: _prevStep,
           child: Row(
             children: [
-              Icon(Icons.arrow_back_rounded, size: 18, color: GymiesColors.darkBlue.withValues(alpha: 0.6)),
+              Icon(Icons.arrow_back_rounded, size: 18, color: GymiesColors.darkBlue.withOpacity(0.6)),
               const SizedBox(width: 4),
-              Text('Terug', style: GoogleFonts.sora(fontSize: 13, color: GymiesColors.darkBlue.withValues(alpha: 0.6))),
+              Text(S.of(context).terug, style: GoogleFonts.sora(fontSize: 13, color: GymiesColors.darkBlue.withOpacity(0.6))),
             ],
           ),
         ),
         const SizedBox(height: 16),
         Text(
-          'Account aanmaken',
+          S.of(context).accountAanmaken,
           style: GoogleFonts.sora(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -971,7 +1116,7 @@ class _RegisterTabState extends State<_RegisterTab> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Vul je e-mail en wachtwoord in',
+          S.of(context).vulJeEmailEnWachtwoordIn,
           style: GoogleFonts.sora(
             fontSize: 13,
             color: const Color(0xFF9CA3AF),
@@ -983,10 +1128,11 @@ class _RegisterTabState extends State<_RegisterTab> {
           hint: 'E-mailadres',
           prefixIcon: Icons.mail_outline_rounded,
           keyboardType: TextInputType.emailAddress,
+          autofillHints: const [AutofillHints.email],
           validator: (v) {
-            if (v == null || v.trim().isEmpty) return 'Vul je e-mail in';
+            if (v == null || v.trim().isEmpty) return S.of(context).vulJeEmailIn;
             if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v.trim())) {
-              return 'Vul een geldig e-mailadres in';
+              return S.of(context).vulEenGeldigEmailadresIn;
             }
             return null;
           },
@@ -997,16 +1143,17 @@ class _RegisterTabState extends State<_RegisterTab> {
           hint: 'Wachtwoord',
           prefixIcon: Icons.lock_outline_rounded,
           obscure: _obscurePassword,
+          autofillHints: const [AutofillHints.password],
           onObscureToggle: () {
             Haptics.selection();
             setState(() => _obscurePassword = !_obscurePassword);
           },
           validator: (v) {
-            if (v == null || v.isEmpty) return 'Vul een wachtwoord in';
+            if (v == null || v.isEmpty) return S.of(context).vulEenWachtwoordIn;
             if (v.length < 8) return 'Minimaal 8 tekens';
             final strength = _passwordStrength(v);
             if (strength == _PasswordStrength.weak) {
-              return 'Wachtwoord te zwak. Gebruik letters én cijfers.';
+              return S.of(context).wachtwoordTeZwakGebruikLettersN;
             }
             return null;
           },
@@ -1017,7 +1164,7 @@ class _RegisterTabState extends State<_RegisterTab> {
         ],
         const SizedBox(height: 24),
         _GymiesButton(
-          text: 'Volgende stap',
+          text: S.of(context).volgendeStapLogin,
           onPressed: _nextStep,
           showArrow: true,
         ),
@@ -1035,15 +1182,15 @@ class _RegisterTabState extends State<_RegisterTab> {
           onTap: _prevStep,
           child: Row(
             children: [
-              Icon(Icons.arrow_back_rounded, size: 18, color: GymiesColors.darkBlue.withValues(alpha: 0.6)),
+              Icon(Icons.arrow_back_rounded, size: 18, color: GymiesColors.darkBlue.withOpacity(0.6)),
               const SizedBox(width: 4),
-              Text('Terug', style: GoogleFonts.sora(fontSize: 13, color: GymiesColors.darkBlue.withValues(alpha: 0.6))),
+              Text(S.of(context).terug, style: GoogleFonts.sora(fontSize: 13, color: GymiesColors.darkBlue.withOpacity(0.6))),
             ],
           ),
         ),
         const SizedBox(height: 16),
         Text(
-          'Bijna klaar!',
+          S.of(context).bijnaKlaar,
           style: GoogleFonts.sora(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -1052,7 +1199,7 @@ class _RegisterTabState extends State<_RegisterTab> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Deze velden zijn optioneel',
+          S.of(context).dezeVeldenZijnOptioneel,
           style: GoogleFonts.sora(
             fontSize: 13,
             color: const Color(0xFF9CA3AF),
@@ -1063,6 +1210,13 @@ class _RegisterTabState extends State<_RegisterTab> {
           controller: _displayName,
           hint: 'Weergavenaam',
           prefixIcon: Icons.badge_outlined,
+          validator: (v) {
+            if (v == null || v.trim().isEmpty) return null;
+            if (v.trim().length > 100) {
+              return 'Weergavenaam mag maximaal 100 tekens zijn';
+            }
+            return null;
+          },
         ),
         const SizedBox(height: 14),
         _GymiesFormField(
@@ -1070,6 +1224,14 @@ class _RegisterTabState extends State<_RegisterTab> {
           hint: 'Telefoonnummer',
           prefixIcon: Icons.phone_outlined,
           keyboardType: TextInputType.phone,
+          validator: (v) {
+            if (v == null || v.trim().isEmpty) return null;
+            final cleaned = v.replaceAll(RegExp(r'[^0-9+]'), '');
+            if (!RegExp(r'^(\+31|0)[1-9]\d{1,9}$').hasMatch(cleaned)) {
+              return 'Geldig Nederlands telefoonnummer vereist (+31 of 06)';
+            }
+            return null;
+          },
         ),
         const SizedBox(height: 14),
         _GymiesFormField(
@@ -1077,6 +1239,20 @@ class _RegisterTabState extends State<_RegisterTab> {
           hint: 'Referralcode',
           prefixIcon: Icons.card_giftcard_rounded,
           textCapitalization: TextCapitalization.characters,
+        ),
+        const SizedBox(height: 14),
+        _GymiesFormField(
+          controller: _inviteCode,
+          hint: 'Uitnodigingscode (optioneel)',
+          prefixIcon: Icons.vpn_key_outlined,
+          textCapitalization: TextCapitalization.characters,
+          validator: (v) {
+            if (v == null || v.trim().isEmpty) return null;
+            if (!RegExp(r'^[A-Za-z0-9\-_]+$').hasMatch(v.trim())) {
+              return 'Ongeldige uitnodigingscode';
+            }
+            return null;
+          },
         ),
         const SizedBox(height: 18),
         // ── Checkboxes ──
@@ -1102,7 +1278,7 @@ class _RegisterTabState extends State<_RegisterTab> {
             Haptics.light();
             setState(() => _acceptedPrivacy = v ?? false);
           },
-          label: 'Ik ga akkoord met het ',
+          label: S.of(context).ikGaAkkoordMetHet,
           linkText: 'Privacybeleid',
           onLinkTap: () {
             Haptics.selection();
@@ -1119,12 +1295,12 @@ class _RegisterTabState extends State<_RegisterTab> {
             Haptics.light();
             setState(() => _newsletterSubscribe = v ?? false);
           },
-          label: 'Aanmelden voor nieuwsbrief',
-          subtitle: 'Blijf op de hoogte van tips en aanbiedingen',
+          label: S.of(context).aanmeldenVoorNieuwsbrief,
+          subtitle: S.of(context).blijfOpDeHoogteVanTips,
         ),
         const SizedBox(height: 20),
         _GymiesButton(
-          text: _submitting ? 'Bezig…' : 'Registreren',
+          text: _submitting ? S.of(context).bezig : S.of(context).createAccount,
           onPressed: _submitting
               ? null
               : () {
@@ -1226,7 +1402,7 @@ class _RoleCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
         decoration: BoxDecoration(
           color: selected
-              ? GymiesColors.darkBlue.withValues(alpha: 0.04)
+              ? GymiesColors.darkBlue.withOpacity(0.04)
               : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
@@ -1241,7 +1417,7 @@ class _RoleCard extends StatelessWidget {
               height: 40,
               decoration: BoxDecoration(
                 color: selected
-                    ? GymiesColors.primary.withValues(alpha: 0.15)
+                    ? GymiesColors.primary.withOpacity(0.15)
                     : const Color(0xFFF3F4F6),
                 shape: BoxShape.circle,
               ),
@@ -1300,7 +1476,7 @@ class _GenderChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           color: selected
-              ? GymiesColors.darkBlue.withValues(alpha: 0.04)
+              ? GymiesColors.darkBlue.withOpacity(0.04)
               : Colors.white,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
@@ -1321,96 +1497,6 @@ class _GenderChip extends StatelessWidget {
       ),
     );
   }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// SOCIAL LOGIN BUTTON
-// ═══════════════════════════════════════════════════════════════════
-
-class _SocialLoginButton extends StatelessWidget {
-  const _SocialLoginButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String label;
-  final Widget icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            icon,
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: GoogleFonts.sora(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: const Color(0xFF374151),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Google "G" logo als custom paint
-Widget _googleIcon() {
-  return SizedBox(
-    width: 18,
-    height: 18,
-    child: CustomPaint(painter: _GoogleLogoPainter()),
-  );
-}
-
-class _GoogleLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double w = size.width;
-    final double h = size.height;
-    final center = Offset(w / 2, h / 2);
-    final radius = w / 2;
-
-    // Simplified Google "G" — four-color circle with white center
-    final paint = Paint()..style = PaintingStyle.stroke..strokeWidth = w * 0.22;
-
-    // Blue arc (right)
-    paint.color = const Color(0xFF4285F4);
-    canvas.drawArc(Rect.fromCircle(center: center, radius: radius * 0.65),
-        -0.5, 1.8, false, paint);
-
-    // Green arc (bottom)
-    paint.color = const Color(0xFF34A853);
-    canvas.drawArc(Rect.fromCircle(center: center, radius: radius * 0.65),
-        1.3, 1.2, false, paint);
-
-    // Yellow arc (bottom-left)
-    paint.color = const Color(0xFFFBBC05);
-    canvas.drawArc(Rect.fromCircle(center: center, radius: radius * 0.65),
-        2.5, 1.0, false, paint);
-
-    // Red arc (top)
-    paint.color = const Color(0xFFEA4335);
-    canvas.drawArc(Rect.fromCircle(center: center, radius: radius * 0.65),
-        3.5, 1.2, false, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1519,7 +1605,7 @@ class _GymiesCheckbox extends StatelessWidget {
           ? Text(
               subtitle!,
               style: GoogleFonts.sora(
-                color: GymiesColors.darkBlue.withValues(alpha: 0.6),
+                color: GymiesColors.darkBlue.withOpacity(0.6),
                 fontSize: 11,
               ),
             )
@@ -1546,6 +1632,7 @@ class _GymiesFormField extends StatefulWidget {
   final TextCapitalization? textCapitalization;
   final String? Function(String?)? validator;
   final IconData? prefixIcon;
+  final List<String>? autofillHints;
 
   const _GymiesFormField({
     required this.controller,
@@ -1556,6 +1643,7 @@ class _GymiesFormField extends StatefulWidget {
     this.textCapitalization,
     this.validator,
     this.prefixIcon,
+    this.autofillHints,
   });
 
   @override
@@ -1563,14 +1651,45 @@ class _GymiesFormField extends StatefulWidget {
 }
 
 class _GymiesFormFieldState extends State<_GymiesFormField> {
+  late FocusNode _focusNode;
+  String? _displayedError;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (_focusNode.hasFocus && _displayedError != null) {
+      setState(() => _displayedError = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return TextFormField(
       controller: widget.controller,
+      focusNode: _focusNode,
       obscureText: widget.obscure,
       keyboardType: widget.keyboardType,
       textCapitalization: widget.textCapitalization ?? TextCapitalization.none,
-      validator: widget.validator,
+      autofillHints: widget.autofillHints,
+      validator: (value) {
+        final error = widget.validator?.call(value);
+        if (error != null && mounted) {
+          _displayedError = error;
+        }
+        return error;
+      },
       style: GoogleFonts.sora(color: GymiesColors.darkBlue, fontSize: 15),
       decoration: InputDecoration(
         hintText: widget.hint,
@@ -1659,7 +1778,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   Future<void> _submit() async {
     final email = widget.emailController.text.trim();
     if (email.isEmpty) {
-      setState(() => _error = 'Vul je e-mailadres in.');
+      setState(() => _error = S.of(context).vulJeEmailadresIn);
       return;
     }
     FocusManager.instance.primaryFocus?.unfocus();
@@ -1675,7 +1794,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text(
-            'Check je e-mail voor instructies om je wachtwoord te resetten.',
+            S.of(context).checkJeEmailVoorInstructiesOmJeWachtwoordTeResetten,
           ),
           backgroundColor: GymiesColors.darkBlue,
         ),
@@ -1691,7 +1810,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       if (mounted) {
         setState(() {
           _submitting = false;
-          _error = 'Kon verzoek niet versturen. Probeer opnieuw.';
+          _error = S.of(context).konVerzoekNietVersturenProbeerOpnieuw;
         });
       }
     }
@@ -1700,7 +1819,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   @override
   Widget build(BuildContext context) {
     return GymiesDialog(
-      title: 'Wachtwoord vergeten',
+      title: S.of(context).wachtwoordVergeten,
       headerIcon: Icons.lock_reset_rounded,
       content: SingleChildScrollView(
         child: Column(
@@ -1708,7 +1827,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Vul je e-mailadres in. We sturen je een link om je wachtwoord te resetten.',
+              S.of(context).vulJeEmailadresInWeSturenJeEenLinkOmJeWachtwoordTeResetten,
               style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
             ),
             const SizedBox(height: 16),
@@ -1716,7 +1835,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
               controller: widget.emailController,
               keyboardType: TextInputType.emailAddress,
               decoration: InputDecoration(
-                hintText: 'E-mail',
+                hintText: S.of(context).email,
                 filled: true,
                 fillColor: Colors.grey.shade50,
                 border: OutlineInputBorder(
@@ -1736,11 +1855,11 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       ),
       actions: [
         GymiesDialogAction(
-          label: 'Annuleren',
+          label: S.of(context).annuleren,
           returnValue: null,
         ),
         GymiesDialogAction(
-          label: _submitting ? 'Bezig…' : 'Verstuur',
+          label: _submitting ? S.of(context).bezig : 'Verstuur',
           isPrimary: true,
           onPressed: _submitting ? null : _submit,
         ),
@@ -1774,8 +1893,8 @@ class _GymiesButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: GymiesColors.darkBlue,
           foregroundColor: GymiesColors.primary,
-          disabledBackgroundColor: GymiesColors.darkBlue.withValues(alpha: 0.4),
-          disabledForegroundColor: GymiesColors.primary.withValues(alpha: 0.5),
+          disabledBackgroundColor: GymiesColors.darkBlue.withOpacity(0.4),
+          disabledForegroundColor: GymiesColors.primary.withOpacity(0.5),
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),

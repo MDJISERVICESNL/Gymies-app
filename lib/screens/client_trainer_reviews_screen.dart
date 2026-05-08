@@ -1,7 +1,9 @@
+
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../models/trainer.dart';
 import '../utils/haptics.dart';
 import '../services/api_client.dart';
@@ -9,7 +11,6 @@ import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/map_utils.dart';
 import 'widgets/trainer_state_views.dart';
-
 /// Scherm met alle reviews van een trainer.
 class ClientTrainerReviewsScreen extends StatefulWidget {
   const ClientTrainerReviewsScreen({
@@ -52,7 +53,7 @@ class _ClientTrainerReviewsScreenState extends State<ClientTrainerReviewsScreen>
                 ? (res['rating_avg'] as num).toDouble()
                 : double.tryParse(res['rating_avg'].toString()))
             : null;
-        _ratingAvg = rawAvg != null ? rawAvg.clamp(0.0, 5.0) : null;
+        _ratingAvg = rawAvg?.clamp(0.0, 5.0);
         _count = res['count'] is int ? res['count'] as int : list.length;
         _loading = false;
       });
@@ -65,7 +66,7 @@ class _ClientTrainerReviewsScreenState extends State<ClientTrainerReviewsScreen>
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon reviews niet laden.';
+        _error = S.of(context).konReviewsNietLaden;
         _loading = false;
       });
     }
@@ -81,7 +82,7 @@ class _ClientTrainerReviewsScreenState extends State<ClientTrainerReviewsScreen>
   Widget build(BuildContext context) {
     final trainerName = widget.trainer.displayName.trim().isNotEmpty
         ? widget.trainer.displayName.trim()
-        : 'Trainer';
+        : S.of(context).trainer;
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       body: Column(
@@ -137,7 +138,7 @@ class _ClientTrainerReviewsScreenState extends State<ClientTrainerReviewsScreen>
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.05),
+                                color: Colors.black.withOpacity(0.05),
                                 blurRadius: 12,
                                 offset: const Offset(0, 3),
                               ),
@@ -152,7 +153,7 @@ class _ClientTrainerReviewsScreenState extends State<ClientTrainerReviewsScreen>
                                     width: 56,
                                     height: 56,
                                     decoration: BoxDecoration(
-                                      color: Colors.amber.withValues(alpha: 0.15),
+                                      color: Colors.amber.withOpacity(0.15),
                                       borderRadius: BorderRadius.circular(14),
                                     ),
                                     child: Icon(
@@ -221,7 +222,7 @@ class _ClientTrainerReviewsScreenState extends State<ClientTrainerReviewsScreen>
                                 width: 72,
                                 height: 72,
                                 decoration: BoxDecoration(
-                                  color: GymiesColors.primary.withValues(alpha: 0.15),
+                                  color: GymiesColors.primary.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: const Icon(
@@ -232,7 +233,7 @@ class _ClientTrainerReviewsScreenState extends State<ClientTrainerReviewsScreen>
                               ),
                               const SizedBox(height: 20),
                               Text(
-                                'Nog geen reviews',
+                                S.of(context).nogGeenReviews,
                                 style: GoogleFonts.sora(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w700,
@@ -242,7 +243,7 @@ class _ClientTrainerReviewsScreenState extends State<ClientTrainerReviewsScreen>
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Wees de eerste die een beoordeling achterlaat na een sessie.',
+                                S.of(context).weesDeEersteDieEenBeoordelingAchterlaatNaEenSessie,
                                 style: GoogleFonts.sora(
                                   color: Colors.grey.shade600,
                                   fontSize: 14,
@@ -290,7 +291,7 @@ class _ReviewCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 12,
               offset: const Offset(0, 3),
             ),
@@ -306,7 +307,7 @@ class _ReviewCard extends StatelessWidget {
                   // Avatar circle with initial
                   CircleAvatar(
                     radius: 18,
-                    backgroundColor: GymiesColors.primary.withValues(alpha: 0.2),
+                    backgroundColor: GymiesColors.primary.withOpacity(0.2),
                     child: Text(
                       displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
                       style: GoogleFonts.sora(
@@ -379,7 +380,7 @@ class _ReviewCard extends StatelessWidget {
                       width: 100,
                       height: 100,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
@@ -415,7 +416,7 @@ class _ReviewCard extends StatelessWidget {
                 child: Image.network(
                   url,
                   fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
+                  errorBuilder: (_, _, _) => const Icon(
                     Icons.broken_image_rounded,
                     size: 60,
                     color: Colors.white,
@@ -431,7 +432,7 @@ class _ReviewCard extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
+                    color: Colors.black.withOpacity(0.6),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(

@@ -7,6 +7,7 @@ import '../services/gymies_api.dart';
 import '../services/subscription_entitlements_service.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/app_version.dart';
+import '../l10n/generated/app_localizations.dart';
 import 'shells/gym_shell.dart';
 import 'trainer_finance_screen.dart';
 import 'trainer_packages_screen.dart';
@@ -18,6 +19,10 @@ import 'trainer_widget_qr_screen.dart';
 import 'client_support_screen.dart';
 import 'login_register_screen.dart';
 import 'referral_screen.dart';
+import 'ambassador_dashboard_screen.dart';
+import 'trainer_invite_codes_screen.dart';
+import 'staff_dashboard_screen.dart';
+import 'trainer_community_screen.dart';
 import 'widgets/gymies_dialog.dart';
 import '../utils/haptics.dart';
 
@@ -36,7 +41,9 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
 
   // Business metrics uit API
   int _revenueMtdCents = 0;
+  // ignore: unused_field
   int _clientCount = 0;
+  // ignore: unused_field
   int _thisWeekSessions = 0;
 
   @override
@@ -89,13 +96,15 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
     Haptics.light();
     final confirmed = await GymiesDialog.destructive(
       context,
-      title: 'Uitloggen',
-      message: 'Weet je zeker dat je wilt uitloggen?',
-      confirmLabel: 'Uitloggen',
+      title: S.of(context).uitloggen,
+      message: S.of(context).logoutConfirmMessage,
+      confirmLabel: S.of(context).uitloggen,
     );
     if (confirmed != true || !context.mounted) return;
+    // ignore: use_build_context_synchronously
     await context.read<AuthService>().logout();
     if (!context.mounted) return;
+    // ignore: use_build_context_synchronously
     Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginRegisterScreen()),
       (route) => false,
@@ -126,11 +135,12 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
     final user = auth.user ?? {};
     final name = user['display_name']?.toString() ??
         user['name']?.toString() ??
-        'Trainer';
+        S.of(context).trainer;
     final email = user['email']?.toString() ?? '';
     final initial = name.isNotEmpty ? name[0].toUpperCase() : 'T';
 
     final items = _buildItems(
+      auth: auth,
       name: name,
       email: email,
       initial: initial,
@@ -144,29 +154,50 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       body: SafeArea(
-        child: ListView.builder(
-          padding: const EdgeInsets.only(bottom: 40),
-          itemCount: items.length,
-          itemBuilder: (context, index) {
-            return TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: 1),
-              duration: Duration(milliseconds: 80 + (index * 40)),
-              builder: (context, value, child) => Opacity(
-                opacity: value,
-                child: Transform.translate(
-                  offset: Offset(0, (1 - value) * 16),
-                  child: child,
+        child: RefreshIndicator(
+          onRefresh: _loadMetrics,
+          child: ListView.builder(
+            padding: const EdgeInsets.only(bottom: 40),
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              return TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: 1),
+                duration: Duration(milliseconds: 80 + (index * 40)),
+                builder: (context, value, child) => Opacity(
+                  opacity: value,
+                  child: Transform.translate(
+                    offset: Offset(0, (1 - value) * 16),
+                    child: child,
+                  ),
                 ),
-              ),
-              child: items[index],
-            );
-          },
+                child: items[index],
+              );
+            },
+          ),
         ),
       ),
     );
   }
 
+  /// Check of de gebruiker admin, staff of medewerker is.
+  bool _isStaffUser(AuthService auth) {
+    if (auth.isAdmin) return true; // admin of staff role
+    final user = auth.user;
+    if (user == null) return false;
+    final role = (user['role']?.toString() ?? '').toLowerCase();
+    if (role == 'medewerker') return true;
+    final roles = user['roles'];
+    if (roles is List) {
+      for (final entry in roles) {
+        final name = entry is Map ? (entry['name']?.toString() ?? '') : entry.toString();
+        if (name.toLowerCase() == 'medewerker') return true;
+      }
+    }
+    return false;
+  }
+
   List<Widget> _buildItems({
+    required AuthService auth,
     required String name,
     required String email,
     required String initial,
@@ -205,14 +236,14 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
       // ── MIJN PROFIEL sectie ──
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: _buildSectionLabel('MIJN PROFIEL'),
+        child: _buildSectionLabel(S.of(context).mijnProfiel),
       ),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: _buildGroupedTiles([
           _GroupedTileData(
             icon: Icons.person_outline,
-            title: 'Profiel bewerken',
+            title: S.of(context).profielBewerken,
             onTap: () => _push(const TrainerProfileScreen()),
           ),
           _GroupedTileData(
@@ -255,7 +286,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
         child: _buildGroupedTiles([
           _GroupedTileData(
             icon: Icons.storefront_rounded,
-            title: 'Mijn Etalage',
+            title: S.of(context).mijnEtalage,
             onTap: () => _push(const TrainerStorefrontHubScreen()),
           ),
           _GroupedTileData(
@@ -266,6 +297,49 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
         ]),
       ),
       const SizedBox(height: 20),
+
+      // ── COMMUNITY sectie (Elite trainers) ──
+      if (isProPlus) ...[
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildSectionLabel('COMMUNITY'),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildGroupedTiles([
+            _GroupedTileData(
+              icon: Icons.forum_rounded,
+              title: 'Trainer Community',
+              onTap: () => _push(const TrainerCommunityScreen()),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 20),
+      ],
+
+      // ── AMBASSADOR sectie ──
+      if (auth.isAmbassador) ...[
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildSectionLabel('AMBASSADOR'),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildGroupedTiles([
+            _GroupedTileData(
+              icon: Icons.workspace_premium_rounded,
+              title: 'Ambassador Dashboard',
+              onTap: () => _push(const AmbassadorDashboardScreen()),
+            ),
+            _GroupedTileData(
+              icon: Icons.card_giftcard,
+              title: 'Invite Codes',
+              onTap: () => _push(const TrainerInviteCodesScreen()),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 20),
+      ],
 
       // ── STUDIO sectie (alleen voor Studio tier) ──
       if (isStudio) ...[
@@ -278,10 +352,29 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
           child: _buildGroupedTiles([
             _GroupedTileData(
               icon: Icons.business_rounded,
-              title: 'Gym Dashboard',
+              title: S.of(context).gymDashboard,
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const GymShell()),
               ),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 20),
+      ],
+
+      // ── STAFF / MEDEWERKER sectie (alleen zichtbaar voor admin/staff/medewerker) ──
+      if (_isStaffUser(auth)) ...[
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildSectionLabel('STAFF'),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _buildGroupedTiles([
+            _GroupedTileData(
+              icon: Icons.admin_panel_settings_outlined,
+              title: 'Staff Dashboard',
+              onTap: () => _push(const StaffDashboardScreen()),
             ),
           ]),
         ),
@@ -298,7 +391,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
         child: _buildGroupedTiles([
           _GroupedTileData(
             icon: Icons.stars_rounded,
-            title: 'Abonnement',
+            title: S.of(context).abonnement,
             trailing: tierLabel != 'Starter'
                 ? Container(
                     padding: const EdgeInsets.symmetric(
@@ -306,7 +399,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.85),
+                      color: GymiesColors.primary.withOpacity(0.85),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -347,7 +440,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
           ),
           icon: const Icon(Icons.logout_rounded, size: 20),
           label: Text(
-            'Uitloggen',
+            S.of(context).uitloggen,
             style: GoogleFonts.sora(
               fontSize: 15,
               fontWeight: FontWeight.w500,
@@ -399,7 +492,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
                   color: GymiesColors.primary,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: Colors.white.withOpacity(0.2),
                     width: 3,
                   ),
                 ),
@@ -423,7 +516,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
                         Border.all(color: GymiesColors.darkBlue, width: 2),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
+                        color: Colors.black.withOpacity(0.2),
                         blurRadius: 6,
                         offset: const Offset(0, 2),
                       ),
@@ -455,7 +548,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
               email,
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.white.withValues(alpha: 0.6),
+                color: Colors.white.withOpacity(0.6),
               ),
               textAlign: TextAlign.center,
             ),
@@ -468,7 +561,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
                 vertical: 3,
               ),
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.85),
+                color: GymiesColors.primary.withOpacity(0.85),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -514,7 +607,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Upgrade naar Pro',
+                        S.of(context).upgradeNaarPro,
                         style: GoogleFonts.sora(
                           fontSize: 14,
                           color: GymiesColors.darkBlue,
@@ -522,10 +615,10 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Krijg etalage, promo codes en meer',
+                        S.of(context).krijgEtalagePromoCodesEnMeer,
                         style: TextStyle(
                           fontSize: 11,
-                          color: GymiesColors.darkBlue.withValues(alpha: 0.6),
+                          color: GymiesColors.darkBlue.withOpacity(0.6),
                         ),
                       ),
                     ],
@@ -550,10 +643,10 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
             child: Container(
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: GymiesColors.darkBlue.withValues(alpha: 0.15),
+                color: GymiesColors.darkBlue.withOpacity(0.15),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.close, size: 14, color: GymiesColors.darkBlue.withValues(alpha: 0.6)),
+              child: Icon(Icons.close, size: 14, color: GymiesColors.darkBlue.withOpacity(0.6)),
             ),
           ),
         ),
@@ -592,7 +685,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
                 iconBg: Colors.blue.shade50,
                 iconColor: Colors.blue.shade600,
                 title: 'Pakketten',
-                subtitle: 'Beheer aanbod',
+                subtitle: S.of(context).beheerAanbod,
                 onTap: () => _push(const TrainerPackagesScreen()),
               ),
             ),
@@ -654,7 +747,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -684,7 +777,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
                         size: 20,
                         color: isLocked
                             ? Colors.grey.shade400
-                            : GymiesColors.darkBlue.withValues(alpha: 0.7),
+                            : GymiesColors.darkBlue.withOpacity(0.7),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -712,7 +805,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: GymiesColors.primary
-                                      .withValues(alpha: 0.85),
+                                      .withOpacity(0.85),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
@@ -765,6 +858,7 @@ class _TrainerMoreScreenState extends State<TrainerMoreScreen> {
 // HELPER WIDGETS
 // ═══════════════════════════════════════════════════════════════════════
 
+// ignore: unused_element
 class _StatItem extends StatelessWidget {
   const _StatItem({required this.value, required this.label});
   final String value;
@@ -788,7 +882,7 @@ class _StatItem extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 11,
-            color: Colors.white.withValues(alpha: 0.55),
+            color: Colors.white.withOpacity(0.55),
           ),
         ),
       ],
@@ -823,7 +917,7 @@ class _QuickActionCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: Colors.black.withOpacity(0.04),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),

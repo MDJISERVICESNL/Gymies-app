@@ -118,14 +118,21 @@ trait TrainerMessagingTrait
             ->orderBy('created_at')
             ->get(['id', 'conversation_id', 'from_user_id', 'body', 'read_at', 'created_at']);
 
-        $data = $rows->map(fn ($r) => [
-            'id' => (string) $r->id,
-            'conversation_id' => (string) $r->conversation_id,
-            'from_user_id' => (string) $r->from_user_id,
-            'body' => $r->body,
-            'read_at' => $r->read_at,
-            'created_at' => $r->created_at,
-        ])->all();
+        $trainerId = (int) $conversation->trainer_user_id;
+
+        $data = $rows->map(function ($r) use ($trainerId) {
+            $fromUserId = (int) $r->from_user_id;
+            $senderType = $fromUserId === $trainerId ? 'trainer' : 'client';
+            return [
+                'id' => (string) $r->id,
+                'conversation_id' => (string) $r->conversation_id,
+                'from_user_id' => (string) $r->from_user_id,
+                'sender_type' => $senderType,
+                'body' => $r->body ?? '',
+                'read_at' => $r->read_at,
+                'created_at' => $r->created_at,
+            ];
+        })->all();
 
         return response()->json(['data' => $data]);
     }
@@ -171,7 +178,8 @@ trait TrainerMessagingTrait
                 try {
                     event(new \App\Events\Gymies\GymiesChatMessagesRead($otherUserId, $conversationId, $readAt));
                 } catch (\Throwable $e) {
-                    // Broadcasting niet geconfigureerd
+                    \Log::warning('[TrainerMessaging] Broadcast failed: ' . $e->getMessage());
+                    if (app()->bound('sentry')) { app('sentry')->captureException($e); }
                 }
             }
         }
@@ -333,13 +341,18 @@ trait TrainerMessagingTrait
         }
 
         $body = trim((string) $request->input('body'));
+        if ($body === '') {
+            return response()->json(['message' => 'Bericht mag niet leeg zijn.'], 422);
+        }
+
+        $now = now();
         $id = DB::table('gymies_messages')->insertGetId([
             'conversation_id' => $conversationId,
             'from_user_id' => $user->id,
             'body' => $body,
-            'created_at' => now(),
+            'created_at' => $now,
         ]);
-        DB::table('gymies_conversations')->where('id', $conversationId)->update(['updated_at' => now()]);
+        DB::table('gymies_conversations')->where('id', $conversationId)->update(['updated_at' => $now]);
 
         if (class_exists(GymiesChatBroadcast::class)) {
             GymiesChatBroadcast::afterMessageInserted($conversationId, (int) $id, (int) $user->id, $body);
@@ -349,7 +362,15 @@ trait TrainerMessagingTrait
             \App\Helpers\GymiesSupportSync::syncConversationMessageToTicket($conversationId, (int) $user->id, $body);
         }
 
-        return response()->json(['data' => ['id' => (string) $id]], 201);
+        return response()->json(['data' => [
+            'id' => (string) $id,
+            'conversation_id' => $conversationId,
+            'from_user_id' => (string) $user->id,
+            'sender_type' => 'trainer',
+            'body' => $body,
+            'read_at' => null,
+            'created_at' => $now->toIso8601String(),
+        ]], 201);
     }
 
     public function ensureConversation(Request $request): JsonResponse

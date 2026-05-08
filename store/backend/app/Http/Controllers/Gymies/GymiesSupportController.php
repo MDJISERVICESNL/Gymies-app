@@ -9,6 +9,7 @@ use App\Helpers\GymiesSupportSync;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -66,29 +67,31 @@ final class GymiesSupportController extends Controller
 
     /**
      * Nieuw ticket aanmaken (met eerste bericht).
+     * Logged: support_ticket_created
      */
     public function store(Request $request): JsonResponse
     {
-        $user = $request->attributes->get('gymies_user');
-        if (!$user) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-        $request->validate([
-            'subject'       => 'required|string|max:255',
-            'message'       => 'required|string|max:5000',
-            // Ruime categorie-lijst: alle waarden die de app ooit stuurt zijn geldig.
-            // Onbekende waarden worden hieronder teruggezet naar 'general' (fail-safe).
-            'category'      => 'nullable|string|max:80',
-            'priority'      => 'nullable|string|max:20|in:low,medium,high,critical',
-            'contact_name'  => 'nullable|string|max:255',
-            'contact_email' => 'nullable|string|email|max:255',
-            'contact_phone' => 'nullable|string|max:32',
-        ]);
-        $this->ensureSupportTables();
-        $this->ensureSupportTicketContactColumns();
-        if (!Schema::hasTable('gymies_support_tickets') || !Schema::hasTable('gymies_support_ticket_messages')) {
-            return response()->json(['message' => 'Support niet beschikbaar.'], 503);
-        }
+        try {
+            $user = $request->attributes->get('gymies_user');
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+            $request->validate([
+                'subject'       => 'required|string|max:255',
+                'message'       => 'required|string|max:5000',
+                // Ruime categorie-lijst: alle waarden die de app ooit stuurt zijn geldig.
+                // Onbekende waarden worden hieronder teruggezet naar 'general' (fail-safe).
+                'category'      => 'nullable|string|max:80',
+                'priority'      => 'nullable|string|max:20|in:low,medium,high,critical',
+                'contact_name'  => 'nullable|string|max:255',
+                'contact_email' => 'nullable|string|email|max:255',
+                'contact_phone' => 'nullable|string|max:32',
+            ]);
+            $this->ensureSupportTables();
+            $this->ensureSupportTicketContactColumns();
+            if (!Schema::hasTable('gymies_support_tickets') || !Schema::hasTable('gymies_support_ticket_messages')) {
+                return response()->json(['message' => 'Support niet beschikbaar.'], 503);
+            }
 
         // Toegestane categorieën — uitgebreid zodat alle app-versies werken.
         // Onbekende waarden vallen terug op 'general' (nooit een 422 door categorie).
@@ -131,34 +134,55 @@ final class GymiesSupportController extends Controller
             $insert['submitter_email'] = $submitterEmail ?: null;
             $insert['submitter_phone'] = $submitterPhone ?: null;
         }
-        $ticketId = DB::table('gymies_support_tickets')->insertGetId($insert);
 
-        DB::table('gymies_support_ticket_messages')->insert([
-            'ticket_id' => $ticketId,
-            'author_user_id' => (int) $user->id,
-            'message' => $message,
-            'is_internal' => 0,
-            'created_at' => now(),
-        ]);
+        // Wrap ticket creation and message insertion in transaction
+        $ticketId = DB::transaction(function() use ($insert, $message, $user) {
+            $tId = DB::table('gymies_support_tickets')->insertGetId($insert);
 
-        GymiesSupportSync::ensureSupportConversationForTicket($ticketId, (int) $user->id, $message);
+            DB::table('gymies_support_ticket_messages')->insert([
+                'ticket_id' => $tId,
+                'author_user_id' => (int) $user->id,
+                'message' => $message,
+                'is_internal' => 0,
+                'created_at' => now(),
+            ]);
 
-        $ticket = DB::table('gymies_support_tickets')->where('id', $ticketId)->first();
-        $data = [
-            'id' => (string) $ticketId,
-            'subject' => $ticket->subject,
-            'category' => $ticket->category,
-            'priority' => $ticket->priority,
-            'status' => $ticket->status,
-            'created_at' => $ticket->created_at,
-            'updated_at' => $ticket->updated_at,
-        ];
-        if (Schema::hasColumn('gymies_support_tickets', 'submitter_name')) {
-            $data['submitter_name'] = (string) ($ticket->submitter_name ?? '');
-            $data['submitter_email'] = (string) ($ticket->submitter_email ?? '');
-            $data['submitter_phone'] = (string) ($ticket->submitter_phone ?? '');
+            GymiesSupportSync::ensureSupportConversationForTicket($tId, (int) $user->id, $message);
+            return $tId;
+        });
+
+        if (function_exists('logger')) {
+            Log::info('support_ticket_created', [
+                'ticket_id' => $ticketId,
+                'user_id' => (int) $user->id,
+                'category' => $category,
+            ]);
         }
-        return response()->json(['data' => $data], 201);
+
+            $ticket = DB::table('gymies_support_tickets')->where('id', $ticketId)->first();
+            $data = [
+                'id' => (string) $ticketId,
+                'subject' => $ticket->subject,
+                'category' => $ticket->category,
+                'priority' => $ticket->priority,
+                'status' => $ticket->status,
+                'created_at' => $ticket->created_at,
+                'updated_at' => $ticket->updated_at,
+            ];
+            if (Schema::hasColumn('gymies_support_tickets', 'submitter_name')) {
+                $data['submitter_name'] = (string) ($ticket->submitter_name ?? '');
+                $data['submitter_email'] = (string) ($ticket->submitter_email ?? '');
+                $data['submitter_phone'] = (string) ($ticket->submitter_phone ?? '');
+            }
+            return response()->json(['data' => $data], 201);
+        } catch (\Throwable $e) {
+            if (function_exists('logger')) {
+                Log::error('support_ticket_store_error', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+            return response()->json(['message' => 'Ticket aanmaken mislukt.'], 500);
+        }
     }
 
     /**
@@ -224,113 +248,148 @@ final class GymiesSupportController extends Controller
 
     /**
      * Bericht toevoegen aan eigen ticket (klant/trainer/gym antwoordt).
+     * Logged: support_ticket_message_added
      */
     public function addMessage(Request $request, string $id): JsonResponse
     {
-        $user = $request->attributes->get('gymies_user');
-        if (!$user) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-        if (!ctype_digit($id) || (int) $id < 1) {
-            return response()->json(['message' => 'Ongeldige ticket id.'], 422);
-        }
-        $request->validate([
-            'message' => 'required|string|max:5000',
-        ]);
-        if (!Schema::hasTable('gymies_support_tickets') || !Schema::hasTable('gymies_support_ticket_messages')) {
-            return response()->json(['message' => 'Support niet beschikbaar.'], 503);
-        }
+        try {
+            $user = $request->attributes->get('gymies_user');
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+            if (!ctype_digit($id) || (int) $id < 1) {
+                return response()->json(['message' => 'Ongeldige ticket id.'], 422);
+            }
+            $request->validate([
+                'message' => 'required|string|max:5000',
+            ]);
+            if (!Schema::hasTable('gymies_support_tickets') || !Schema::hasTable('gymies_support_ticket_messages')) {
+                return response()->json(['message' => 'Support niet beschikbaar.'], 503);
+            }
 
-        $ticket = DB::table('gymies_support_tickets')
-            ->where('id', (int) $id)
-            ->where('user_id', (int) $user->id)
-            ->first();
+            $ticket = DB::table('gymies_support_tickets')
+                ->where('id', (int) $id)
+                ->where('user_id', (int) $user->id)
+                ->first();
 
-        if (!$ticket) {
-            return response()->json(['message' => 'Ticket niet gevonden.'], 404);
-        }
+            if (!$ticket) {
+                return response()->json(['message' => 'Ticket niet gevonden.'], 404);
+            }
 
-        $messageText = trim((string) $request->input('message'));
-        $msgId = DB::table('gymies_support_ticket_messages')->insertGetId([
-            'ticket_id' => (int) $id,
-            'author_user_id' => (int) $user->id,
-            'message' => $messageText,
-            'is_internal' => 0,
-            'created_at' => now(),
-        ]);
-
-        DB::table('gymies_support_tickets')->where('id', (int) $id)->update([
-            'updated_at' => now(),
-            'status' => 'in_progress', // klant heeft geantwoord; support kan opnemen
-        ]);
-
-        GymiesSupportSync::syncUserReplyToConversation((int) $id, (int) $user->id, $messageText);
-
-        return response()->json([
-            'data' => [
-                'id' => (string) $msgId,
+            $messageText = trim((string) $request->input('message'));
+            $msgId = DB::table('gymies_support_ticket_messages')->insertGetId([
+                'ticket_id' => (int) $id,
+                'author_user_id' => (int) $user->id,
                 'message' => $messageText,
-                'created_at' => now()->toDateTimeString(),
-            ],
-        ], 201);
+                'is_internal' => 0,
+                'created_at' => now(),
+            ]);
+
+            DB::table('gymies_support_tickets')->where('id', (int) $id)->update([
+                'updated_at' => now(),
+                'status' => 'in_progress', // klant heeft geantwoord; support kan opnemen
+            ]);
+
+            GymiesSupportSync::syncUserReplyToConversation((int) $id, (int) $user->id, $messageText);
+
+            if (function_exists('logger')) {
+                Log::info('support_ticket_message_added', [
+                    'ticket_id' => (int) $id,
+                    'user_id' => (int) $user->id,
+                    'message_id' => $msgId,
+                ]);
+            }
+
+            return response()->json([
+                'data' => [
+                    'id' => (string) $msgId,
+                    'message' => $messageText,
+                    'created_at' => now()->toDateTimeString(),
+                ],
+            ], 201);
+        } catch (\Throwable $e) {
+            if (function_exists('logger')) {
+                Log::error('support_ticket_message_add_error', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+            return response()->json(['message' => 'Bericht toevoegen mislukt.'], 500);
+        }
     }
 
     /**
      * Klant/trainer geeft aan "ik ben geholpen" → ticket resolven + bevestigingsbericht.
+     * Logged: support_ticket_marked_resolved
      */
     public function markHelped(Request $request, string $id): JsonResponse
     {
-        $user = $request->attributes->get('gymies_user');
-        if (!$user) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-        if (!ctype_digit($id) || (int) $id < 1) {
-            return response()->json(['message' => 'Ongeldige ticket id.'], 422);
-        }
-        if (!Schema::hasTable('gymies_support_tickets') || !Schema::hasTable('gymies_support_ticket_messages')) {
-            return response()->json(['message' => 'Support niet beschikbaar.'], 503);
-        }
+        try {
+            $user = $request->attributes->get('gymies_user');
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+            if (!ctype_digit($id) || (int) $id < 1) {
+                return response()->json(['message' => 'Ongeldige ticket id.'], 422);
+            }
+            if (!Schema::hasTable('gymies_support_tickets') || !Schema::hasTable('gymies_support_ticket_messages')) {
+                return response()->json(['message' => 'Support niet beschikbaar.'], 503);
+            }
 
-        $ticket = DB::table('gymies_support_tickets')
-            ->where('id', (int) $id)
-            ->where('user_id', (int) $user->id)
-            ->first();
+            $ticket = DB::table('gymies_support_tickets')
+                ->where('id', (int) $id)
+                ->where('user_id', (int) $user->id)
+                ->first();
 
-        if (!$ticket) {
-            return response()->json(['message' => 'Ticket niet gevonden.'], 404);
-        }
+            if (!$ticket) {
+                return response()->json(['message' => 'Ticket niet gevonden.'], 404);
+            }
 
-        $status = (string) ($ticket->status ?? '');
-        if ($status === 'resolved') {
-            return response()->json(['data' => ['status' => 'resolved', 'message' => 'Al afgesloten.']]);
-        }
+            $status = (string) ($ticket->status ?? '');
+            if ($status === 'resolved') {
+                return response()->json(['data' => ['status' => 'resolved', 'message' => 'Al afgesloten.']]);
+            }
 
-        DB::table('gymies_support_tickets')->where('id', (int) $id)->update([
-            'status' => 'resolved',
-            'updated_at' => now(),
-            'resolved_at' => now(),
-        ]);
-
-        $confirmation = 'We sluiten dit ticket. Bedankt!';
-        DB::table('gymies_support_ticket_messages')->insert([
-            'ticket_id' => (int) $id,
-            'author_user_id' => (int) $user->id,
-            'message' => 'Ik ben geholpen.',
-            'is_internal' => 0,
-            'created_at' => now(),
-        ]);
-
-        if (class_exists(GymiesSupportSync::class)) {
-            GymiesSupportSync::syncUserReplyToConversation((int) $id, (int) $user->id, 'Ik ben geholpen.');
-            GymiesSupportSync::syncAdminReplyToConversation((int) $id, $confirmation);
-        }
-
-        return response()->json([
-            'data' => [
+            DB::table('gymies_support_tickets')->where('id', (int) $id)->update([
                 'status' => 'resolved',
-                'confirmation' => $confirmation,
-            ],
-        ]);
+                'updated_at' => now(),
+                'resolved_at' => now(),
+            ]);
+
+            $confirmation = 'We sluiten dit ticket. Bedankt!';
+            DB::table('gymies_support_ticket_messages')->insert([
+                'ticket_id' => (int) $id,
+                'author_user_id' => (int) $user->id,
+                'message' => 'Ik ben geholpen.',
+                'is_internal' => 0,
+                'created_at' => now(),
+            ]);
+
+            if (class_exists(GymiesSupportSync::class)) {
+                GymiesSupportSync::syncUserReplyToConversation((int) $id, (int) $user->id, 'Ik ben geholpen.');
+                GymiesSupportSync::syncAdminReplyToConversation((int) $id, $confirmation);
+            }
+
+            if (function_exists('logger')) {
+                Log::info('support_ticket_marked_resolved', [
+                    'ticket_id' => (int) $id,
+                    'user_id' => (int) $user->id,
+                ]);
+            }
+
+            return response()->json([
+                'data' => [
+                    'status' => 'resolved',
+                    'confirmation' => $confirmation,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            if (function_exists('logger')) {
+                Log::error('support_ticket_mark_helped_error', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+            return response()->json(['message' => 'Status update mislukt.'], 500);
+        }
     }
 
     private function ensureSupportTables(): void
@@ -423,10 +482,10 @@ final class GymiesSupportController extends Controller
             return response()->json(['message' => 'Support niet beschikbaar.'], 503);
         }
 
-        $name    = htmlspecialchars(strip_tags(trim((string) $request->input('name'))), ENT_QUOTES, 'UTF-8');
+        $name    = trim((string) $request->input('name'));
         $email   = filter_var(trim((string) $request->input('email')), FILTER_SANITIZE_EMAIL);
-        $subject = htmlspecialchars(strip_tags(trim((string) $request->input('subject'))), ENT_QUOTES, 'UTF-8');
-        $message = htmlspecialchars(strip_tags(trim((string) $request->input('message'))), ENT_QUOTES, 'UTF-8');
+        $subject = trim((string) $request->input('subject'));
+        $message = trim((string) $request->input('message'));
 
         // Map onderwerp naar categorie
         $categoryMap = [

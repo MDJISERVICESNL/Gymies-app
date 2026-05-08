@@ -4,11 +4,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../models/booking.dart';
 import '../../services/auth_service.dart';
 import '../../services/calendar_service.dart';
+import '../../services/gymies_api.dart';
 import '../../services/notification_realtime_service.dart';
 import '../../theme/gymies_theme.dart';
+import '../../utils/app_lifecycle_manager.dart';
 import '../../utils/haptics.dart';
 import '../widgets/offline_banner.dart';
 import '../trainer_more_screen.dart';
@@ -35,7 +38,8 @@ class TrainerShell extends StatefulWidget {
   State<TrainerShell> createState() => TrainerShellState();
 }
 
-class TrainerShellState extends State<TrainerShell> {
+class TrainerShellState extends State<TrainerShell>
+    with AppLifecycleManager<TrainerShell> {
   int _currentIndex = 0;
   int _unreadCount = 0;
   StreamSubscription? _realtimeSub;
@@ -48,6 +52,7 @@ class TrainerShellState extends State<TrainerShell> {
   @override
   void initState() {
     super.initState();
+    initLifecycle();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       try {
@@ -59,7 +64,10 @@ class TrainerShellState extends State<TrainerShell> {
           _handleBookingAutoSync(event);
         });
         realtime.addListener(_onRealtimeChanged);
-      } catch (_) {}
+      } catch (e) {
+        // Fail-open: Realtime init optional
+        if (kDebugMode) debugPrint('[TrainerShell] Realtime init failed: $e');
+      }
     });
   }
 
@@ -68,7 +76,10 @@ class TrainerShellState extends State<TrainerShell> {
     try {
       final count = context.read<NotificationRealtimeService>().unreadCount;
       setState(() => _unreadCount = count);
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Unread count update optional
+      if (kDebugMode) debugPrint('[TrainerShell] Update unread count failed: $e');
+    }
   }
 
   @override
@@ -78,8 +89,30 @@ class TrainerShellState extends State<TrainerShell> {
       context
           .read<NotificationRealtimeService>()
           .removeListener(_onRealtimeChanged);
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Listener removal can fail if service unavailable
+      if (kDebugMode) debugPrint('[TrainerShell] Remove listener failed: $e');
+    }
+    disposeLifecycle();
     super.dispose();
+  }
+
+  @override
+  void onDataRefreshNeeded() {
+    // Called when app returns from background after >5min
+    // Refresh bookings, clients, and session data
+    if (kDebugMode) {
+      debugPrint('[TrainerShell] Refreshing data after long background period');
+    }
+    try {
+      final api = context.read<GymiesApi>();
+      // Trigger refresh of bookings list (non-blocking)
+      api.getBookings().catchError((_) {
+        if (kDebugMode) debugPrint('[TrainerShell] Booking refresh failed');
+      });
+    } catch (_) {
+      // Fail-open: refresh is optional
+    }
   }
 
   /// Auto-sync: als een nieuwe boeking binnenkomt via realtime en de trainer
@@ -90,7 +123,7 @@ class TrainerShellState extends State<TrainerShell> {
       final type = (event['type'] ?? event['notification_type'] ?? event['event'] ?? '')
           .toString()
           .toLowerCase();
-      if (!type.contains('booking') && !type.contains('boeking') && !type.contains('session')) {
+      if (!type.contains('booking') && !type.contains(S.of(context).boeking) && !type.contains('session')) {
         return;
       }
 
@@ -204,9 +237,13 @@ class TrainerShellState extends State<TrainerShell> {
                       offstage: i != _currentIndex,
                       child: Navigator(
                         key: _navigatorKeys[i],
-                        onGenerateRoute: (_) => MaterialPageRoute(
-                          builder: (_) => _buildTab(i),
-                        ),
+                        initialRoute: '/',
+                        onGenerateRoute: (settings) {
+                          return MaterialPageRoute(
+                            settings: settings,
+                            builder: (_) => _buildTab(i),
+                          );
+                        },
                       ),
                     ),
                 ],
@@ -218,17 +255,17 @@ class TrainerShellState extends State<TrainerShell> {
           selectedIndex: _currentIndex,
           onDestinationSelected: _onTabTapped,
           backgroundColor: Colors.white,
-          indicatorColor: GymiesColors.darkBlue.withValues(alpha: 0.12),
+          indicatorColor: GymiesColors.darkBlue.withOpacity(0.12),
           destinations: [
-            const NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: 'Home',
+            NavigationDestination(
+              icon: const Icon(Icons.home_outlined),
+              selectedIcon: const Icon(Icons.home_rounded),
+              label: S.of(context).navHome,
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.calendar_today_outlined),
-              selectedIcon: Icon(Icons.calendar_today_rounded),
-              label: 'Sessies',
+            NavigationDestination(
+              icon: const Icon(Icons.calendar_today_outlined),
+              selectedIcon: const Icon(Icons.calendar_today_rounded),
+              label: S.of(context).navSessions,
             ),
             NavigationDestination(
               icon: _unreadCount > 0
@@ -243,17 +280,17 @@ class TrainerShellState extends State<TrainerShell> {
                       child: const Icon(Icons.chat_bubble_rounded),
                     )
                   : const Icon(Icons.chat_bubble_rounded),
-              label: 'Inbox',
+              label: S.of(context).navInbox,
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.people_alt_outlined),
-              selectedIcon: Icon(Icons.people_alt_rounded),
-              label: 'Klanten',
+            NavigationDestination(
+              icon: const Icon(Icons.people_alt_outlined),
+              selectedIcon: const Icon(Icons.people_alt_rounded),
+              label: S.of(context).navClients,
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.menu_rounded),
-              selectedIcon: Icon(Icons.menu_open_rounded),
-              label: 'Meer',
+            NavigationDestination(
+              icon: const Icon(Icons.menu_rounded),
+              selectedIcon: const Icon(Icons.menu_open_rounded),
+              label: S.of(context).navMore,
             ),
           ],
         ),

@@ -50,6 +50,8 @@ final class MollieCircuitBreaker
     /**
      * Is Mollie beschikbaar?
      * Returns false als de circuit open is (te veel failures).
+     *
+     * BUG FIX: Properly manage state transitions between CLOSED → OPEN → HALF-OPEN → CLOSED.
      */
     public function isAvailable(): bool
     {
@@ -62,18 +64,27 @@ final class MollieCircuitBreaker
 
         // OPEN — check of cooldown verlopen is
         $openedAt = Cache::get(self::CACHE_KEY_OPENED_AT);
-        if ($openedAt !== null) {
-            $elapsed = time() - (int) $openedAt;
-            if ($elapsed >= self::COOLDOWN) {
-                // HALF-OPEN — laat 1 request door
-                if (!Cache::get(self::CACHE_KEY_HALF_OPEN)) {
-                    Cache::put(self::CACHE_KEY_HALF_OPEN, true, self::COOLDOWN);
-                    Log::info('[CircuitBreaker] Mollie circuit HALF-OPEN — test request toegestaan');
-                    return true;
-                }
-            }
+        if ($openedAt === null) {
+            // Safety: no opened_at timestamp, reset to CLOSED
+            Cache::forget(self::CACHE_KEY_FAILURES);
+            Cache::forget(self::CACHE_KEY_HALF_OPEN);
+            return true;
         }
 
+        $elapsed = time() - (int) $openedAt;
+        if ($elapsed < self::COOLDOWN) {
+            // Still in OPEN state, reject request
+            return false;
+        }
+
+        // HALF-OPEN — laat 1 request door om te testen
+        if (!Cache::get(self::CACHE_KEY_HALF_OPEN)) {
+            Cache::put(self::CACHE_KEY_HALF_OPEN, true, self::COOLDOWN);
+            Log::info('[CircuitBreaker] Mollie circuit HALF-OPEN — test request toegestaan');
+            return true;
+        }
+
+        // HALF-OPEN but already used the test request, reject
         return false;
     }
 
@@ -97,14 +108,21 @@ final class MollieCircuitBreaker
     /**
      * Registreer een gefaalde Mollie call.
      * Na MAX_FAILURES gaat de circuit open.
+     *
+     * BUG FIX: increment() without explicit TTL causes issues. Fixed by setting TTL on first increment.
      */
     public function recordFailure(): void
     {
-        $failures = (int) Cache::increment(self::CACHE_KEY_FAILURES);
+        // Check current count before incrementing
+        $currentFailures = (int) Cache::get(self::CACHE_KEY_FAILURES, 0);
 
-        // Zet TTL als dit de eerste failure is
-        if ($failures === 1) {
-            Cache::put(self::CACHE_KEY_FAILURES, $failures, self::WINDOW_TTL);
+        // If first failure, set the key with TTL first
+        if ($currentFailures === 0) {
+            Cache::put(self::CACHE_KEY_FAILURES, 1, self::WINDOW_TTL);
+            $failures = 1;
+        } else {
+            // Increment existing key while preserving TTL
+            $failures = (int) Cache::increment(self::CACHE_KEY_FAILURES);
         }
 
         if ($failures >= self::MAX_FAILURES) {

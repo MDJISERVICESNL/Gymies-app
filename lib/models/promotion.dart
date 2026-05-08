@@ -82,7 +82,7 @@ class TrainerActivePromotion {
     if (displayLabel != null && displayLabel!.isNotEmpty) {
       return displayLabel!;
     }
-    return 'Promotie actief';
+    return S.of(context).promotieActief;
   }
 
   static int _toInt(dynamic v) {

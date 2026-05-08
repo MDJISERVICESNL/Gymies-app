@@ -71,8 +71,8 @@ final class GymiesAuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'email' => 'required|email',
-            'password' => 'required',
+            'email' => 'required|email|max:255',
+            'password' => 'required|max:255',
         ]);
 
         $this->ensureAuthAttemptTable();
@@ -160,11 +160,11 @@ final class GymiesAuthController extends Controller
                 'email' => $email,
                 'password_hash' => Hash::make($request->input('password')),
                 'role' => $request->input('role'),
-                'display_name' => $request->input('display_name') ?: explode('@', $email)[0],
-                'phone' => $request->input('phone'),
+                'display_name' => strip_tags($request->input('display_name') ?: explode('@', $email)[0]),
+                'phone' => strip_tags($request->input('phone')),
             ];
             if (Schema::hasColumn('gymies_users', 'gender')) {
-                $insert['gender'] = $request->input('gender');
+                $insert['gender'] = strip_tags((string) $request->input('gender'));
             }
             if (Schema::hasColumn('gymies_users', 'newsletter_subscribed')) {
                 $insert['newsletter_subscribed'] = filter_var($request->input('newsletter_subscribe'), FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
@@ -504,12 +504,18 @@ final class GymiesAuthController extends Controller
 
         $columns = array_flip(Schema::getColumnListing('gymies_users'));
         $update = [];
+        // Fields that should NOT be HTML-stripped (dates, codes, etc)
+        $noStripFields = ['date_of_birth', 'preferred_language', 'postcode', 'onboarding_completed_at', 'country', 'vat_number', 'coc_number'];
         foreach ($payload as $key => $value) {
             if (!isset($columns[$key])) {
                 continue;
             }
             if (is_string($value)) {
                 $value = trim($value);
+                // Apply XSS protection to text fields
+                if (!in_array($key, $noStripFields, true)) {
+                    $value = strip_tags($value);
+                }
                 $value = $value === '' ? null : $value;
             }
             if ($key === 'country' && is_string($value)) {
@@ -770,7 +776,7 @@ final class GymiesAuthController extends Controller
             return false;
         }
         $fromEmail = (string) (config('mail.from.address', ''));
-        $fromName = config('mail.from.name') ?: config('app.name', 'Gymies');
+        $fromName = \App\Helpers\GymiesNotificationEmail::mailBrandName();
         if ($fromEmail === '' || !str_contains($fromEmail, '@')) {
             if (function_exists('logger')) {
                 logger()->warning('Brevo API: mail.from.address ontbreekt of ongeldig');

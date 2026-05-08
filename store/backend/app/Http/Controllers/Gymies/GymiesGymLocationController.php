@@ -109,33 +109,36 @@ final class GymiesGymLocationController extends GymiesGymController
             'sort_order' => 'nullable|integer|min:0',
         ]);
 
-        $orgId = (int) $ctx['organisation_id'];
-        $sortOrder = (int) ($request->input('sort_order') ?? 0);
+        // BUG-009: Add transaction wrapping for atomic location creation
+        return DB::transaction(function () use ($request, $ctx) {
+            $orgId = (int) $ctx['organisation_id'];
+            $sortOrder = (int) ($request->input('sort_order') ?? 0);
 
-        $id = DB::table('gymies_gym_locations')->insertGetId([
-            'organisation_id' => $orgId,
-            'name' => trim((string) $request->input('name')),
-            'location_type' => (string) ($request->input('location_type') ?? 'zaal'),
-            'capacity' => $request->filled('capacity') ? (int) $request->input('capacity') : null,
-            'sort_order' => $sortOrder,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+            $id = DB::table('gymies_gym_locations')->insertGetId([
+                'organisation_id' => $orgId,
+                'name' => trim((string) $request->input('name')),
+                'location_type' => (string) ($request->input('location_type') ?? 'zaal'),
+                'capacity' => $request->filled('capacity') ? (int) $request->input('capacity') : null,
+                'sort_order' => $sortOrder,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
 
-        $row = DB::table('gymies_gym_locations')->where('id', $id)->first();
+            $row = DB::table('gymies_gym_locations')->where('id', $id)->first();
 
-        return response()->json([
-            'data' => [
-                'id' => (string) $row->id,
-                'organisation_id' => (string) $row->organisation_id,
-                'name' => (string) $row->name,
-                'location_type' => (string) $row->location_type,
-                'capacity' => $row->capacity !== null ? (int) $row->capacity : null,
-                'sort_order' => (int) $row->sort_order,
-                'created_at' => $row->created_at,
-                'updated_at' => $row->updated_at,
-            ],
-        ], 201);
+            return response()->json([
+                'data' => [
+                    'id' => (string) $row->id,
+                    'organisation_id' => (string) $row->organisation_id,
+                    'name' => (string) $row->name,
+                    'location_type' => (string) $row->location_type,
+                    'capacity' => $row->capacity !== null ? (int) $row->capacity : null,
+                    'sort_order' => (int) $row->sort_order,
+                    'created_at' => $row->created_at,
+                    'updated_at' => $row->updated_at,
+                ],
+            ], 201);
+        });
     }
 
     public function update(Request $request, string $id): JsonResponse
@@ -155,44 +158,47 @@ final class GymiesGymLocationController extends GymiesGymController
             'sort_order' => 'nullable|integer|min:0',
         ]);
 
-        $orgId = (int) $ctx['organisation_id'];
-        $row = DB::table('gymies_gym_locations')
-            ->where('id', $id)
-            ->where('organisation_id', $orgId)
-            ->first();
-        if (!$row) {
-            return response()->json(['message' => 'Locatie niet gevonden.'], 404);
-        }
+        // BUG-010: Add transaction wrapping for atomic location update
+        return DB::transaction(function () use ($request, $id, $ctx) {
+            $orgId = (int) $ctx['organisation_id'];
+            $row = DB::table('gymies_gym_locations')
+                ->where('id', $id)
+                ->where('organisation_id', $orgId)
+                ->first();
+            if (!$row) {
+                throw new \Exception('Locatie niet gevonden.', 404);
+            }
 
-        $payload = ['updated_at' => now()];
-        if ($request->has('name')) {
-            $payload['name'] = trim((string) $request->input('name'));
-        }
-        if ($request->has('location_type')) {
-            $payload['location_type'] = (string) $request->input('location_type');
-        }
-        if ($request->has('capacity')) {
-            $payload['capacity'] = $request->filled('capacity') ? (int) $request->input('capacity') : null;
-        }
-        if ($request->has('sort_order')) {
-            $payload['sort_order'] = (int) $request->input('sort_order');
-        }
+            $payload = ['updated_at' => now()];
+            if ($request->has('name')) {
+                $payload['name'] = trim((string) $request->input('name'));
+            }
+            if ($request->has('location_type')) {
+                $payload['location_type'] = (string) $request->input('location_type');
+            }
+            if ($request->has('capacity')) {
+                $payload['capacity'] = $request->filled('capacity') ? (int) $request->input('capacity') : null;
+            }
+            if ($request->has('sort_order')) {
+                $payload['sort_order'] = (int) $request->input('sort_order');
+            }
 
-        DB::table('gymies_gym_locations')->where('id', $id)->update($payload);
-        $row = DB::table('gymies_gym_locations')->where('id', $id)->first();
+            DB::table('gymies_gym_locations')->where('id', $id)->update($payload);
+            $row = DB::table('gymies_gym_locations')->where('id', $id)->first();
 
-        return response()->json([
-            'data' => [
-                'id' => (string) $row->id,
-                'organisation_id' => (string) $row->organisation_id,
-                'name' => (string) $row->name,
-                'location_type' => (string) $row->location_type,
-                'capacity' => $row->capacity !== null ? (int) $row->capacity : null,
-                'sort_order' => (int) $row->sort_order,
-                'created_at' => $row->created_at,
-                'updated_at' => $row->updated_at,
-            ],
-        ]);
+            return response()->json([
+                'data' => [
+                    'id' => (string) $row->id,
+                    'organisation_id' => (string) $row->organisation_id,
+                    'name' => (string) $row->name,
+                    'location_type' => (string) $row->location_type,
+                    'capacity' => $row->capacity !== null ? (int) $row->capacity : null,
+                    'sort_order' => (int) $row->sort_order,
+                    'created_at' => $row->created_at,
+                    'updated_at' => $row->updated_at,
+                ],
+            ]);
+        });
     }
 
     public function destroy(Request $request, string $id): JsonResponse

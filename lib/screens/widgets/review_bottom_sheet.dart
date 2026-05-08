@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../theme/gymies_theme.dart';
 import '../../utils/haptics.dart';
 
@@ -109,13 +110,13 @@ class _ReviewSheetState extends State<_ReviewSheet>
             children: [
               ListTile(
                 leading: const Icon(Icons.camera_alt_rounded),
-                title: Text('Camera', style: GoogleFonts.sora()),
+                title: Text(S.of(ctx).cameraLabel, style: GoogleFonts.sora()),
                 onTap: () => Navigator.pop(ctx, ImageSource.camera),
               ),
               const Divider(height: 1),
               ListTile(
                 leading: const Icon(Icons.photo_library_rounded),
-                title: Text('Galerij', style: GoogleFonts.sora()),
+                title: Text(S.of(ctx).galleryLabel, style: GoogleFonts.sora()),
                 onTap: () => Navigator.pop(ctx, ImageSource.gallery),
               ),
             ],
@@ -184,13 +185,13 @@ class _ReviewSheetState extends State<_ReviewSheet>
                         width: 36,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.3),
+                          color: Colors.white.withOpacity(0.3),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Beoordeling geven',
+                        S.of(context).giveRating,
                         style: GoogleFonts.sora(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -202,7 +203,7 @@ class _ReviewSheetState extends State<_ReviewSheet>
                         'Sessie bij ${widget.trainerName}',
                         style: GoogleFonts.sora(
                           fontSize: 14,
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: Colors.white.withOpacity(0.6),
                         ),
                       ),
                     ],
@@ -219,7 +220,7 @@ class _ReviewSheetState extends State<_ReviewSheet>
                 children: [
                   // Vraag
                   Text(
-                    'Hoe was je sessie?',
+                    S.of(context).howWasYourSession,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.sora(
                       fontSize: 14,
@@ -268,7 +269,7 @@ class _ReviewSheetState extends State<_ReviewSheet>
                     maxLength: 500,
                     style: GoogleFonts.sora(fontSize: 14),
                     decoration: InputDecoration(
-                      hintText: 'Compliment of opmerking (optioneel)',
+                      hintText: S.of(context).complimentOptional,
                       hintStyle: GoogleFonts.sora(
                         fontSize: 14,
                         color: Colors.grey.shade400,
@@ -326,7 +327,7 @@ class _ReviewSheetState extends State<_ReviewSheet>
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'Foto',
+                                  S.of(context).photoLabel,
                                   style: GoogleFonts.sora(
                                     fontSize: 10,
                                     color: Colors.grey.shade500,
@@ -358,7 +359,7 @@ class _ReviewSheetState extends State<_ReviewSheet>
                                     width: 20,
                                     height: 20,
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.6),
+                                      color: Colors.black.withOpacity(0.6),
                                       shape: BoxShape.circle,
                                     ),
                                     child: const Icon(
@@ -415,7 +416,7 @@ class _ReviewSheetState extends State<_ReviewSheet>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Anoniem plaatsen',
+                                S.of(context).postAnonymously,
                                 style: GoogleFonts.sora(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w500,
@@ -423,7 +424,7 @@ class _ReviewSheetState extends State<_ReviewSheet>
                                 ),
                               ),
                               Text(
-                                'Je naam wordt niet getoond bij de review',
+                                S.of(context).nameNotShownOnReview,
                                 style: GoogleFonts.sora(
                                   fontSize: 12,
                                   color: Colors.grey.shade500,
@@ -454,7 +455,7 @@ class _ReviewSheetState extends State<_ReviewSheet>
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      child: const Text('Versturen'),
+                      child: Text(S.of(context).submitActionLabel),
                     ),
                   ),
                   SizedBox(height: MediaQuery.of(context).padding.bottom + 8),

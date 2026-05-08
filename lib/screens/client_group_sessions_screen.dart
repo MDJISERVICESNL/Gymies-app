@@ -1,7 +1,9 @@
+
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../config/timing_constants.dart';
 import '../utils/haptics.dart';
 import '../services/api_client.dart';
@@ -9,11 +11,11 @@ import '../services/auth_service.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/map_utils.dart';
+import '../utils/currency_format.dart';
 import 'client_group_session_detail_screen.dart';
 import 'client_my_group_sessions_screen.dart';
 import 'login_register_screen.dart';
 import 'widgets/trainer_state_views.dart';
-
 /// Publieke lijst groepslessen – voor iedereen (ook niet ingelogd).
 class ClientGroupSessionsScreen extends StatefulWidget {
   const ClientGroupSessionsScreen({super.key});
@@ -37,12 +39,14 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final list = await context.read<GymiesApi>().getPublicGroupSessions(
+      final list = await api.getPublicGroupSessions(
             from: _filterFrom,
             to: _filterTo,
           );
@@ -60,7 +64,7 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon groepslessen niet laden.';
+        _error = S.of(context).konGroepslessenNietLaden;
         _loading = false;
       });
     }
@@ -106,7 +110,7 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Groepslessen',
+                        S.of(context).groepslessen,
                         style: GoogleFonts.sora(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -117,7 +121,7 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                     if (auth.isLoggedIn && !auth.isTrainer && !auth.isAdmin)
                       IconButton(
                         icon: const Icon(Icons.event_available_rounded, color: Colors.white),
-                        tooltip: 'Mijn inschrijvingen',
+                        tooltip: S.of(context).mijnInschrijvingen,
                         onPressed: () async {
                           Haptics.selection();
                           await Navigator.of(context).push(
@@ -148,7 +152,7 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                                 width: 72,
                                 height: 72,
                                 decoration: BoxDecoration(
-                                  color: GymiesColors.primary.withValues(alpha: 0.15),
+                                  color: GymiesColors.primary.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: const Icon(
@@ -160,7 +164,7 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                             ),
                             const SizedBox(height: 20),
                             Text(
-                              'Geen groepslessen gevonden',
+                              S.of(context).geenGroepslessenGevonden,
                               style: GoogleFonts.sora(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w700,
@@ -170,7 +174,7 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Er zijn momenteel geen groepslessen gepland in de gekozen periode.',
+                              S.of(context).erZijnMomenteelGeenGroepslessenGeplandInDeGekozenPeriode,
                               style: GoogleFonts.sora(
                                 fontSize: 14,
                                 color: Colors.grey.shade600,
@@ -186,16 +190,21 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                           itemBuilder: (_, i) {
                             final s = _sessions[i];
                             final id = mapStr(s, ['id', 'group_session_id']);
+
+                            // Key for proper list item tracking
+                            final key = ValueKey<String>(id.isNotEmpty ? id : 'session_$i');
                             final rawTitle = mapStr(s, ['title', 'name']);
-                            final title = rawTitle.isEmpty ? 'Groepsles' : rawTitle;
+                            final title = rawTitle.isEmpty ? S.of(context).groepsles : rawTitle;
                             final startsAt = DateTime.tryParse(mapStr(s, [
+                              'scheduled_at',
+                              'scheduledAt',
                               'starts_at',
                               'startsAt',
                               'start_at',
                               'date',
                             ]));
                             final trainerName =
-                                mapStr(s, ['trainer_name', 'trainerName', 'name']);
+                                mapStr(s, [S.of(context).trainername, S.of(context).trainername2, 'name']);
                             final capacity =
                                 int.tryParse(mapStr(s, ['capacity', 'max_participants'])) ?? 0;
                             final enrolled =
@@ -216,6 +225,7 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                             final isFull = capacity > 0 && enrolled >= capacity;
 
                             return Padding(
+                              key: key,
                               padding: const EdgeInsets.only(bottom: 10),
                               child: Material(
                                 color: Colors.white,
@@ -253,7 +263,7 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                                       borderRadius: BorderRadius.circular(16),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withValues(alpha: 0.05),
+                                          color: Colors.black.withOpacity(0.05),
                                           blurRadius: 12,
                                           offset: const Offset(0, 3),
                                         ),
@@ -361,8 +371,8 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                                                         ),
                                                         decoration: BoxDecoration(
                                                           color: isFull
-                                                              ? Colors.red.withValues(alpha: 0.12)
-                                                              : Colors.green.withValues(alpha: 0.12),
+                                                              ? Colors.red.withOpacity(0.12)
+                                                              : Colors.green.withOpacity(0.12),
                                                           borderRadius: BorderRadius.circular(8),
                                                         ),
                                                         child: Text(
@@ -387,11 +397,11 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                                                           vertical: 3,
                                                         ),
                                                         decoration: BoxDecoration(
-                                                          color: GymiesColors.primary.withValues(alpha: 0.15),
+                                                          color: GymiesColors.primary.withOpacity(0.15),
                                                           borderRadius: BorderRadius.circular(8),
                                                         ),
                                                         child: Text(
-                                                          '€${(displayCents / 100).toStringAsFixed(2).replaceAll('.', ',')} p.p.',
+                                                          '${formatEuroPp(displayCents)}',
                                                           style: GoogleFonts.sora(
                                                             fontSize: 11,
                                                             fontWeight: FontWeight.w600,
@@ -406,11 +416,11 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                                                         decoration: BoxDecoration(
-                                                          color: Colors.green.withValues(alpha: 0.12),
+                                                          color: Colors.green.withOpacity(0.12),
                                                           borderRadius: BorderRadius.circular(8),
                                                         ),
                                                         child: Text(
-                                                          'Gaat door!',
+                                                          S.of(context).gaatDoor,
                                                           style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.green.shade700),
                                                         ),
                                                       ),
@@ -419,7 +429,7 @@ class _ClientGroupSessionsScreenState extends State<ClientGroupSessionsScreen> {
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                                                         decoration: BoxDecoration(
-                                                          color: Colors.orange.withValues(alpha: 0.12),
+                                                          color: Colors.orange.withOpacity(0.12),
                                                           borderRadius: BorderRadius.circular(8),
                                                         ),
                                                         child: Text(

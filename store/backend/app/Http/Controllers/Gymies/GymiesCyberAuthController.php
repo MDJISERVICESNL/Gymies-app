@@ -70,24 +70,114 @@ class GymiesCyberAuthController
         }
 
         // T-055 FIXED: globale (user-based) rate limit toegevoegd naast IP-based
-        $globalKey = 'cyber_pin_global:' . (int)$user->id;
-        $globalWindowStart = now()->subMinutes(15);
-        $globalAttempts = DB::table('gymies_rate_limits')
-            ->where('key', $globalKey)
-            ->where('window_start', '>=', $globalWindowStart)
-            ->count();
-        if ($globalAttempts >= 10) {
-            return response()->json([
-                'message' => 'Te veel PIN pogingen. Account tijdelijk geblokkeerd.',
-                'retry_after' => 15 * 60,
-            ], 429);
+        // BUG-013: Add transaction wrapping to prevent race condition on rate limit check
+        try {
+            return DB::transaction(function () use ($user, $ip, $lockout, $request) {
+                $globalKey = 'cyber_pin_global:' . (int)$user->id;
+                $globalWindowStart = now()->subMinutes(15);
+                $globalAttempts = DB::table('gymies_rate_limits')
+                    ->where('key', $globalKey)
+                    ->where('window_start', '>=', $globalWindowStart)
+                    ->count();
+                if ($globalAttempts >= 10) {
+                    return response()->json([
+                        'message' => 'Te veel PIN pogingen. Account tijdelijk geblokkeerd.',
+                        'retry_after' => 15 * 60,
+                    ], 429);
+                }
+                // Log ook de globale poging
+                DB::table('gymies_rate_limits')->insert([
+                    'key' => $globalKey,
+                    'window_start' => now(),
+                    'created_at' => now(),
+                ]);
+
+                // Continue with PIN validation (rest of login logic)
+                $pin = (string)($request->input('pin') ?? '');
+                if (strlen($pin) !== self::PIN_LENGTH || !ctype_digit($pin)) {
+                    return response()->json(['message' => 'PIN moet precies ' . self::PIN_LENGTH . ' cijfers zijn.'], 422);
+                }
+
+                $pinHash = DB::table('gymies_users')
+                    ->where('id', $user->id)
+                    ->value('cyber_pin_hash');
+
+                if (!$pinHash || !Hash::check($pin, $pinHash)) {
+                    // Mislukte poging registreren
+                    $attempts = ($lockout->attempts ?? 0) + 1;
+                    $lockedUntil = $attempts >= self::MAX_PIN_ATTEMPTS
+                        ? now()->addMinutes(self::LOCKOUT_MINUTES)->toDateTimeString()
+                        : null;
+
+                    DB::table('gymies_cyber_pin_lockouts')->updateOrInsert(
+                        ['user_id' => $user->id, 'ip_address' => $ip],
+                        ['attempts' => $attempts, 'locked_until' => $lockedUntil, 'last_attempt' => now()]
+                    );
+
+                    $this->auditLog($user->id, null, 'cyber.login.failed', '/cyber/auth', 'POST', $ip, 401);
+
+                    $remaining = max(0, self::MAX_PIN_ATTEMPTS - $attempts);
+                    return response()->json([
+                        'message'           => !$pinHash
+                            ? 'Geen PIN ingesteld. Stel eerst een PIN in.'
+                            : "Onjuiste PIN. Nog {$remaining} poging" . ($remaining !== 1 ? 'en' : '') . " over.",
+                        'attempts_remaining'=> $remaining,
+                        'pin_not_set'       => !$pinHash,
+                    ], 401);
+                }
+
+                // Succesvolle login → reset lockout
+                DB::table('gymies_cyber_pin_lockouts')
+                    ->where('user_id', $user->id)
+                    ->where('ip_address', $ip)
+                    ->delete();
+
+                // ── Cyber token genereren ────────────────────────────────────────────
+                $rawToken  = bin2hex(random_bytes(32));        // 64 hex chars
+                $tokenHash = hash('sha256', $rawToken);
+                $expiresAt = now()->addMinutes(self::TOKEN_TTL_MINUTES);
+
+                // Oude sessies van dezelfde user + IP intrekken (1 actieve sessie per user/IP)
+                DB::table('gymies_cyber_sessions')
+                    ->where('user_id', $user->id)
+                    ->where('ip_address', $ip)
+                    ->update(['revoked' => 1]);
+
+                $sessionId = DB::table('gymies_cyber_sessions')->insertGetId([
+                    'user_id'     => $user->id,
+                    'token_hash'  => $tokenHash,
+                    'ip_address'  => $ip,
+                    'user_agent'  => substr($request->userAgent() ?? '', 0, 500),
+                    'last_active' => now(),
+                    'expires_at'  => $expiresAt,
+                    'revoked'     => 0,
+                    'created_at'  => now(),
+                ]);
+
+                $this->auditLog($user->id, $sessionId, 'cyber.login.success', '/cyber/auth', 'POST', $ip, 200);
+
+                Log::info('[Cyber] Sessie aangemaakt', [
+                    'user_id'    => $user->id,
+                    'session_id' => $sessionId,
+                    'ip'         => $ip,
+                    'expires_at' => $expiresAt,
+                ]);
+
+                // S-008: Voorkom dat proxy's/browsers de token cachen door gevoelige headers.
+                return response()->json([
+                    'cyber_token' => $rawToken,
+                    'expires_at'  => $expiresAt->toIso8601String(),
+                    'expires_in'  => self::TOKEN_TTL_MINUTES * 60, // seconden
+                    'session_id'  => $sessionId,
+                ])->withHeaders([
+                    'Cache-Control' => 'no-store, no-cache, must-revalidate',
+                    'Pragma'        => 'no-cache',
+                ]);
+            });
+        } catch (\Throwable $e) {
+            Log::error('[Cyber] Login transaction failed', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Er is een fout opgetreden. Probeer opnieuw.'], 500);
         }
-        // Log ook de globale poging
-        DB::table('gymies_rate_limits')->insert([
-            'key' => $globalKey,
-            'window_start' => now(),
-            'created_at' => now(),
-        ]);
 
         // ── PIN valideren ────────────────────────────────────────────────────
         $pin = (string)($request->input('pin') ?? '');

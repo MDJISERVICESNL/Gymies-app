@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -88,16 +89,26 @@ trait SubscriptionPaymentTrait
             ],
         ];
 
-        $resp = Http::withToken($apiKey)
-            ->asJson()
-            ->timeout(15)
-            ->post('https://api.mollie.com/v2/payments', $payload);
+        try {
+            $resp = Http::withToken($apiKey)
+                ->asJson()
+                ->timeout(15)
+                ->post('https://api.mollie.com/v2/payments', $payload);
 
-        if (!$resp->successful()) {
-            $body = $resp->json();
-            $msg = $body['detail'] ?? $body['title'] ?? $resp->body();
+            if (!$resp->successful()) {
+                $body = $resp->json();
+                $msg = $body['detail'] ?? $body['title'] ?? $resp->body();
+                return response()->json([
+                    'message' => 'Kon betaling niet starten: ' . (is_string($msg) ? $msg : 'Mollie fout'),
+                ], 502);
+            }
+        } catch (\Throwable $e) {
+            Log::error('SubscriptionPaymentTrait: Mollie payment creation failed', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
             return response()->json([
-                'message' => 'Kon betaling niet starten: ' . (is_string($msg) ? $msg : 'Mollie fout'),
+                'message' => 'Kon betaling niet starten. Probeer het later opnieuw.',
             ], 502);
         }
 
@@ -121,7 +132,9 @@ trait SubscriptionPaymentTrait
 
     protected function getSubscriptionMollieApiKey(): ?string
     {
-        $key = config('services.mollie.key') ?? env('MOLLIE_API_KEY');
+        // BUG FIX: Config should use 'gymies.mollie_api_key' consistently with GymiesPaymentController
+        // This ensures both booking payments and subscription payments use the same key source
+        $key = config('gymies.mollie_api_key') ?? config('services.mollie.key') ?? env('MOLLIE_API_KEY');
         return is_string($key) && $key !== '' ? $key : null;
     }
 
@@ -135,17 +148,20 @@ trait SubscriptionPaymentTrait
             return;
         }
         $now = now();
-        DB::table('gymies_subscription_payments')->updateOrInsert(
-            ['mollie_payment_id' => $molliePaymentId],
-            [
-                'user_id' => $userId,
-                'tier' => $tier,
-                'amount_cents' => $amountCents,
-                'status' => 'open',
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]
-        );
+        // BUG FIX: Wrap in transaction for atomicity and use idempotent logic
+        DB::transaction(function () use ($molliePaymentId, $userId, $tier, $amountCents, $now) {
+            DB::table('gymies_subscription_payments')->updateOrInsert(
+                ['mollie_payment_id' => $molliePaymentId],
+                [
+                    'user_id' => $userId,
+                    'tier' => $tier,
+                    'amount_cents' => $amountCents,
+                    'status' => 'open',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]
+            );
+        });
     }
 
     /**

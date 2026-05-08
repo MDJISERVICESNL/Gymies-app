@@ -28,16 +28,33 @@ final class GymiesFavoritesController extends Controller
 
         GymiesSchemaEnsure::favoritesTable();
         if (!Schema::hasTable('gymies_favorites')) {
-            return response()->json(['trainer_ids' => []]);
+            return response()->json(['trainer_ids' => [], 'total_count' => 0, 'page' => 1, 'per_page' => 50]);
         }
 
-        $ids = DB::table('gymies_favorites')
-            ->where('client_user_id', $userId)
+        // Add pagination
+        $limit = min(100, max(1, (int) ($request->query('limit') ?? 50)));
+        $offset = max(0, (int) ($request->query('offset') ?? 0));
+
+        $query = DB::table('gymies_favorites')
+            ->where('client_user_id', $userId);
+
+        $totalCount = $query->count();
+
+        $ids = $query
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->offset($offset)
             ->pluck('trainer_user_id')
             ->map(fn ($id) => (string) $id)
             ->all();
 
-        return response()->json(['trainer_ids' => $ids]);
+        return response()->json([
+            'trainer_ids' => $ids,
+            'total_count' => $totalCount,
+            'page' => (int) ceil(($offset / $limit) + 1),
+            'per_page' => $limit,
+            'total_pages' => ceil($totalCount / $limit),
+        ]);
     }
 
     /**

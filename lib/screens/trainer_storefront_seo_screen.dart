@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../services/storefront_cms_provider.dart';
@@ -69,7 +70,7 @@ class _TrainerStorefrontSeoScreenState
       setState(() { _error = e.message; _loading = false; });
     } catch (_) {
       if (!mounted) return;
-      setState(() { _error = 'Kon SEO-gegevens niet laden.'; _loading = false; });
+      setState(() { _error = S.of(context).konSeogegevensNietLaden; _loading = false; });
     }
   }
 
@@ -78,19 +79,23 @@ class _TrainerStorefrontSeoScreenState
     if (_saving) return;
     setState(() => _saving = true);
     try {
+      // ignore: use_build_context_synchronously
       final api = context.read<GymiesApi>();
       await api.updateTrainerStorefrontCms({
         'seo_title': _metaTitleController.text.trim(),
         'seo_description': _metaDescController.text.trim(),
       });
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
       context.read<StorefrontCmsProvider>().invalidate();
       if (!mounted) return;
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(children: [
             const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
             const SizedBox(width: 8),
-            Text('SEO opgeslagen', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+            Text(S.of(context).seoOpgeslagen, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
           ]),
           backgroundColor: GymiesColors.darkBlue,
           behavior: SnackBarBehavior.floating,
@@ -117,7 +122,7 @@ class _TrainerStorefrontSeoScreenState
       setState(() { _verified = true; _saving = false; });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Verificatie aangevraagd!'),
+          content: Text(S.of(context).verificatieAangevraagd),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -138,9 +143,9 @@ class _TrainerStorefrontSeoScreenState
   }
 
   Color _scoreColor(int s) {
-    if (s >= 80) return Colors.green;
-    if (s >= 60) return Colors.orange;
-    return Colors.red;
+    if (s >= 80) return const Color(0xFF10B981); // Green
+    if (s >= 60) return const Color(0xFFF59E0B); // Orange
+    return const Color(0xFFEF4444); // Red
   }
 
   String _scoreLabel(int s) {
@@ -151,8 +156,8 @@ class _TrainerStorefrontSeoScreenState
   }
 
   Color _charColor(int cur, int min, int max) {
-    if (cur >= min && cur <= max) return Colors.green;
-    if (cur > 0) return Colors.red;
+    if (cur >= min && cur <= max) return const Color(0xFF10B981); // Green
+    if (cur > 0) return const Color(0xFFEF4444); // Red
     return Colors.grey;
   }
 
@@ -190,25 +195,27 @@ class _TrainerStorefrontSeoScreenState
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: const GymiesAppBar(title: 'SEO & Verificatie'),
-      body: GymiesListBody(
-        loading: _loading,
-        error: _error,
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: GymiesListBody(
+          loading: _loading,
+          error: _error,
+          onRefresh: _load,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
             // ── SEO Score ──
             _sectionCard(
               icon: Icons.speed_outlined,
-              title: 'SEO Score',
-              subtitle: 'Hoe goed vindbaar ben je?',
+              title: S.of(context).seoScore,
+              subtitle: S.of(context).hoeGoedVindbaarBenJe,
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: _scoreColor(score).withValues(alpha: 0.1),
+                    color: _scoreColor(score).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _scoreColor(score).withValues(alpha: 0.3)),
+                    border: Border.all(color: _scoreColor(score).withOpacity(0.3)),
                   ),
                   child: Row(
                     children: [
@@ -236,7 +243,7 @@ class _TrainerStorefrontSeoScreenState
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('SEO Score',
+                            Text(S.of(context).seoScore,
                                 style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
                             const SizedBox(height: 4),
                             Text(_scoreLabel(score),
@@ -255,15 +262,15 @@ class _TrainerStorefrontSeoScreenState
             _sectionCard(
               icon: Icons.title_rounded,
               title: 'Meta tags',
-              subtitle: 'Titel en beschrijving voor zoekmachines',
+              subtitle: S.of(context).titelEnBeschrijvingVoorZoekmachines,
               children: [
-                Text('Meta titel',
+                Text(S.of(context).metaTitel,
                     style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _metaTitleController,
                   style: GoogleFonts.sora(fontSize: 14),
-                  decoration: _inputDecoration(hint: 'bijv. Personal trainer Amsterdam'),
+                  decoration: _inputDecoration(hint: S.of(context).bijvPersonalTrainerAmsterdam),
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 6),
@@ -271,7 +278,7 @@ class _TrainerStorefrontSeoScreenState
                     style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w500, color: _charColor(tl, 50, 60))),
                 const SizedBox(height: 20),
 
-                Text('Meta beschrijving',
+                Text(S.of(context).metaBeschrijving,
                     style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
                 const SizedBox(height: 8),
                 TextField(
@@ -279,7 +286,7 @@ class _TrainerStorefrontSeoScreenState
                   maxLines: 3,
                   maxLength: 160,
                   style: GoogleFonts.sora(fontSize: 14),
-                  decoration: _inputDecoration(hint: 'Korte beschrijving voor zoekmachines'),
+                  decoration: _inputDecoration(hint: S.of(context).korteBeschrijvingVoorZoekmachines),
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 6),
@@ -293,7 +300,7 @@ class _TrainerStorefrontSeoScreenState
             _sectionCard(
               icon: Icons.search_outlined,
               title: 'Google Preview',
-              subtitle: 'Zo zien mensen jou in zoekresultaten',
+              subtitle: S.of(context).zoZienMensenJouInZoekresultaten,
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -306,7 +313,7 @@ class _TrainerStorefrontSeoScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        tl > 0 ? _metaTitleController.text : 'Personal trainer Amsterdam',
+                        tl > 0 ? _metaTitleController.text : S.of(context).personalTrainerAmsterdam,
                         style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w600, color: const Color(0xFF1F2937)),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -318,7 +325,7 @@ class _TrainerStorefrontSeoScreenState
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        dl > 0 ? _metaDescController.text : 'Korte beschrijving voor zoekmachines...',
+                        dl > 0 ? _metaDescController.text : S.of(context).korteBeschrijvingVoorZoekmachines2,
                         style: GoogleFonts.sora(fontSize: 13, color: const Color(0xFF6B7280)),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -334,7 +341,7 @@ class _TrainerStorefrontSeoScreenState
             _sectionCard(
               icon: Icons.verified_outlined,
               title: 'Verificatie badge',
-              subtitle: 'Krijg een blauw vinkje op je profiel',
+              subtitle: S.of(context).krijgEenBlauwVinkjeOpJe,
               children: [
                 Row(
                   children: [
@@ -342,12 +349,12 @@ class _TrainerStorefrontSeoScreenState
                       width: 48,
                       height: 48,
                       decoration: BoxDecoration(
-                        color: _verified ? Colors.blue.shade50 : Colors.grey.shade100,
+                        color: _verified ? const Color(0xFFEFF6FF) : Colors.grey.shade100, // Light blue
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Icon(
                         _verified ? Icons.verified : Icons.verified_outlined,
-                        color: _verified ? Colors.blue.shade800 : Colors.grey.shade400,
+                        color: _verified ? const Color(0xFF1E40AF) : Colors.grey.shade400, // Dark blue
                         size: 26,
                       ),
                     ),
@@ -357,18 +364,18 @@ class _TrainerStorefrontSeoScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _verified ? 'Geverifieerd' : 'Nog niet geverifieerd',
+                            _verified ? 'Geverifieerd' : S.of(context).nogNietGeverifieerd,
                             style: GoogleFonts.sora(
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
-                              color: _verified ? Colors.blue.shade800 : GymiesColors.darkBlue,
+                              color: _verified ? const Color(0xFF1E40AF) : GymiesColors.darkBlue, // Dark blue
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             _verified
-                                ? 'Je profiel heeft een blauw vinkje.'
-                                : 'Vraag verificatie aan voor een blauw vinkje.',
+                                ? S.of(context).jeProfielHeeftEenBlauwVinkje
+                                : S.of(context).vraagVerificatieAanVoorEenBlauw,
                             style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600),
                           ),
                         ],
@@ -383,7 +390,7 @@ class _TrainerStorefrontSeoScreenState
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        child: Text('Aanvragen',
+                        child: Text(S.of(context).aanvragen,
                             style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600)),
                       ),
                   ],
@@ -402,7 +409,7 @@ class _TrainerStorefrontSeoScreenState
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: GymiesColors.primary.withValues(alpha: 0.3),
+                      color: GymiesColors.primary.withOpacity(0.3),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),
@@ -420,7 +427,7 @@ class _TrainerStorefrontSeoScreenState
                       const Icon(Icons.save_rounded, color: GymiesColors.darkBlue, size: 22),
                     const SizedBox(width: 10),
                     Text(
-                      _saving ? 'Opslaan...' : 'SEO opslaan',
+                      _saving ? S.of(context).opslaan2 : 'SEO opslaan',
                       style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue),
                     ),
                   ],
@@ -429,6 +436,7 @@ class _TrainerStorefrontSeoScreenState
             ),
             const SizedBox(height: 16),
           ],
+          ),
         ),
       ),
     );
@@ -445,7 +453,7 @@ class _TrainerStorefrontSeoScreenState
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -456,7 +464,7 @@ class _TrainerStorefrontSeoScreenState
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: GymiesColors.primary.withValues(alpha: 0.15),
+                  color: GymiesColors.primary.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, size: 20, color: GymiesColors.darkBlue),

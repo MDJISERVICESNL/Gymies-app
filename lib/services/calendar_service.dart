@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:add_2_calendar/add_2_calendar.dart';
-import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/booking.dart';
@@ -54,9 +53,12 @@ class CalendarService {
   /// werd getoond – we kunnen niet garanderen dat de gebruiker bevestigde).
   Future<bool> addBookingToCalendar(Booking booking) async {
     try {
+      if (booking.id.isEmpty || booking.scheduledAt.isBefore(DateTime.now())) {
+        return false; // Reject invalid or past bookings
+      }
       final event = _buildEvent(booking);
       final result = await Add2Calendar.addEvent2Cal(event);
-      return result;
+      return result ?? false;
     } catch (e) {
       if (kDebugMode) debugPrint('[CalendarService] Fout bij toevoegen aan kalender: $e');
       return false;

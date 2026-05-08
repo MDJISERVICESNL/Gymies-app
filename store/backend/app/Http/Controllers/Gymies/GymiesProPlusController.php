@@ -10,6 +10,7 @@ use App\Models\TrainerNewsletter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -201,18 +202,29 @@ final class GymiesProPlusController extends Controller
             'verified_badge'     => ['nullable', 'boolean'], // admin-only in productie
         ]);
 
-        self::ensureTable();
+        // BUG-006: Add transaction wrapping and error handling for atomic updates
+        try {
+            return DB::transaction(function () use ($user, $validated) {
+                self::ensureTable();
 
-        $settings = TrainerProPlusSettings::firstOrCreate(['trainer_user_id' => (int) $user->id]);
-        // Map Flutter-veldnamen naar DB-kolomnamen (widget_enabled → booking_widget_enabled, etc.)
-        $dbData = self::mapFlutterToDb(array_filter($validated, fn($v) => $v !== null));
-        $settings->update($dbData);
+                $settings = TrainerProPlusSettings::firstOrCreate(['trainer_user_id' => (int) $user->id]);
+                // Map Flutter-veldnamen naar DB-kolomnamen (widget_enabled → booking_widget_enabled, etc.)
+                $dbData = self::mapFlutterToDb(array_filter($validated, fn($v) => $v !== null));
+                $settings->update($dbData);
 
-        return response()->json([
-            'ok' => true,
-            'settings' => self::settingsToFlutter($settings),
-            'message' => 'Pro+ settings updated successfully.',
-        ]);
+                return response()->json([
+                    'ok' => true,
+                    'settings' => self::settingsToFlutter($settings),
+                    'message' => 'Pro+ settings updated successfully.',
+                ]);
+            });
+        } catch (\Throwable $e) {
+            Log::error('ProPlus settings update failed', [
+                'user_id' => (int) $user->id,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['message' => 'Fout bij het opslaan van instellingen.'], 500);
+        }
     }
 
     /**

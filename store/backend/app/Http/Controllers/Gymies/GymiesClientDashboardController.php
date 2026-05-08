@@ -204,8 +204,10 @@ final class GymiesClientDashboardController extends Controller
 
         $total = (clone $query)->count();
 
+        // FIX 4: Ensure consistent ordering for paginated queries
         $bookings = $query
             ->orderByDesc('b.scheduled_at')
+            ->orderByDesc('b.id')
             ->offset(($page - 1) * $perPage)
             ->limit($perPage)
             ->select([

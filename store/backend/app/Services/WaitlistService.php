@@ -60,27 +60,38 @@ class WaitlistService
             ];
         }
 
-        // Bepaal positie
-        $maxPosition = (int) DB::table(self::TABLE)
-            ->where('trainer_user_id', $trainerUserId)
-            ->where('desired_date', $desiredDate)
-            ->where('desired_time', $desiredTime)
-            ->whereIn('status', ['waiting', 'offered'])
-            ->max('position');
+        // Bepaal positie binnen transactie met lock om race condition te voorkomen
+        $position = null;
+        DB::transaction(function() use (
+            $clientUserId,
+            $trainerUserId,
+            $desiredDate,
+            $desiredTime,
+            $durationMinutes,
+            &$position
+        ) {
+            $maxPosition = (int) DB::table(self::TABLE)
+                ->where('trainer_user_id', $trainerUserId)
+                ->where('desired_date', $desiredDate)
+                ->where('desired_time', $desiredTime)
+                ->whereIn('status', ['waiting', 'offered'])
+                ->lockForUpdate()
+                ->max('position') ?? 0;
 
-        $position = $maxPosition + 1;
+            $position = $maxPosition + 1;
 
-        DB::table(self::TABLE)->insert([
-            'client_user_id' => $clientUserId,
-            'trainer_user_id' => $trainerUserId,
-            'desired_date' => $desiredDate,
-            'desired_time' => $desiredTime,
-            'desired_duration_minutes' => $durationMinutes,
-            'position' => $position,
-            'status' => 'waiting',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+            DB::table(self::TABLE)->insert([
+                'client_user_id' => $clientUserId,
+                'trainer_user_id' => $trainerUserId,
+                'desired_date' => $desiredDate,
+                'desired_time' => $desiredTime,
+                'desired_duration_minutes' => $durationMinutes,
+                'position' => $position,
+                'status' => 'waiting',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        });
 
         return [
             'success' => true,
@@ -177,10 +188,10 @@ class WaitlistService
             $overlap = DB::table('gymies_bookings')
                 ->where('trainer_user_id', $entry->trainer_user_id)
                 ->whereIn('status', ['pending', 'confirmed', 'reserved'])
+                ->lockForUpdate()
                 ->whereRaw("? < DATE_ADD(scheduled_at, INTERVAL duration_minutes MINUTE) AND DATE_ADD(?, INTERVAL ? MINUTE) > scheduled_at", [
                     $scheduledAt, $scheduledAt, $duration,
                 ])
-                ->lockForUpdate()
                 ->exists();
 
             if ($overlap) {
@@ -300,30 +311,198 @@ class WaitlistService
      */
     private function notifyOffer(object $entry, string $date, string $time, Carbon $expiresAt): void
     {
-        if (!Schema::hasTable('gymies_notification_queue')) {
+        $formattedDate = Carbon::parse($date)->format('d-m-Y');
+        $clientUserId = (int) $entry->client_user_id;
+
+        // In-app notification queue
+        if (Schema::hasTable('gymies_notification_queue')) {
+            try {
+                DB::table('gymies_notification_queue')->insert([
+                    'user_id' => $clientUserId,
+                    'channel' => 'push',
+                    'event_type' => 'waitlist_slot_available',
+                    'payload_json' => json_encode([
+                        'waitlist_id' => (string) $entry->id,
+                        'trainer_user_id' => (string) $entry->trainer_user_id,
+                        'date' => $date,
+                        'time' => $time,
+                        'expires_at' => $expiresAt->toIso8601String(),
+                        'message' => "Er is een plek vrijgekomen op {$formattedDate} om {$time}! Claim binnen 15 minuten.",
+                    ], JSON_UNESCAPED_UNICODE),
+                    'scheduled_for' => now(),
+                    'created_at' => now(),
+                ]);
+            } catch (\Throwable) {
+                // Silently ignore queue failures
+            }
+        }
+
+        // Direct FCM push notificatie
+        try {
+            $trainerName = DB::table('gymies_users')
+                ->where('id', $entry->trainer_user_id)
+                ->value('display_name') ?? 'je trainer';
+
+            \App\Http\Controllers\Gymies\FcmPushHelper::sendToUser(
+                $clientUserId,
+                "Plek vrijgekomen bij {$trainerName}!",
+                "Op {$formattedDate} om {$time} is een plek vrij. Claim binnen 15 minuten!",
+                [
+                    'type'             => 'waitlist_spot_available',
+                    'action'           => 'claim_offer',
+                    'screen'           => 'waitlist_offer',
+                    'waitlist_id'      => (string) $entry->id,
+                    'trainer_user_id'  => (string) $entry->trainer_user_id,
+                    'date'             => $date,
+                    'time'             => $time,
+                    'expires_at'       => $expiresAt->toIso8601String(),
+                ]
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('FCM waitlist offer push failed', ['error' => $e->getMessage()]);
+        }
+    }
+
+    // ─── Groepslessen wachtlijst integratie ─────────────────────
+
+    /**
+     * Trigger wanneer een deelnemer zich afmeldt voor een groepsles.
+     * Biedt de plek aan de eerste op de groepslessen-wachtlijst aan.
+     */
+    public function onGroupSessionCancelled(int $groupSessionId): void
+    {
+        if (!Schema::hasTable('gymies_group_session_waitlist')) {
             return;
         }
 
-        $formattedDate = Carbon::parse($date)->format('d-m-Y');
+        $session = DB::table('gymies_group_sessions')->where('id', $groupSessionId)->first();
+        if (!$session) return;
 
-        try {
-            DB::table('gymies_notification_queue')->insert([
-                'user_id' => $entry->client_user_id,
-                'channel' => 'push',
-                'event_type' => 'waitlist_slot_available',
-                'payload_json' => json_encode([
-                    'waitlist_id' => (string) $entry->id,
-                    'trainer_user_id' => (string) $entry->trainer_user_id,
-                    'date' => $date,
-                    'time' => $time,
-                    'expires_at' => $expiresAt->toIso8601String(),
-                    'message' => "Er is een plek vrijgekomen op {$formattedDate} om {$time}! Claim binnen 15 minuten.",
-                ], JSON_UNESCAPED_UNICODE),
-                'scheduled_for' => now(),
-                'created_at' => now(),
-            ]);
-        } catch (\Throwable) {
-            // Log failure silently
+        // Check of er nu plek is
+        $participantCount = DB::table('gymies_group_session_participants')
+            ->where('group_session_id', $groupSessionId)
+            ->whereIn('status', ['confirmed', 'checked_in'])
+            ->count();
+
+        $maxParticipants = (int) ($session->max_participants ?? 0);
+        if ($maxParticipants > 0 && $participantCount >= $maxParticipants) {
+            return; // Nog steeds vol
         }
+
+        // Vind eerste wachtende
+        $next = DB::table('gymies_group_session_waitlist')
+            ->where('group_session_id', $groupSessionId)
+            ->where('status', 'waiting')
+            ->orderBy('position')
+            ->first();
+
+        if (!$next) return;
+
+        $expiresAt = now()->addMinutes(self::CLAIM_WINDOW_MINUTES);
+
+        DB::table('gymies_group_session_waitlist')
+            ->where('id', $next->id)
+            ->update([
+                'status'     => 'offered',
+                'offered_at' => now(),
+                'expires_at' => $expiresAt,
+                'updated_at' => now(),
+            ]);
+
+        // FCM push notificatie
+        try {
+            $sessionTitle = $session->title ?? 'Groepsles';
+            $scheduledAt  = $session->scheduled_at ?? '';
+
+            (new OnboardingNotificationService())->notifyWaitlistSpotAvailable(
+                (int) $next->user_id,
+                $sessionTitle,
+                $scheduledAt,
+                $groupSessionId
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('FCM group waitlist push failed', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Klant claimt een groepsles-wachtlijst aanbod.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function claimGroupSessionOffer(int $waitlistId, int $userId): array
+    {
+        if (!Schema::hasTable('gymies_group_session_waitlist')) {
+            return ['success' => false, 'message' => 'Wachtlijst niet beschikbaar.'];
+        }
+
+        $entry = DB::table('gymies_group_session_waitlist')
+            ->where('id', $waitlistId)
+            ->where('user_id', $userId)
+            ->where('status', 'offered')
+            ->first();
+
+        if (!$entry) {
+            return ['success' => false, 'message' => 'Aanbod niet gevonden of verlopen.'];
+        }
+
+        // Check expiry
+        if ($entry->expires_at && Carbon::parse($entry->expires_at)->isPast()) {
+            DB::table('gymies_group_session_waitlist')
+                ->where('id', $entry->id)
+                ->update(['status' => 'expired', 'updated_at' => now()]);
+
+            $this->onGroupSessionCancelled((int) $entry->group_session_id);
+            return ['success' => false, 'message' => 'Aanbod is verlopen. De plek gaat naar de volgende.'];
+        }
+
+        // Schrijf in als deelnemer
+        DB::beginTransaction();
+        try {
+            DB::table('gymies_group_session_participants')->insert([
+                'group_session_id' => $entry->group_session_id,
+                'user_id'          => $userId,
+                'status'           => 'confirmed',
+                'created_at'       => now(),
+            ]);
+
+            DB::table('gymies_group_session_waitlist')
+                ->where('id', $entry->id)
+                ->update(['status' => 'claimed', 'updated_at' => now()]);
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return ['success' => false, 'message' => 'Inschrijving mislukt. Probeer opnieuw.'];
+        }
+
+        return ['success' => true, 'message' => 'Je bent ingeschreven voor de groepsles!'];
+    }
+
+    /**
+     * Expire verlopen groepslessen-wachtlijst aanbiedingen.
+     *
+     * @return int Aantal verlopen aanbiedingen
+     */
+    public function expireGroupSessionOffers(): int
+    {
+        if (!Schema::hasTable('gymies_group_session_waitlist')) {
+            return 0;
+        }
+
+        $expired = DB::table('gymies_group_session_waitlist')
+            ->where('status', 'offered')
+            ->where('expires_at', '<=', now())
+            ->get();
+
+        foreach ($expired as $entry) {
+            DB::table('gymies_group_session_waitlist')
+                ->where('id', $entry->id)
+                ->update(['status' => 'expired', 'updated_at' => now()]);
+
+            $this->onGroupSessionCancelled((int) $entry->group_session_id);
+        }
+
+        return count($expired);
     }
 }

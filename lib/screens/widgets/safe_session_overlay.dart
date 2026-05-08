@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../models/booking.dart';
 import '../../services/api_client.dart';
 import '../../services/gymies_api.dart';
@@ -42,6 +43,7 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
     with TickerProviderStateMixin {
   // ── State ──────────────────────────────────────────────────────
   bool _active = false;
+  // ignore: unused_field
   DateTime? _startedAt;
   DateTime? _expectedEndAt;
   int _minutesRemaining = 0;
@@ -173,11 +175,11 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Row(
+          content: Row(
             children: [
-              Icon(Icons.favorite_rounded, color: Colors.white, size: 18),
-              SizedBox(width: 8),
-              Text('Bedankt! Timer verlengd met 30 minuten.'),
+              const Icon(Icons.favorite_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text(S.of(context).timerExtended30Min),
             ],
           ),
           backgroundColor: Colors.green.shade700,
@@ -201,7 +203,7 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
     final ok = await GymiesDialog.destructive(
       context,
       title: 'SOS Noodalert',
-      message: 'Weet je zeker dat je een noodalert wilt versturen?\n\nJe noodcontact en het platform worden direct op de hoogte gesteld.',
+      message: S.of(context).weetJeZekerDatJeEen3,
       icon: Icons.emergency_rounded,
       confirmLabel: 'Verstuur SOS',
     );
@@ -254,11 +256,11 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Row(
+          content: Row(
             children: [
-              Icon(Icons.check_circle, color: Colors.white, size: 20),
-              SizedBox(width: 8),
-              Text('SOS verstuurd. Je noodcontact is op de hoogte.'),
+              const Icon(Icons.check_circle, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Text(S.of(context).emergencyContactAutoNotified),
             ],
           ),
           backgroundColor: Colors.red.shade700,
@@ -307,7 +309,7 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: [
                   BoxShadow(
-                    color: statusColor.withValues(alpha: 0.4),
+                    color: statusColor.withOpacity(0.4),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -326,8 +328,8 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
                   Expanded(
                     child: Text(
                       isOverdue
-                          ? 'Sessie duurt langer dan verwacht'
-                          : 'Veiligheidssessie actief',
+                          ? S.of(context).sessionTakingLonger
+                          : S.of(context).veiligheidssessieActief,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
@@ -358,13 +360,13 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: statusColor.withValues(alpha: 0.2),
+              color: statusColor.withOpacity(0.2),
               blurRadius: 20,
               offset: const Offset(0, 6),
             ),
           ],
           border: Border.all(
-            color: statusColor.withValues(alpha: 0.3),
+            color: statusColor.withOpacity(0.3),
             width: 2,
           ),
         ),
@@ -400,8 +402,8 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
                   Expanded(
                     child: Text(
                       isOverdue
-                          ? 'Alles goed?'
-                          : 'Veiligheidssessie actief',
+                          ? 'Alles goed?' // Keep for now or add a key
+                          : S.of(context).veiligheidssessieActief,
                       style: GoogleFonts.sora(
                         fontSize: 16,
                         color: Colors.white,
@@ -438,7 +440,7 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
                         _minutesRemaining > 0
                             ? '$_minutesRemaining min resterend'
                             : _minutesRemaining == 0
-                                ? 'Sessie einde bereikt'
+                                ? S.of(context).sessieEindeBereikt
                                 : '${_minutesRemaining.abs()} min over tijd',
                         style: TextStyle(
                           fontSize: 15,
@@ -452,7 +454,7 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
                   if (isOverdue) ...[
                     const SizedBox(height: 12),
                     Text(
-                      'Je sessie duurt langer dan verwacht. '
+                      S.of(context).jeSessieDuurtLangerDanVerwacht
                       'Tik op "Ik ben OK" als alles goed gaat.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -484,7 +486,7 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
                               size: 20,
                             ),
                       label: Text(
-                        _sendingHeartbeat ? 'Versturen...' : 'Ik ben OK',
+                        _sendingHeartbeat ? S.of(context).versturen2 : S.of(context).sosHelpNeeded, // Use the appropriate key or keep dynamic
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -510,7 +512,7 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
                       onPressed: _sendSos,
                       icon: const Icon(Icons.emergency_rounded, size: 20),
                       label: const Text(
-                        'SOS – Hulp nodig',
+                        S.of(context).sosHulpNodig,
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -531,8 +533,8 @@ class _SafeSessionOverlayState extends State<SafeSessionOverlay>
 
                   // ── Info tekst ────────────────────────────
                   Text(
-                    'Je noodcontact wordt automatisch geïnformeerd als je niet '
-                    'reageert na het verwachte einde van de sessie.',
+                    S.of(context).jeNoodcontactWordtAutomatischGenformeerdAls
+                    S.of(context).reageertNaHetVerwachteEindeVan,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 11,

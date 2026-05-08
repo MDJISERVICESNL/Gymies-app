@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../config/ui_constants.dart';
 import '../theme/gymies_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// GymiesDialog — standardized dialog widget for the GYMIES app
 /// Provides consistent styling, animations, and interaction patterns
@@ -24,8 +25,8 @@ class GymiesDialog extends StatelessWidget {
     BuildContext context, {
     required String title,
     required String content,
-    String confirmLabel = 'Bevestigen',
-    String cancelLabel = 'Annuleren',
+    String confirmLabel = S.of(context).bevestigen,
+    String cancelLabel = S.of(context).annuleren,
     IconData? icon,
   }) {
     return showDialog<bool>(
@@ -54,8 +55,8 @@ class GymiesDialog extends StatelessWidget {
     BuildContext context, {
     required String title,
     required String content,
-    String confirmLabel = 'Verwijderen',
-    String cancelLabel = 'Annuleren',
+    String confirmLabel = S.of(context).verwijderen,
+    String cancelLabel = S.of(context).annuleren,
     IconData? icon,
   }) {
     return showDialog<bool>(

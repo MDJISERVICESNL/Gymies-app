@@ -1,12 +1,11 @@
+
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:share_plus/share_plus.dart';
-
-import '../config/app_config.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../services/auth_service.dart';
 import '../services/calendar_service.dart';
 import '../services/gymies_api.dart';
@@ -24,7 +23,6 @@ import 'client_support_screen.dart';
 import 'client_wallet_screen.dart';
 import 'login_register_screen.dart';
 import 'referral_screen.dart';
-
 /// Profiel-hub voor client: één scrollview met stats, doel-kaart,
 /// quick actions grid, gegroepeerde instellingen en voorkeuren.
 class ClientProfileHubScreen extends StatefulWidget {
@@ -108,7 +106,10 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
         if (mounted) setState(() => _selectedGoal = serverGoal);
         return;
       }
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Goal fetch optional
+      if (kDebugMode) debugPrint('[ClientProfileHub] Fetch goal failed: $e');
+    }
     final saved = prefs.getString(_kGoalKey);
     if (mounted && saved != null) setState(() => _selectedGoal = saved);
   }
@@ -120,7 +121,10 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
     // Sync naar server
     try {
       await _api.updateIntake({'goals_text': goal});
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Goal update optional
+      if (kDebugMode) debugPrint('[ClientProfileHub] Update goal failed: $e');
+    }
   }
 
   Future<void> _loadSilentHours() async {
@@ -136,7 +140,10 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
         if (mounted) setState(() => _silentHoursSetting = serverValue);
         return;
       }
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Silent hours fetch optional
+      if (kDebugMode) debugPrint('[ClientProfileHub] Fetch silent hours failed: $e');
+    }
     final saved = prefs.getString(_kSilentHoursKey);
     if (mounted && saved != null) setState(() => _silentHoursSetting = saved);
   }
@@ -154,7 +161,10 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
           'end': '07:00',
         },
       });
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Silent hours update optional
+      if (kDebugMode) debugPrint('[ClientProfileHub] Update silent hours failed: $e');
+    }
   }
 
   Future<void> _loadCalendarSyncPref() async {
@@ -168,8 +178,8 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
       final stats = await api.getClientStats();
       if (!mounted) return;
       setState(() {
-        _totalSessions = mapInt(stats, ['total_sessions', 'sessions_count']) ?? 0;
-        _streak = mapInt(stats, ['streak', 'current_streak']) ?? 0;
+        _totalSessions = mapInt(stats, ['total_sessions', 'sessions_count']);
+        _streak = mapInt(stats, ['streak', 'current_streak']);
         final next = mapStr(stats, ['next_session_day', 'next_session']);
         _nextSession = _formatNextSession(next);
       });
@@ -205,14 +215,16 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
   Future<void> _logout() async {
     final confirmed = await GymiesDialog.destructive(
       context,
-      title: 'Uitloggen',
-      message: 'Weet je zeker dat je wilt uitloggen?',
-      confirmLabel: 'Uitloggen',
-      cancelLabel: 'Annuleren',
+      title: S.of(context).logout,
+      message: S.of(context).logoutConfirmMessage,
+      confirmLabel: S.of(context).logout,
+      cancelLabel: S.of(context).cancel,
     );
     if (confirmed != true || !context.mounted) return;
+    // ignore: use_build_context_synchronously
     await context.read<AuthService>().logout();
     if (!context.mounted) return;
+    // ignore: use_build_context_synchronously
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginRegisterScreen()),
       (r) => false,
@@ -222,11 +234,11 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
   Future<void> _deleteAccount() async {
     final confirmed = await GymiesDialog.destructive(
       context,
-      title: 'Account verwijderen',
-      message: 'Dit zal je account en alle bijbehorende gegevens permanent verwijderen. '
-          'Deze actie kan niet ongedaan worden gemaakt.',
-      confirmLabel: 'Verwijderen',
-      cancelLabel: 'Annuleren',
+      title: S.of(context).deleteAccount,
+      message: S.of(context).ditZalJeAccountEnAlle
+          S.of(context).dezeActieKanNietOngedaanWorden,
+      confirmLabel: S.of(context).delete,
+      cancelLabel: S.of(context).cancel,
     );
     if (confirmed != true || !context.mounted) return;
 
@@ -235,9 +247,10 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
     } catch (e) {
       if (kDebugMode) debugPrint('[ProfileHub] Account deletion API fout: $e');
       if (!context.mounted) return;
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Kon verwijderaanvraag niet indienen. Probeer later opnieuw.'),
+          content: const Text(S.of(context).konVerwijderaanvraagNietIndienenProbeerLaterOpnieuw),
           backgroundColor: Colors.red.shade600,
         ),
       );
@@ -245,11 +258,14 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
     }
     if (!context.mounted) return;
 
+    // ignore: use_build_context_synchronously
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Account verwijderaanvraag ingediend — je ontvangt een bevestiging per e-mail')),
+      const SnackBar(content: Text(S.of(context).accountVerwijderaanvraagIngediendJeOntvangtEenBevestigingPerEmail)),
     );
+    // ignore: use_build_context_synchronously
     await context.read<AuthService>().logout();
     if (!context.mounted) return;
+    // ignore: use_build_context_synchronously
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginRegisterScreen()),
       (r) => false,
@@ -263,7 +279,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
     final name = user['name']?.toString() ??
         user['display_name']?.toString() ??
         user['email']?.toString() ??
-        'Mijn profiel';
+        S.of(context).myProfileTitle;
     final email = user['email']?.toString() ?? '';
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
 
@@ -322,28 +338,28 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
       // ── INSTELLINGEN sectie (samengevoegd: instellingen + voorkeuren + overig) ──
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: _buildSectionLabel('INSTELLINGEN'),
+        child: _buildSectionLabel(S.of(context).settings),
       ),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: _buildGroupedTiles([
           _GroupedTileData(
             icon: Icons.person_outline,
-            title: 'Profiel bewerken',
+            title: S.of(context).myProfile,
             onTap: () => _push(const ClientProfileScreen()),
           ),
           _GroupedTileData(
             icon: Icons.flag_outlined,
-            title: 'Wat is je doel?',
+            title: S.of(context).watIsJeDoel,
             trailing: Text(
-              _selectedGoal ?? 'Niet ingesteld',
+              _selectedGoal ?? S.of(context).nietIngesteld,
               style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade500),
             ),
             onTap: () => _showGoalPicker(),
           ),
           _GroupedTileData(
             icon: Icons.lock_outline,
-            title: 'Wachtwoord wijzigen',
+            title: S.of(context).wachtwoordWijzigen,
             onTap: () => _showChangePasswordSheet(),
           ),
           _GroupedTileData(
@@ -358,7 +374,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
           ),
           _GroupedTileData(
             icon: Icons.event_available_rounded,
-            title: 'Agenda sync',
+            title: S.of(context).agendaSync,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -377,7 +393,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
             title: 'Trillingen',
             trailing: Switch.adaptive(
               value: _hapticsEnabled,
-              activeColor: GymiesColors.primary,
+              activeTrackColor: GymiesColors.primary,
               onChanged: (v) async {
                 setState(() => _hapticsEnabled = v);
                 await Haptics.setEnabled(v);
@@ -386,7 +402,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
           ),
           _GroupedTileData(
             icon: Icons.privacy_tip_outlined,
-            title: 'Privacy & gegevens',
+            title: S.of(context).privacyGegevens,
             onTap: () => _showPrivacySheet(),
           ),
           _GroupedTileData(
@@ -409,7 +425,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
           ),
           icon: const Icon(Icons.logout_rounded, size: 20),
           label: Text(
-            'Uitloggen',
+            S.of(context).logout,
             style: GoogleFonts.sora(
               fontSize: 15,
               fontWeight: FontWeight.w500,
@@ -457,7 +473,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.white.withValues(alpha:0.2),
+                    color: Colors.white.withOpacity(0.2),
                     width: 3,
                   ),
                 ),
@@ -482,7 +498,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                     border: Border.all(color: GymiesColors.darkBlue, width: 2),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha:0.2),
+                        color: Colors.black.withOpacity(0.2),
                         blurRadius: 6,
                         offset: const Offset(0, 2),
                       ),
@@ -514,7 +530,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
               email,
               style: GoogleFonts.sora(
                 fontSize: 13,
-                color: Colors.white.withValues(alpha:0.6),
+                color: Colors.white.withOpacity(0.6),
               ),
               textAlign: TextAlign.center,
             ),
@@ -527,14 +543,14 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
             decoration: BoxDecoration(
               border: Border(
                 top: BorderSide(
-                  color: Colors.white.withValues(alpha:0.12),
+                  color: Colors.white.withOpacity(0.12),
                 ),
               ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _StatItem(value: '$_totalSessions', label: 'Sessies'),
+                _StatItem(value: '$_totalSessions', label: S.of(context).sessionsCountLabel),
                 _StatItem(
                   value: '$_streak',
                   label: 'Streak',
@@ -583,10 +599,10 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Tik om aan te passen',
+                    S.of(context).tikOmAanTePassen,
                     style: GoogleFonts.sora(
                       fontSize: 11,
-                      color: GymiesColors.darkBlue.withValues(alpha:0.6),
+                      color: GymiesColors.darkBlue.withOpacity(0.6),
                     ),
                   ),
                 ],
@@ -617,10 +633,10 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
             Expanded(
               child: _QuickActionCard(
                 icon: Icons.account_balance_wallet_rounded,
-                iconBg: GymiesColors.primary.withValues(alpha: 0.15),
+                iconBg: GymiesColors.primary.withOpacity(0.15),
                 iconColor: GymiesColors.darkBlue,
                 title: 'Wallet',
-                subtitle: 'Punten & tegoed',
+                subtitle: S.of(context).puntenEnTegoed,
                 onTap: () => _push(const ClientWalletScreen()),
               ),
             ),
@@ -631,7 +647,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                 iconBg: Colors.green.shade50,
                 iconColor: Colors.green.shade600,
                 title: 'Facturen',
-                subtitle: 'Bekijk overzicht',
+                subtitle: S.of(context).bekijkOverzicht,
                 onTap: () => _push(const ClientInvoicesScreen()),
               ),
             ),
@@ -645,7 +661,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                 icon: Icons.folder_shared_rounded,
                 iconBg: Colors.orange.shade50,
                 iconColor: Colors.orange.shade600,
-                title: 'Mijn dossier',
+                title: S.of(context).mijnDossier,
                 subtitle: 'Coach notes & voortgang',
                 onTap: () => _push(const ClientDossierScreen()),
               ),
@@ -719,7 +735,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha:0.04),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -744,7 +760,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                       Icon(
                         t.icon,
                         size: 20,
-                        color: GymiesColors.darkBlue.withValues(alpha:0.7),
+                        color: GymiesColors.darkBlue.withOpacity(0.7),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -818,7 +834,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Wat is je doel?',
+                      S.of(context).watIsJeDoel,
                       style: GoogleFonts.sora(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -847,7 +863,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         decoration: BoxDecoration(
                           color: _selectedGoal == goal
-                              ? GymiesColors.primary.withValues(alpha: 0.15)
+                              ? GymiesColors.primary.withOpacity(0.15)
                               : Colors.grey.shade50,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
@@ -923,7 +939,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Wachtwoord wijzigen',
+                            S.of(context).wachtwoordWijzigen,
                             style: GoogleFonts.sora(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -956,7 +972,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Kies een sterk wachtwoord van minimaal 8 tekens met letters en cijfers.',
+                              S.of(context).kiesEenSterkWachtwoordVanMinimaal8TekensMetLettersEnCijfers,
                               style: GoogleFonts.sora(
                                 color: Colors.blue.shade900,
                                 fontSize: 12,
@@ -974,7 +990,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                       controller: currentCtrl,
                       obscureText: obscureCurrent,
                       decoration: InputDecoration(
-                        labelText: 'Huidig wachtwoord',
+                        labelText: S.of(context).huidigWachtwoord,
                         prefixIcon: const Icon(Icons.lock_rounded, size: 20),
                         suffixIcon: IconButton(
                           icon: Icon(
@@ -985,7 +1001,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                         ),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      validator: (v) => (v == null || v.isEmpty) ? 'Vul je huidige wachtwoord in' : null,
+                      validator: (v) => (v == null || v.isEmpty) ? S.of(context).enterCurrentPassword : null,
                     ),
                     const SizedBox(height: 14),
 
@@ -994,7 +1010,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                       controller: newCtrl,
                       obscureText: obscureNew,
                       decoration: InputDecoration(
-                        labelText: 'Nieuw wachtwoord',
+                        labelText: S.of(context).nieuwWachtwoord,
                         prefixIcon: const Icon(Icons.lock_open_rounded, size: 20),
                         suffixIcon: IconButton(
                           icon: Icon(
@@ -1019,7 +1035,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                       controller: confirmCtrl,
                       obscureText: obscureConfirm,
                       decoration: InputDecoration(
-                        labelText: 'Bevestig nieuw wachtwoord',
+                        labelText: S.of(context).bevestigNieuwWachtwoord,
                         prefixIcon: const Icon(Icons.check_circle_outline_rounded, size: 20),
                         suffixIcon: IconButton(
                           icon: Icon(
@@ -1031,7 +1047,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       validator: (v) {
-                        if (v != newCtrl.text) return 'Wachtwoorden komen niet overeen';
+                        if (v != newCtrl.text) return S.of(context).passwordsDoNotMatch;
                         return null;
                       },
                     ),
@@ -1055,9 +1071,10 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                                   Navigator.of(ctx).pop();
                                   Haptics.success();
                                   if (!context.mounted) return;
+                                  // ignore: use_build_context_synchronously
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: const Text('Wachtwoord succesvol gewijzigd'),
+                                      content: const Text(S.of(context).wachtwoordSuccesvolGewijzigd),
                                       backgroundColor: Colors.green.shade700,
                                       behavior: SnackBarBehavior.floating,
                                     ),
@@ -1076,7 +1093,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                                   if (!ctx.mounted) return;
                                   ScaffoldMessenger.of(ctx).showSnackBar(
                                     SnackBar(
-                                      content: const Text('Kon wachtwoord niet wijzigen. Probeer later opnieuw.'),
+                                      content: const Text(S.of(context).konWachtwoordNietWijzigenProbeerLaterOpnieuw),
                                       backgroundColor: Colors.red.shade600,
                                     ),
                                   );
@@ -1085,7 +1102,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                         style: FilledButton.styleFrom(
                           backgroundColor: GymiesColors.primary,
                           foregroundColor: GymiesColors.darkBlue,
-                          disabledBackgroundColor: GymiesColors.primary.withValues(alpha: 0.4),
+                          disabledBackgroundColor: GymiesColors.primary.withOpacity(0.4),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -1099,7 +1116,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                               )
                             : const Icon(Icons.check_rounded, size: 18),
                         label: Text(
-                          submitting ? 'Bezig...' : 'Wachtwoord wijzigen',
+                          submitting ? S.of(context).bezig2 : S.of(context).wachtwoordWijzigen,
                           style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w600),
                         ),
                       ),
@@ -1149,7 +1166,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Stille uren',
+                      S.of(context).stilleUren,
                       style: GoogleFonts.sora(fontSize: 20, fontWeight: FontWeight.bold, color: GymiesColors.darkBlue),
                     ),
                   ),
@@ -1176,7 +1193,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       decoration: BoxDecoration(
                         color: _silentHoursSetting == opt
-                            ? GymiesColors.primary.withValues(alpha: 0.15)
+                            ? GymiesColors.primary.withOpacity(0.15)
                             : Colors.grey.shade50,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
@@ -1243,7 +1260,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Agenda synchronisatie',
+                          S.of(context).agendaSynchronisatie,
                           style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.bold, color: GymiesColors.darkBlue),
                         ),
                       ),
@@ -1270,7 +1287,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Als je auto-sync inschakelt, worden nieuwe sessies automatisch aan je device-kalender toegevoegd zodra ze bevestigd zijn.',
+                            S.of(context).alsJeAutosyncInschakeltWordenNieuweSessiesAutomatischAanJeDevicekalenderToegevoegdZodraZeBevestigdZijn,
                             style: GoogleFonts.sora(fontSize: 12, color: Colors.blue.shade900, fontWeight: FontWeight.w500),
                           ),
                         ),
@@ -1288,17 +1305,17 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.sync_rounded, size: 20, color: GymiesColors.darkBlue.withValues(alpha: 0.7)),
+                        Icon(Icons.sync_rounded, size: 20, color: GymiesColors.darkBlue.withOpacity(0.7)),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Automatisch toevoegen',
+                            S.of(context).automatischToevoegen,
                             style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue),
                           ),
                         ),
                         Switch.adaptive(
                           value: _calendarSyncEnabled,
-                          activeColor: GymiesColors.primary,
+                          activeTrackColor: GymiesColors.primary,
                           onChanged: (v) async {
                             setDlg(() {});
                             setState(() => _calendarSyncEnabled = v);
@@ -1324,7 +1341,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                   Padding(
                     padding: const EdgeInsets.only(left: 4),
                     child: Text(
-                      'Ondersteunde kalenders:',
+                      S.of(context).ondersteundeKalenders,
                       style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600),
                     ),
                   ),
@@ -1340,7 +1357,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                   Padding(
                     padding: const EdgeInsets.only(left: 4),
                     child: Text(
-                      'Tip: Je kunt ook handmatig een sessie aan je agenda toevoegen via de actie-knop bij elke boeking.',
+                      S.of(context).tipJeKuntOokHandmatigEenSessieAanJeAgendaToevoegenViaDeActieknopBijElkeBoeking,
                       style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500, height: 1.4),
                     ),
                   ),
@@ -1384,7 +1401,7 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Privacy & gegevens',
+                      S.of(context).privacyGegevens,
                       style: GoogleFonts.sora(fontSize: 20, fontWeight: FontWeight.bold, color: GymiesColors.darkBlue),
                     ),
                   ),
@@ -1401,15 +1418,15 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: GymiesColors.primary.withValues(alpha: 0.08),
+                  color: GymiesColors.primary.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: GymiesColors.primary.withValues(alpha: 0.2)),
+                  border: Border.all(color: GymiesColors.primary.withOpacity(0.2)),
                 ),
                 child: Text(
-                  'GYMIES verwerkt je persoonsgegevens conform de AVG (GDPR). '
-                  'Je data wordt niet met derden gedeeld en uitsluitend gebruikt '
-                  'voor het leveren van onze diensten. Je hebt te allen tijde '
-                  'het recht je gegevens in te zien, te corrigeren of te verwijderen.',
+                  S.of(context).gymiesVerwerktJePersoonsgegevensConformDe
+                  S.of(context).jeDataWordtNietMetDerden
+                  S.of(context).voorHetLeverenVanOnzeDiensten
+                  S.of(context).hetRechtJeGegevensInTe,
                   style: GoogleFonts.sora(
                     fontSize: 13,
                     color: GymiesColors.darkBlue,
@@ -1421,24 +1438,26 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
               _PrivacyActionTile(
                 icon: Icons.download_outlined,
                 iconColor: GymiesColors.darkBlue,
-                title: 'Mijn gegevens opvragen',
-                subtitle: 'Ontvang een export van alle data',
+                title: S.of(context).mijnGegevensOpvragen,
+                subtitle: S.of(context).ontvangEenExportVanAlleData,
                 onTap: () async {
                   Navigator.pop(ctx);
                   try {
                     await _api.requestDataExport();
                     if (!context.mounted) return;
+                    // ignore: use_build_context_synchronously
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Gegevensexport aangevraagd — je ontvangt een e-mail'),
+                        content: Text(S.of(context).gegevensexportAangevraagdJeOntvangtEenEmail),
                       ),
                     );
                   } catch (e) {
                     if (kDebugMode) debugPrint('[ProfileHub] Data export API fout: $e');
                     if (!context.mounted) return;
+                    // ignore: use_build_context_synchronously
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: const Text('Kon export niet aanvragen. Probeer later opnieuw.'),
+                        content: const Text(S.of(context).konExportNietAanvragenProbeerLaterOpnieuw),
                         backgroundColor: Colors.red.shade600,
                       ),
                     );
@@ -1449,8 +1468,8 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
               _PrivacyActionTile(
                 icon: Icons.delete_forever_outlined,
                 iconColor: Colors.red.shade600,
-                title: 'Account verwijderen',
-                subtitle: 'Verwijder permanent (AVG Art. 17)',
+                title: S.of(context).accountVerwijderen,
+                subtitle: S.of(context).verwijderPermanentAvgArt17,
                 onTap: () {
                   Navigator.pop(ctx);
                   _deleteAccount();
@@ -1470,10 +1489,10 @@ class _ClientProfileHubScreenState extends State<ClientProfileHubScreen>
     GymiesDialog.info(
       context,
       title: 'Over GYMIES',
-      message: 'GYMIES – Je persoonlijke fitness coach.\n\n'
+      message: S.of(context).gymiesJePersoonlijkeFitnessCoachnn
           '$version\n'
           'Gebouwd met Flutter\n\n'
-          'Bedankt dat je GYMIES gebruikt!',
+          S.of(context).bedanktDatJeGymiesGebruikt,
       buttonLabel: 'Sluiten',
     );
   }
@@ -1514,7 +1533,7 @@ class _StatItem extends StatelessWidget {
           label,
           style: GoogleFonts.sora(
             fontSize: 11,
-            color: Colors.white.withValues(alpha:0.55),
+            color: Colors.white.withOpacity(0.55),
           ),
         ),
       ],
@@ -1530,6 +1549,7 @@ class _QuickActionCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    // ignore: unused_element_parameter
     this.dimmed = false,
   });
   final IconData icon;
@@ -1630,7 +1650,7 @@ class _CalendarChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: GymiesColors.primary.withValues(alpha: 0.1),
+        color: GymiesColors.primary.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -1689,7 +1709,7 @@ class _PrivacyActionTile extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: iconColor.withValues(alpha:0.12),
+                color: iconColor.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, color: iconColor, size: 20),

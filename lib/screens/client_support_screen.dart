@@ -1,28 +1,19 @@
+
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/action_retry_queue_service.dart';
 import '../services/auth_service.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
-
 // Navigatie-schermen (alleen schermen die daadwerkelijk bestaan)
-import 'client_sessions_screen.dart';
-import 'client_invoices_screen.dart';
-import 'client_profile_screen.dart';
-import 'client_settings_screen.dart';
-import 'client_notifications_screen.dart';
-import 'client_dossier_screen.dart';
-import 'client_group_sessions_screen.dart';
-import 'client_waitlist_screen.dart';
-import 'client_favorites_standalone_screen.dart';
 
 // FAQ data
-import 'support_faq_data.dart';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  CLIENT SUPPORT SCREEN – Help Center + Tickets
@@ -149,7 +140,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon supporttickets niet laden.';
+        _error = S.of(context).couldNotLoadTicket;
         _loading = false;
       });
     }
@@ -160,11 +151,11 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
   String _statusLabel(String raw) {
     final s = raw.toLowerCase();
     if (s.contains('open') || s.contains('new')) return 'Open';
-    if (s.contains('pending') || s.contains('waiting')) return 'In behandeling';
+    if (s.contains('pending') || s.contains('waiting')) return S.of(context).statusInBehandeling;
     if (s.contains('resolved') || s.contains('closed') || s.contains('done')) {
-      return 'Afgerond';
+      return S.of(context).statusAfgerond;
     }
-    return raw.isEmpty ? 'Onbekend' : raw;
+    return raw.isEmpty ? S.of(context).statusOnbekend : raw;
   }
 
   Color _statusColor(String raw) {
@@ -200,15 +191,15 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
 
   String _ticketTrainerContext(Map<String, dynamic> ticket) {
     final trainerName = _strHelper(ticket, [
-      'trainer_name',
-      'trainerName',
+      S.of(context).trainername,
+      S.of(context).trainername2,
       'coach_name',
       'coachName',
     ]).trim();
     final bookingId = _strHelper(ticket, ['booking_id', 'bookingId']).trim();
     if (trainerName.isNotEmpty) {
       return bookingId.isNotEmpty
-          ? 'Trainer: $trainerName · Boeking $bookingId'
+          ? S.of(context).trainerBoekingContext(trainerName, bookingId)
           : 'Trainer: $trainerName';
     }
     if (bookingId.isNotEmpty) {
@@ -220,26 +211,26 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
   String _ticketTypeLabel(String raw) {
     switch (raw.toLowerCase()) {
       case 'booking':
-        return 'Boeking';
+        return S.of(context).booking;
       case 'invoice':
-        return 'Factuur';
+        return S.of(context).factuur2;
       case 'check_in':
         return 'Check-in';
       case 'payment':
-        return 'Betaling';
+        return S.of(context).typeBetaling;
       case 'dispute':
-        return 'Geschil';
+        return S.of(context).typeGeschil;
       case 'incident':
-        return 'Incident';
+        return S.of(context).typeIncident;
       default:
-        return raw.isEmpty ? 'Overig' : raw;
+        return raw.isEmpty ? S.of(context).typeOverig : raw;
     }
   }
 
   String _composeInitialTicketMessage(Map<String, dynamic> ticket) {
     final message = _strHelper(ticket, ['message', 'body', 'description']);
     if (message.isNotEmpty) return message;
-    return 'Nieuw supportverzoek aangemaakt.';
+    return S.of(context).nieuwSupportverzoekAangemaakt;
   }
 
   int get _openTicketCount =>
@@ -293,12 +284,10 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
         return;
     }
 
-    if (target != null) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => target!),
-      );
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => target!),
+    );
     }
-  }
 
   // ─────────────────────────────────────────────────────────────────
   //  Ticket thread opener
@@ -313,12 +302,12 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
           id,
         );
         if (loaded.isNotEmpty) detail = loaded;
-      } on ApiException catch (e) {
+      } on ApiException {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Kon ticket niet laden',
+              S.of(context).konTicketNietLaden,
               style: GoogleFonts.sora(),
             ),
             backgroundColor: Colors.red.shade700,
@@ -331,7 +320,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Kon ticket niet laden',
+              S.of(context).konTicketNietLaden,
               style: GoogleFonts.sora(),
             ),
             backgroundColor: Colors.red.shade700,
@@ -413,13 +402,13 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
     );
 
     final typeLabels = <String, String>{
-      'booking': 'Boeking',
-      'invoice': 'Factuur',
+      'booking': S.of(context).booking,
+      'invoice': S.of(context).factuur2,
       'check_in': 'Check-in',
-      'payment': 'Betaling',
-      'dispute': 'Geschil',
-      'incident': 'Incident',
-      'other': 'Overig',
+      'payment': S.of(context).typeBetaling,
+      'dispute': S.of(context).typeGeschil,
+      'incident': S.of(context).typeIncident,
+      'other': S.of(context).typeOverig,
     };
 
     final submit = await showDialog<bool>(
@@ -462,7 +451,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Nieuw supportverzoek',
+                                      S.of(context).nieuwSupportverzoek,
                                       style: GoogleFonts.sora(
                                         fontSize: 20,
                                         fontWeight: FontWeight.bold,
@@ -470,7 +459,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                                       ),
                                     ),
                                     Text(
-                                      'Beschrijf je probleem zo duidelijk mogelijk',
+                                      S.of(context).beschrijfJeProbleemZoDuidelijkMogelijk,
                                       style: GoogleFonts.sora(
                                         color: Colors.grey.shade600,
                                         fontSize: 12,
@@ -504,7 +493,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    'Support blijft gekoppeld aan de trainer/sessie-context van je verzoek.',
+                                    S.of(context).supportBlijftGekoppeldAanDeTrainersessiecontextVanJeVerzoek,
                                     style: GoogleFonts.sora(
                                       color: Colors.blue.shade900,
                                       fontSize: 12,
@@ -518,7 +507,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                           const SizedBox(height: 14),
                           // Type chips
                           Text(
-                            'Type',
+                            S.of(context).type,
                             style: GoogleFonts.sora(
                               color: GymiesColors.darkBlue,
                               fontSize: 13,
@@ -543,7 +532,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                                   decoration: BoxDecoration(
                                     color: isSelected
                                         ? GymiesColors.primary
-                                            .withValues(alpha: 0.15)
+                                            .withOpacity(0.15)
                                         : Colors.grey.shade50,
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
@@ -571,8 +560,8 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                           TextFormField(
                             controller: subjectCtrl,
                             decoration: const InputDecoration(
-                              labelText: 'Onderwerp',
-                              hintText: 'Korte samenvatting',
+                              labelText: S.of(context).onderwerp,
+                              hintText: S.of(context).korteSamenvatting,
                             ),
                             validator: (v) =>
                                 (v == null || v.trim().length < 4)
@@ -585,9 +574,9 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                             controller: messageCtrl,
                             maxLines: 4,
                             decoration: const InputDecoration(
-                              labelText: 'Bericht',
+                              labelText: S.of(context).bericht,
                               hintText:
-                                  'Beschrijf het probleem zo duidelijk mogelijk',
+                                  S.of(context).beschrijfHetProbleemZoDuidelijkMogelijk,
                             ),
                             validator: (v) =>
                                 (v == null || v.trim().length < 10)
@@ -602,8 +591,8 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                                 child: TextFormField(
                                   controller: bookingIdCtrl,
                                   decoration: const InputDecoration(
-                                    labelText: 'Boeking-ID',
-                                    hintText: 'Optioneel',
+                                    labelText: S.of(context).boekingid,
+                                    hintText: S.of(context).optioneel,
                                   ),
                                 ),
                               ),
@@ -612,8 +601,8 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                                 child: TextFormField(
                                   controller: invoiceIdCtrl,
                                   decoration: const InputDecoration(
-                                    labelText: 'Factuur-ID',
-                                    hintText: 'Optioneel',
+                                    labelText: S.of(context).factuurid,
+                                    hintText: S.of(context).optioneel,
                                   ),
                                 ),
                               ),
@@ -626,7 +615,9 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                             child: FilledButton.icon(
                               onPressed: () {
                                 if (!(formKey.currentState?.validate() ??
-                                    false)) return;
+                                    false)) {
+                                  return;
+                                }
                                 _saveDraft(
                                   type: type,
                                   subject: subjectCtrl.text.trim(),
@@ -647,7 +638,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                               ),
                               icon: const Icon(Icons.send_rounded, size: 18),
                               label: Text(
-                                'Verstuur verzoek',
+                                S.of(context).verstuurVerzoek,
                                 style: GoogleFonts.sora(fontSize: 16),
                               ),
                             ),
@@ -692,7 +683,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
           'booking_id': bookingIdCtrl.text.trim(),
           'invoice_id': invoiceIdCtrl.text.trim(),
         },
-        detail: 'Direct gelukt',
+        detail: S.of(context).directSuccess,
       );
       _lastFailedTicketPayload = null;
       await _clearDraft();
@@ -700,7 +691,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
       Haptics.success();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Supportverzoek aangemaakt!'),
+          content: const Text(S.of(context).supportverzoekAangemaakt),
           backgroundColor: Colors.green.shade700,
           behavior: SnackBarBehavior.floating,
         ),
@@ -745,7 +736,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Supportverzoek mislukt'),
+          content: Text(S.of(context).supportverzoekMislukt),
           backgroundColor: Colors.red,
         ),
       );
@@ -811,7 +802,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Laatste supportverzoek alsnog verstuurd'),
+          content: Text(S.of(context).laatsteSupportverzoekAlsnogVerstuurd),
         ),
       );
       await _load();
@@ -841,7 +832,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
             foregroundColor: GymiesColors.primary,
             pinned: true,
             expandedHeight: 200,
-            title: Text('Support',
+            title: Text(S.of(context).support,
                 style: GoogleFonts.sora(fontSize: 20)),
             actions: [
               if (openCount > 0)
@@ -886,7 +877,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Hoe kunnen we je helpen?',
+                          S.of(context).hoeKunnenWeJeHelpen,
                           style: GoogleFonts.sora(
                             fontSize: 22,
                             fontWeight: FontWeight.w700,
@@ -895,9 +886,9 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Vind een antwoord of neem contact op',
+                          S.of(context).vindEenAntwoordOfNeemContactOp,
                           style: GoogleFonts.sora(
-                            color: Colors.white.withValues(alpha: 0.6),
+                            color: Colors.white.withOpacity(0.6),
                             fontSize: 13,
                           ),
                         ),
@@ -912,7 +903,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
               child: Container(
                 margin: const EdgeInsets.only(left: 20, right: 20, bottom: 8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: Colors.white.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: TabBar(
@@ -923,7 +914,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                     borderRadius: BorderRadius.circular(8),
                   ),
                   labelColor: GymiesColors.darkBlue,
-                  unselectedLabelColor: Colors.white.withValues(alpha: 0.6),
+                  unselectedLabelColor: Colors.white.withOpacity(0.6),
                   labelStyle: GoogleFonts.sora(
                       fontSize: 13, fontWeight: FontWeight.w600),
                   dividerColor: Colors.transparent,
@@ -969,9 +960,9 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
             mainAxisSpacing: 10,
             childAspectRatio: 1.05,
           ),
-          itemCount: supportFaqCategories.length,
+          itemCount: getSupportFaqCategories(context).length,
           itemBuilder: (context, index) {
-            final cat = supportFaqCategories[index];
+            final cat = getSupportFaqCategories(context)[index];
             return _CategoryCard(
               category: cat,
               onTap: () => _openCategoryScreen(cat),
@@ -990,7 +981,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                 size: 14, color: Colors.grey.shade500),
             const SizedBox(width: 6),
             Text(
-              'Gemiddelde reactietijd: ~2 uur',
+              S.of(context).gemiddeldeReactietijd2Uur,
               style: GoogleFonts.sora(
                 color: Colors.grey.shade500,
                 fontSize: 12,
@@ -1032,7 +1023,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
             FilledButton.icon(
               onPressed: _load,
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Opnieuw proberen'),
+              label: const Text(S.of(context).opnieuwProberen),
               style: FilledButton.styleFrom(
                 backgroundColor: GymiesColors.darkBlue,
                 foregroundColor: GymiesColors.primary,
@@ -1072,7 +1063,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Verzoek niet verstuurd',
+                          S.of(context).verzoekNietVerstuurd,
                           style: GoogleFonts.sora(
                             fontWeight: FontWeight.w700,
                             color: Colors.orange.shade900,
@@ -1081,7 +1072,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Controleer je internet en probeer opnieuw.',
+                          S.of(context).controleerJeInternetEnProbeerOpnieuw,
                           style: GoogleFonts.sora(
                             color: Colors.orange.shade800,
                             fontSize: 12,
@@ -1099,7 +1090,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
                     ),
-                    child: Text('Opnieuw', style: GoogleFonts.sora(fontSize: 12)),
+                    child: Text(S.of(context).opnieuw, style: GoogleFonts.sora(fontSize: 12)),
                   ),
                 ],
               ),
@@ -1115,7 +1106,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                     width: 64,
                     height: 64,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.15),
+                      color: GymiesColors.primary.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Icon(Icons.mail_outline_rounded,
@@ -1123,7 +1114,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Nog geen supportverzoeken',
+                    S.of(context).nogGeenSupportverzoeken,
                     style: GoogleFonts.sora(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -1132,7 +1123,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Hier verschijnen je tickets wanneer\nje contact opneemt.',
+                    S.of(context).hierVerschijnenJeTicketsWanneernjeContactOpneemt,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.sora(
                       fontSize: 13,
@@ -1162,7 +1153,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 14),
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.1),
+                color: GymiesColors.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: GymiesColors.primary,
@@ -1176,7 +1167,7 @@ class _ClientSupportScreenState extends State<ClientSupportScreen>
                       color: GymiesColors.darkBlue, size: 18),
                   const SizedBox(width: 6),
                   Text(
-                    'Nieuw verzoek aanmaken',
+                    S.of(context).nieuwVerzoekAanmaken,
                     style: GoogleFonts.sora(
                       color: GymiesColors.darkBlue,
                       fontWeight: FontWeight.w700,
@@ -1235,7 +1226,7 @@ class _CategoryCard extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: GymiesColors.primary.withValues(alpha: 0.12),
+                  color: GymiesColors.primary.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(category.icon,
@@ -1264,7 +1255,7 @@ class _CategoryCard extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: GymiesColors.primary.withValues(alpha: 0.12),
+                  color: GymiesColors.primary.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -1299,7 +1290,7 @@ class _ContactCTA extends StatelessWidget {
           border: Border.all(color: Colors.grey.shade200),
           boxShadow: [
             BoxShadow(
-              color: GymiesColors.primary.withValues(alpha: 0.05),
+              color: GymiesColors.primary.withOpacity(0.05),
               blurRadius: 12,
               offset: const Offset(0, 3),
             ),
@@ -1314,7 +1305,7 @@ class _ContactCTA extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Kom je er niet uit?',
+                      S.of(context).komJeErNietUit,
                       style: GoogleFonts.sora(
                         fontSize: 16,
                         color: GymiesColors.darkBlue,
@@ -1322,9 +1313,9 @@ class _ContactCTA extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Start een gesprek met ons team',
+                      S.of(context).startEenGesprekMetOnsTeam,
                       style: GoogleFonts.sora(
-                        color: GymiesColors.darkBlue.withValues(alpha: 0.6),
+                        color: GymiesColors.darkBlue.withOpacity(0.6),
                         fontSize: 13,
                       ),
                     ),
@@ -1399,7 +1390,7 @@ class _TicketCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        subject.isEmpty ? 'Supportverzoek' : subject,
+                        subject.isEmpty ? S.of(context).supportverzoek : subject,
                         style: GoogleFonts.sora(
                           color: GymiesColors.darkBlue,
                           fontSize: 15,
@@ -1515,7 +1506,7 @@ class _FaqCategoryScreenState extends State<_FaqCategoryScreen> {
       appBar: AppBar(
         backgroundColor: GymiesColors.darkBlue,
         foregroundColor: GymiesColors.primary,
-        title: Text('Support', style: GoogleFonts.sora(fontSize: 20)),
+        title: Text(S.of(context).support, style: GoogleFonts.sora(fontSize: 20)),
       ),
       body: ListView(
         padding: const EdgeInsets.all(0),
@@ -1530,7 +1521,7 @@ class _FaqCategoryScreenState extends State<_FaqCategoryScreen> {
                   width: 46,
                   height: 46,
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                    color: GymiesColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(widget.category.icon,
@@ -1550,7 +1541,7 @@ class _FaqCategoryScreenState extends State<_FaqCategoryScreen> {
                     Text(
                       '${items.length} veelgestelde vragen',
                       style: GoogleFonts.sora(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: Colors.white.withOpacity(0.5),
                         fontSize: 13,
                       ),
                     ),
@@ -1581,7 +1572,7 @@ class _FaqCategoryScreenState extends State<_FaqCategoryScreen> {
                         ? [
                             BoxShadow(
                               color:
-                                  GymiesColors.primary.withValues(alpha: 0.12),
+                                  GymiesColors.primary.withOpacity(0.12),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -1658,10 +1649,10 @@ class _FaqCategoryScreenState extends State<_FaqCategoryScreen> {
                                       foregroundColor: GymiesColors.darkBlue,
                                       side: BorderSide(
                                         color: GymiesColors.primary
-                                            .withValues(alpha: 0.5),
+                                            .withOpacity(0.5),
                                       ),
                                       backgroundColor: GymiesColors.primary
-                                          .withValues(alpha: 0.1),
+                                          .withOpacity(0.1),
                                       shape: RoundedRectangleBorder(
                                         borderRadius:
                                             BorderRadius.circular(10),
@@ -1714,7 +1705,7 @@ class _FaqCategoryScreenState extends State<_FaqCategoryScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Niet gevonden wat je zocht?',
+                              S.of(context).nietGevondenWatJeZocht,
                               style: GoogleFonts.sora(
                                 color: GymiesColors.darkBlue,
                                 fontWeight: FontWeight.w700,
@@ -1723,7 +1714,7 @@ class _FaqCategoryScreenState extends State<_FaqCategoryScreen> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Stuur ons een bericht',
+                              S.of(context).stuurOnsEenBericht,
                               style: GoogleFonts.sora(
                                 color: Colors.grey.shade500,
                                 fontSize: 12,
@@ -1740,7 +1731,7 @@ class _FaqCategoryScreenState extends State<_FaqCategoryScreen> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          'Contact',
+                          S.of(context).contact,
                           style: GoogleFonts.sora(
                             color: GymiesColors.darkBlue,
                             fontWeight: FontWeight.w700,
@@ -1787,6 +1778,7 @@ class _SupportThreadScreen extends StatefulWidget {
 
 class _SupportThreadScreenState extends State<_SupportThreadScreen> {
   final TextEditingController _replyController = TextEditingController();
+  // ignore: unused_field
   bool _loading = false;
   bool _sending = false;
   late Map<String, dynamic> _ticket;
@@ -1887,7 +1879,7 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
         author.contains('admin') ||
         author.contains('team');
     if (supportLike) return false;
-    return author.contains('trainer') ||
+    return author.contains(S.of(context).trainer2) ||
         author.contains('client') ||
         author.contains('user') ||
         author.contains('requester') ||
@@ -1910,7 +1902,7 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Dit ticket bestaat niet meer',
+              S.of(context).ditTicketBestaatNietMeer,
               style: GoogleFonts.sora(),
             ),
             backgroundColor: Colors.red.shade700,
@@ -1931,7 +1923,7 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
     if (_ticketClosed()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Ticket is afgerond en kan niet meer worden beantwoord.'),
+          content: Text(S.of(context).ticketIsAfgerondEnKanNietMeerWordenBeantwoord),
         ),
       );
       return;
@@ -1947,7 +1939,7 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
       await _refreshTicket();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reactie verstuurd')),
+        const SnackBar(content: Text(S.of(context).reactieVerstuurd)),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -1955,7 +1947,7 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Dit ticket bestaat niet meer',
+              S.of(context).ditTicketBestaatNietMeer,
               style: GoogleFonts.sora(),
             ),
             backgroundColor: Colors.red.shade700,
@@ -1982,7 +1974,7 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
   String _statusLabelLocal(String raw) {
     final s = raw.toLowerCase();
     if (s.contains('resolved') || s.contains('closed') || s.contains('done')) return 'Opgelost';
-    if (s.contains('in_progress') || s.contains('pending') || s.contains('waiting')) return 'In behandeling';
+    if (s.contains('in_progress') || s.contains('pending') || s.contains('waiting')) return S.of(context).statusInBehandeling;
     return 'Open';
   }
 
@@ -2002,17 +1994,17 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
 
   String _categoryLabel(String raw) {
     switch (raw.toLowerCase()) {
-      case 'booking': return 'Boeking';
-      case 'invoice': return 'Factuur';
+      case 'booking': return S.of(context).booking;
+      case 'invoice': return S.of(context).factuur2;
       case 'check_in': return 'Check-in';
-      case 'payment': return 'Betaling';
-      case 'dispute': return 'Geschil';
-      case 'incident': return 'Incident';
+      case 'payment': return S.of(context).typeBetaling;
+      case 'dispute': return S.of(context).typeGeschil;
+      case 'incident': return S.of(context).typeIncident;
       case 'billing': return 'Facturatie';
       case 'account': return 'Account';
       case 'technical': return 'Technisch';
       case 'general': return 'Algemeen';
-      default: return raw.isEmpty ? 'Overig' : raw;
+      default: return raw.isEmpty ? S.of(context).typeOverig : raw;
     }
   }
 
@@ -2029,7 +2021,7 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
       appBar: AppBar(
         backgroundColor: GymiesColors.darkBlue,
         foregroundColor: Colors.white,
-        title: Text('Support', style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.w700)),
+        title: Text(S.of(context).support, style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.w700)),
         centerTitle: true,
         elevation: 0,
       ),
@@ -2051,7 +2043,7 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        subject.isEmpty ? 'Supportverzoek' : subject,
+                        subject.isEmpty ? S.of(context).supportverzoek : subject,
                         style: GoogleFonts.sora(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -2123,7 +2115,7 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          'Wacht op reactie van support',
+                          S.of(context).wachtOpReactieVanSupport,
                           style: GoogleFonts.sora(
                             color: Colors.grey.shade600,
                             fontSize: 12,
@@ -2161,7 +2153,7 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
                             size: 16, color: Colors.green.shade700),
                         const SizedBox(width: 6),
                         Text(
-                          'Dit ticket is opgelost',
+                          S.of(context).ditTicketIsOpgelost,
                           style: GoogleFonts.sora(
                             color: Colors.green.shade700,
                             fontWeight: FontWeight.w600,
@@ -2184,7 +2176,7 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
+                    color: Colors.black.withOpacity(0.06),
                     blurRadius: 8,
                     offset: const Offset(0, -2),
                   ),
@@ -2207,8 +2199,8 @@ class _SupportThreadScreenState extends State<_SupportThreadScreen> {
                         style: GoogleFonts.sora(fontSize: 14, color: GymiesColors.darkBlue),
                         decoration: InputDecoration(
                           hintText: _ticketClosed()
-                              ? 'Ticket is afgerond'
-                              : 'Typ een bericht...',
+                              ? S.of(context).ticketIsAfgerond
+                              : S.of(context).typEenBericht,
                           hintStyle: GoogleFonts.sora(fontSize: 14, color: Colors.grey.shade400),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -2288,7 +2280,7 @@ class _SupportBubble extends StatelessWidget {
           border: mine ? null : Border.all(color: Colors.grey.shade200),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: Colors.black.withOpacity(0.04),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),

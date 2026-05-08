@@ -1,17 +1,18 @@
+
+
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../utils/haptics.dart';
-
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import 'widgets/gymies_dialog.dart';
-
 const _kClientCityKey = 'gymies_client_city';
 
 class ClientProfileScreen extends StatefulWidget {
@@ -53,14 +54,14 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
   }
 
   Future<void> _load() async {
+    final api = context.read<GymiesApi>();
+    final auth = context.read<AuthService>();
+    context.read<ApiClient>().setAuthToken(auth.token);
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
-      final auth = context.read<AuthService>();
-      context.read<ApiClient>().setAuthToken(auth.token);
       Map<String, dynamic> me = {};
       try {
         me = await api.getMe();
@@ -98,7 +99,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon profiel niet laden.';
+        _error = S.of(context).couldNotLoadProfile;
         _loading = false;
       });
     }
@@ -128,17 +129,21 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         await prefs.setString(_kClientCityKey, city);
       }
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profiel opgeslagen'),
-          backgroundColor: GymiesColors.darkBlue,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile saved'),
+            backgroundColor: GymiesColors.darkBlue,
+          ),
+        );
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message), backgroundColor: Colors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -146,6 +151,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
 
   Future<void> _changePassword() async {
     Haptics.light();
+    final api = context.read<GymiesApi>();
     final formKey = GlobalKey<FormState>();
     final currentCtrl = TextEditingController();
     final newCtrl = TextEditingController();
@@ -156,7 +162,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
           return GymiesDialog(
-            title: 'Wachtwoord wijzigen',
+            title: S.of(context).changePassword,
             headerIcon: Icons.lock_outline_rounded,
             content: Form(
               key: formKey,
@@ -166,33 +172,33 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                   TextFormField(
                     controller: currentCtrl,
                     obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Huidig wachtwoord',
+                    decoration: InputDecoration(
+                      labelText: S.of(context).currentPassword,
                     ),
                     validator: (v) => (v == null || v.isEmpty)
-                        ? 'Vul je huidige wachtwoord in'
+                        ? S.of(context).enterCurrentPassword
                         : null,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: newCtrl,
                     obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Nieuw wachtwoord',
+                    decoration: InputDecoration(
+                      labelText: S.of(context).newPassword,
                     ),
                     validator: (v) => (v == null || v.length < 8)
-                        ? 'Minimaal 8 tekens'
+                        ? '${S.of(context).minimumCharacters} 8'
                         : null,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: confirmCtrl,
                     obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Herhaal nieuw wachtwoord',
+                    decoration: InputDecoration(
+                      labelText: S.of(context).repeatNewPassword,
                     ),
                     validator: (v) => v != newCtrl.text
-                        ? 'Wachtwoorden komen niet overeen'
+                        ? S.of(context).passwordsDoNotMatch
                         : null,
                   ),
                 ],
@@ -200,11 +206,11 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
             ),
             actions: [
               GymiesDialogAction(
-                label: 'Annuleren',
+                label: S.of(context).cancelLabel,
                 returnValue: null,
               ),
               GymiesDialogAction(
-                label: 'Opslaan',
+                label: S.of(context).saveAction,
                 isPrimary: true,
                 onPressed: submitting
                     ? null
@@ -214,7 +220,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                         }
                         setModalState(() => submitting = true);
                         try {
-                          await context.read<GymiesApi>().changeMyPassword(
+                          await api.changeMyPassword(
                             currentPassword: currentCtrl.text,
                             newPassword: newCtrl.text,
                           );
@@ -223,7 +229,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Wachtwoord succesvol gewijzigd'),
+                              content: Text('Password successfully changed'),
                               backgroundColor: GymiesColors.darkBlue,
                             ),
                           );
@@ -269,7 +275,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
+                  color: Colors.black.withOpacity(0.05),
                   blurRadius: 12,
                   offset: const Offset(0, 3),
                 ),
@@ -290,7 +296,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
+                  color: Colors.black.withOpacity(0.05),
                   blurRadius: 12,
                   offset: const Offset(0, 3),
                 ),
@@ -364,7 +370,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Mijn profiel',
+                        S.of(context).myProfileTitle,
                         style: GoogleFonts.sora(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -394,7 +400,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                           Padding(
                             padding: const EdgeInsets.only(left: 4, bottom: 8),
                             child: Text(
-                              'Persoonlijke gegevens',
+                              S.of(context).personalDetails,
                               style: GoogleFonts.sora(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -408,7 +414,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.05),
+                                  color: Colors.black.withOpacity(0.05),
                                   blurRadius: 12,
                                   offset: const Offset(0, 3),
                                 ),
@@ -421,7 +427,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                   TextFormField(
                                     controller: _nameController,
                                     decoration: InputDecoration(
-                                      labelText: 'Naam',
+                                      labelText: S.of(context).nameLabel,
                                       prefixIcon: const Icon(Icons.person_outline, size: 20),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
@@ -433,7 +439,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                       ),
                                     ),
                                     validator: (v) => (v == null || v.trim().isEmpty)
-                                        ? 'Naam is verplicht'
+                                        ? S.of(context).nameIsRequired
                                         : null,
                                   ),
                                   const SizedBox(height: 14),
@@ -441,7 +447,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                     initialValue: _email,
                                     readOnly: true,
                                     decoration: InputDecoration(
-                                      labelText: 'E-mail',
+                                      labelText: S.of(context).email,
                                       prefixIcon: const Icon(Icons.email_outlined, size: 20),
                                       filled: true,
                                       fillColor: Colors.grey.shade50,
@@ -459,7 +465,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                   TextFormField(
                                     controller: _phoneController,
                                     decoration: InputDecoration(
-                                      labelText: 'Telefoon',
+                                      labelText: S.of(context).phoneLabel,
                                       hintText: '06 12 34 56 78',
                                       prefixIcon: const Icon(Icons.phone_outlined, size: 20),
                                       border: OutlineInputBorder(
@@ -479,8 +485,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                     validator: (value) {
                                       if (value == null || value.trim().isEmpty) return null; // optioneel veld
                                       final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
-                                      if (digits.length < 10) return 'Voer minimaal 10 cijfers in';
-                                      if (digits.length > 15) return 'Telefoonnummer is te lang';
+                                      if (digits.length < 10) return S.of(context).enterMinimum10Digits;
+                                      if (digits.length > 15) return S.of(context).phoneNumberTooLong;
                                       return null;
                                     },
                                   ),
@@ -488,8 +494,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                   TextFormField(
                                     controller: _cityController,
                                     decoration: InputDecoration(
-                                      labelText: 'Mijn stad',
-                                      hintText: 'Bijv. Rotterdam, Amsterdam',
+                                      labelText: S.of(context).myCity,
+                                      hintText: S.of(context).exampleCity,
                                       prefixIcon: const Icon(Icons.location_on_outlined, size: 20),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
@@ -514,7 +520,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.05),
+                                  color: Colors.black.withOpacity(0.05),
                                   blurRadius: 12,
                                   offset: const Offset(0, 3),
                                 ),
@@ -546,7 +552,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                               CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              'Noodcontact',
+                                              S.of(context).emergencyContactLabel,
                                               style: GoogleFonts.sora(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w700,
@@ -555,8 +561,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              'Wordt geïnformeerd bij een SOS-alert '
-                                              'of als je niet reageert na een sessie.',
+                                              S.of(context).emergencyContactInfo,
                                               style: GoogleFonts.sora(
                                                 fontSize: 12,
                                                 color: Colors.grey.shade600,
@@ -572,8 +577,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                   TextFormField(
                                     controller: _ecNameController,
                                     decoration: InputDecoration(
-                                      labelText: 'Naam noodcontact',
-                                      hintText: 'Bijv. Jan Jansen',
+                                      labelText: S.of(context).emergencyContactName,
+                                      hintText: S.of(context).exampleName,
                                       prefixIcon: const Icon(Icons.person_outline, size: 20),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
@@ -591,7 +596,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                   TextFormField(
                                     controller: _ecPhoneController,
                                     decoration: InputDecoration(
-                                      labelText: 'Telefoonnummer noodcontact',
+                                      labelText: S.of(context).emergencyContactPhone,
                                       hintText: '+31 6 12345678',
                                       prefixIcon: const Icon(Icons.phone_outlined, size: 20),
                                       border: OutlineInputBorder(
@@ -609,8 +614,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                   TextFormField(
                                     controller: _ecEmailController,
                                     decoration: InputDecoration(
-                                      labelText: 'E-mail noodcontact',
-                                      hintText: 'noodcontact@voorbeeld.nl',
+                                      labelText: S.of(context).emailEmergencyContact,
+                                      hintText: S.of(context).emergencyContactPlaceholder,
                                       prefixIcon: const Icon(Icons.email_outlined, size: 20),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
@@ -638,7 +643,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                               },
                               icon: const Icon(Icons.lock_outline_rounded, size: 18),
                               label: Text(
-                                'Wachtwoord wijzigen',
+                                S.of(context).changePassword,
                                 style: GoogleFonts.sora(fontSize: 14),
                               ),
                               style: OutlinedButton.styleFrom(
@@ -657,7 +662,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                               borderRadius: BorderRadius.circular(14),
                               boxShadow: [
                                 BoxShadow(
-                                  color: GymiesColors.primary.withValues(alpha: 0.3),
+                                  color: GymiesColors.primary.withOpacity(0.3),
                                   blurRadius: 12,
                                   offset: const Offset(0, 4),
                                 ),
@@ -689,7 +694,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                                         color: GymiesColors.darkBlue,
                                       ),
                                     )
-                                  : const Text('Opslaan'),
+                                  : Text(S.of(context).saveAction),
                             ),
                           ),
                           const SizedBox(height: 24),
@@ -747,7 +752,7 @@ class _ErrorView extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: Text('Opnieuw proberen', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+              child: Text(S.of(context).retryAction, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -788,7 +793,7 @@ class _SkeletonBoxState extends State<_SkeletonBox>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _ctrl,
-      builder: (_, __) {
+      builder: (_, _) {
         return Container(
           width: widget.width,
           height: widget.height,

@@ -66,9 +66,20 @@ class GymiesCalendarController extends Controller
             return response()->json(["message" => "Ongeldige of verlopen token."], 403);
         }
 
+        // BUG-002: Add date range limits to prevent querying huge ranges
         $now = now();
         $from = $now->copy()->subDays(30)->toDateTimeString();
         $to = $now->copy()->addDays(60)->toDateTimeString();
+
+        // Enforce strict date range bounds
+        $maxPastDays = 365;
+        $maxFutureDays = 365;
+        if ($from < $now->copy()->subDays($maxPastDays)->toDateTimeString()) {
+            $from = $now->copy()->subDays($maxPastDays)->toDateTimeString();
+        }
+        if ($to > $now->copy()->addDays($maxFutureDays)->toDateTimeString()) {
+            $to = $now->copy()->addDays($maxFutureDays)->toDateTimeString();
+        }
 
         if ($user->role === "trainer") {
             $bookings = DB::table("gymies_bookings as b")

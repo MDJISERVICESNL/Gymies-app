@@ -169,7 +169,10 @@ final class GymiesBookingController extends Controller
                 $item['gym_location_name'] = property_exists($r, 'gym_location_name') && $r->gym_location_name ? (string) $r->gym_location_name : null;
             }
             if (property_exists($r, 'confirmation_note')) {
-                $item['confirmation_note'] = $r->confirmation_note ? (string) $r->confirmation_note : null;
+                // ISSUE #5: Missing XSS sanitization on user-submitted text
+                // FIX: Strip HTML tags from user text before returning in API
+                $confNote = $r->confirmation_note ? (string) $r->confirmation_note : null;
+                $item['confirmation_note'] = $confNote ? strip_tags($confNote) : null;
             }
             if ($r->status === 'completed') {
                 $item['has_review'] = in_array((int) $r->id, $reviewedBookingIds, true);

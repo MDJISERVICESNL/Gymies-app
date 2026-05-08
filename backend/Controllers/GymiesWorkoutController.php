@@ -49,13 +49,13 @@ class GymiesWorkoutController extends Controller
         if (!$user || $user->role !== "trainer") return response()->json(["message" => "Unauthorized"], 403);
         if (!Schema::hasTable("gymies_workout_templates")) return response()->json(["message" => "Niet beschikbaar."], 503);
 
-        $title = mb_substr(trim((string) $request->input("title", "")), 0, 255);
+        $title = mb_substr(strip_tags(trim((string) $request->input("title", ""))), 0, 255);
         if (empty($title)) return response()->json(["message" => "Titel is verplicht."], 422);
 
         $templateId = DB::table("gymies_workout_templates")->insertGetId([
             "trainer_user_id" => (int) $user->id,
             "title" => $title,
-            "description" => mb_substr(trim((string) $request->input("description", "")), 0, 2000) ?: null,
+            "description" => mb_substr(strip_tags(trim((string) $request->input("description", ""))), 0, 2000) ?: null,
             "created_at" => now(),
             "updated_at" => now(),
         ]);
@@ -65,12 +65,12 @@ class GymiesWorkoutController extends Controller
             foreach ($exercises as $i => $ex) {
                 DB::table("gymies_workout_exercises")->insert([
                     "workout_template_id" => $templateId,
-                    "exercise_name" => mb_substr(trim((string) ($ex["name"] ?? $ex["exercise_name"] ?? "")), 0, 255),
+                    "exercise_name" => mb_substr(strip_tags(trim((string) ($ex["name"] ?? $ex["exercise_name"] ?? ""))), 0, 255),
                     "sets_count" => min(max((int) ($ex["sets"] ?? $ex["sets_count"] ?? 3), 1), 20),
                     "reps" => mb_substr(trim((string) ($ex["reps"] ?? "10")), 0, 50),
                     "rest_seconds" => min(max((int) ($ex["rest_seconds"] ?? $ex["rest"] ?? 60), 0), 600),
                     "weight_kg" => is_numeric($ex["weight_kg"] ?? null) ? round((float) $ex["weight_kg"], 2) : null,
-                    "notes" => mb_substr(trim((string) ($ex["notes"] ?? "")), 0, 500) ?: null,
+                    "notes" => mb_substr(strip_tags(trim((string) ($ex["notes"] ?? ""))), 0, 500) ?: null,
                     "sort_order" => $i,
                     "created_at" => now(),
                 ]);
@@ -108,10 +108,10 @@ class GymiesWorkoutController extends Controller
             ->where("id", (int) $id)->where("trainer_user_id", (int) $user->id)->first();
         if (!$template) return response()->json(["message" => "Niet gevonden."], 404);
 
-        $title = mb_substr(trim((string) $request->input("title", $template->title)), 0, 255);
+        $title = mb_substr(strip_tags(trim((string) $request->input("title", $template->title))), 0, 255);
         DB::table("gymies_workout_templates")->where("id", (int) $id)->update([
             "title" => $title,
-            "description" => mb_substr(trim((string) $request->input("description", $template->description ?? "")), 0, 2000) ?: null,
+            "description" => mb_substr(strip_tags(trim((string) $request->input("description", $template->description ?? ""))), 0, 2000) ?: null,
             "updated_at" => now(),
         ]);
 
@@ -122,12 +122,12 @@ class GymiesWorkoutController extends Controller
                 foreach ($exercises as $i => $ex) {
                     DB::table("gymies_workout_exercises")->insert([
                         "workout_template_id" => (int) $id,
-                        "exercise_name" => mb_substr(trim((string) ($ex["name"] ?? $ex["exercise_name"] ?? "")), 0, 255),
+                        "exercise_name" => mb_substr(strip_tags(trim((string) ($ex["name"] ?? $ex["exercise_name"] ?? ""))), 0, 255),
                         "sets_count" => min(max((int) ($ex["sets"] ?? $ex["sets_count"] ?? 3), 1), 20),
                         "reps" => mb_substr(trim((string) ($ex["reps"] ?? "10")), 0, 50),
                         "rest_seconds" => min(max((int) ($ex["rest_seconds"] ?? $ex["rest"] ?? 60), 0), 600),
                         "weight_kg" => is_numeric($ex["weight_kg"] ?? null) ? round((float) $ex["weight_kg"], 2) : null,
-                        "notes" => mb_substr(trim((string) ($ex["notes"] ?? "")), 0, 500) ?: null,
+                        "notes" => mb_substr(strip_tags(trim((string) ($ex["notes"] ?? ""))), 0, 500) ?: null,
                         "sort_order" => $i,
                         "created_at" => now(),
                     ]);

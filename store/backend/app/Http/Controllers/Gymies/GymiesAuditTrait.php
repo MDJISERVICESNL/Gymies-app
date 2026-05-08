@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Gymies;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 trait GymiesAuditTrait
@@ -45,7 +46,7 @@ trait GymiesAuditTrait
             ]);
         } catch (\Throwable $e) {
             // Audit logging should never break the main flow
-            \Log::warning('Audit log failed: ' . $e->getMessage());
+            Log::warning('Audit log failed: ' . $e->getMessage());
         }
     }
 }

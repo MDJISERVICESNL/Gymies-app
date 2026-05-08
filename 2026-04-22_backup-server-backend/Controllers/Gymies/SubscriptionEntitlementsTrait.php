@@ -71,7 +71,7 @@ trait SubscriptionEntitlementsTrait
     private function isPendingDowngradeEffective(array $profile): bool
     {
         $pending = $profile['subscription_pending_downgrade'] ?? null;
-        if (!$pending && $pending !== 1 && $pending !== true) {
+        if (!$pending || ($pending !== 1 && $pending !== true)) {
             return false;
         }
         $downgradesAt = $profile['subscription_downgrades_at'] ?? null;
@@ -102,7 +102,7 @@ trait SubscriptionEntitlementsTrait
             return ['is_pending_downgrade' => false, 'downgrades_at' => null, 'downgrade_to' => null];
         }
         $pending = $profile['subscription_pending_downgrade'] ?? null;
-        if (!$pending && $pending !== 1 && $pending !== true) {
+        if (!$pending || ($pending !== 1 && $pending !== true)) {
             return ['is_pending_downgrade' => false, 'downgrades_at' => null, 'downgrade_to' => null];
         }
         $downgradesAt = $profile['subscription_downgrades_at'] ?? null;

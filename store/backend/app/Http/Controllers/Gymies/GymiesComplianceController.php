@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -22,7 +23,7 @@ final class GymiesComplianceController extends Controller
 
         $userId = (int) $user->id;
         // T-001 FIXED: export beperkt tot eigen data, GDPR audit trail toegevoegd
-        \Log::info('GYMIES_GDPR_EXPORT', [
+        Log::info('GYMIES_GDPR_EXPORT', [
             'exporter_id' => $user->id,
             'exporter_role' => $user->role,
             'exported_at' => now()->toIso8601String(),

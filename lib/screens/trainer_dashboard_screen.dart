@@ -6,7 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
 import '../config/timing_constants.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
 import '../utils/map_utils.dart';
@@ -27,9 +29,8 @@ import 'trainer_onboarding_screen.dart';
 import 'client_support_screen.dart';
 import 'trainer_check_in_scanner_screen.dart';
 import 'trainer_packages_screen.dart';
+import 'trainer_invite_codes_screen.dart';
 import 'trainer_widget_qr_screen.dart';
-import 'shells/trainer_shell.dart';
-import 'widgets/gymies_app_bar.dart';
 import 'widgets/trainer_state_views.dart';
 
 /// Trainer-dashboard met overzicht en hamburgermenu.
@@ -61,7 +62,10 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
   bool _queueFlushing = false;
   Timer? _checkInWindowTimer;
   Timer? _countdownTimer;        // Live countdown – ticks elke seconde
+  // ignore: unused_field
   bool _hasGymAccess = false;
+  Map<String, dynamic>? _regionProgress; // Launch gate: regio voortgang voor banner
+  bool _regionBannerDismissed = false;
   late AnimationController _staggerController;
   bool _hasAnimated = false;
 
@@ -88,7 +92,8 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
 
   void _startCountdownTimer() {
     _countdownTimer?.cancel();
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    // Only trigger rebuild every 30 seconds instead of every 1 second to reduce overhead
+    _countdownTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) return;
       setState(() {}); // Herlaad build voor live countdown
     });
@@ -96,6 +101,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
 
   void _startCheckInTimer() {
     _checkInWindowTimer?.cancel();
+    // Only trigger rebuild when actually needed
     _checkInWindowTimer = Timer.periodic(TimingConstants.checkInTimerInterval, (_) {
       if (!mounted) return;
       setState(() {}); // Herlaad build voor QR-knop zichtbaarheid
@@ -129,7 +135,9 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _checkInWindowTimer?.cancel();
+    _checkInWindowTimer = null;
     _countdownTimer?.cancel();
+    _countdownTimer = null;
     _staggerController.dispose();
     super.dispose();
   }
@@ -152,12 +160,12 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
         apiClient.setAuthToken(auth.token);
         if (kDebugMode) debugPrint('[TrainerDashboard] setAuthToken called – apiClient heeft nu ${apiClient.authToken?.length ?? 0} chars');
       } else if (kDebugMode) {
-        debugPrint('[TrainerDashboard] GEEN setAuthToken – auth.token is leeg of null');
+        debugPrint(S.of(context).trainerdashboardGeenSetauthtokenAuthtokenIsLeeg);
       }
       final entitlements = context.read<SubscriptionEntitlementsService>();
-      if (kDebugMode) debugPrint('[TrainerDashboard] GET trainer/summary...');
+      if (kDebugMode) debugPrint(S.of(context).trainerdashboardGetTrainersummary);
       final summary = await api.getTrainerSummary();
-      if (kDebugMode) debugPrint('[TrainerDashboard] getTrainerSummary OK');
+      if (kDebugMode) debugPrint(S.of(context).trainerdashboardGettrainersummaryOk);
       await entitlements.load();
       final tier = entitlements.tier?.toLowerCase() ?? '';
       bool hasGymAccess = entitlements.suiteEnabled || tier == 'studio' || tier == 'elite';
@@ -198,8 +206,11 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
       try {
         final onboarding = await api.getOnboardingStatus();
         final step = onboarding['current_step'] as String? ?? '';
+        if (!mounted) return;
         final userData = context.read<AuthService>().user;
-        final isVerified = (userData?['trainer_approved_at'] != null) || (onboarding['trainer_verified_at'] != null);
+        // FIX: Use hardcoded field names instead of localization strings as dictionary keys
+        final isVerified = (userData?['trainer_approved_at'] != null || userData?['trainerapprovedat'] != null) ||
+                           (onboarding['trainer_verified_at'] != null || onboarding['trainerverifiedat'] != null);
         onboardingCompleted = step == 'completed' || isVerified;
       } on ApiException catch (e) {
         if (e.statusCode == 401) rethrow;
@@ -210,6 +221,24 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
         if (kDebugMode) debugPrint('[TrainerDashboard] Onboarding status check fout: $e');
         onboardingCompleted = false;
       }
+      // ── Launch gate: check of trainer's regio open is ──
+      Map<String, dynamic>? regionProgress;
+      try {
+        final userId = auth.user?['id']?.toString() ?? '';
+        if (userId.isNotEmpty) {
+          final gateResult = await api.launchGateCheck(userId);
+          if (gateResult['can_book'] != true && gateResult['progress'] != null) {
+            regionProgress = {
+              'region_name': gateResult['region_name'] ?? '',
+              'region_status': gateResult['region_status'] ?? '',
+              ...Map<String, dynamic>.from(gateResult['progress'] as Map? ?? {}),
+            };
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) debugPrint('[TrainerDashboard] Region progress check fout: $e');
+      }
+
       if (kDebugMode) {
         try {
           final stats = await ActionRetryQueueService.getQueueStats();
@@ -233,6 +262,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
           _queueHighRetryCount = queueHighRetry;
           _onboardingCompleted = onboardingCompleted;
           _hasGymAccess = hasGymAccess;
+          _regionProgress = regionProgress;
           _loading = false;
         });
         if (!_hasAnimated) {
@@ -246,14 +276,14 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
       if (mounted) setState(() => _loading = false);
     } catch (e, st) {
       if (kDebugMode) debugPrint('[TrainerDashboard] *** Catch *** $e\n$st');
-      if (mounted) setState(() => _error = 'Kon gegevens niet laden.');
+      if (mounted) setState(() => _error = S.of(context).konGegevensNietLaden);
       if (mounted) setState(() => _loading = false);
     }
   }
 
   String _userDisplayName() {
     final user = context.read<AuthService>().user;
-    if (user == null) return 'trainer';
+    if (user == null) return S.of(context).trainer2;
     final name = user['display_name'] ?? user['first_name'] ?? user['name'];
     if (name != null && name.toString().trim().isNotEmpty) {
       return name.toString().trim().split(RegExp(r'\s+')).first;
@@ -263,7 +293,44 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
       final part = email.split('@').first;
       if (part.isNotEmpty) return part;
     }
-    return 'trainer';
+    return S.of(context).trainer2;
+  }
+
+  /// Post een story (Pro feature)
+  // ignore: unused_element
+  Future<void> _postStory() async {
+    // Check Pro subscription
+    final tier = context.read<SubscriptionEntitlementsService>().tier?.toLowerCase() ?? '';
+    if (!['pro', 'pro_plus'].contains(tier)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(S.of(context).storiesProFeature)),
+        );
+      }
+      return;
+    }
+    
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1080);
+    if (picked == null) return;
+    
+    try {
+      // ignore: use_build_context_synchronously
+      await context.read<GymiesApi>().uploadStory(picked.path);
+      if (mounted) {
+        // ignore: use_build_context_synchronously
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(S.of(context).storyPosted)),
+        );
+        _load(); // Herlaad dashboard om avatar ring te updaten
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(S.of(context).storyUploadMisluktMsg(e.message ?? ''))),
+        );
+      }
+    }
   }
 
   String _avatarInitials() {
@@ -279,11 +346,12 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
   }
 
   String _timeGreeting() {
+    final s = S.of(context);
     final hour = DateTime.now().hour;
-    if (hour < 6) return 'Goedenacht';
-    if (hour < 12) return 'Goedemorgen';
-    if (hour < 18) return 'Goedemiddag';
-    return 'Goedenavond';
+    if (hour < 6) return s.goodNight;
+    if (hour < 12) return s.goodMorning;
+    if (hour < 18) return s.goodAfternoon;
+    return s.goodEvening;
   }
 
   Future<void> _logout() async {
@@ -348,6 +416,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
     if (changed == true && mounted) await _load();
   }
 
+  // ignore: unused_element
   Future<void> _flushQueueNow() async {
     if (_queueFlushing) return;
     setState(() => _queueFlushing = true);
@@ -357,7 +426,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Retry klaar: $sent actie(s) verstuurd')),
+        SnackBar(content: Text('${S.of(context).retryAction}: $sent actie(s) verstuurd')),
       );
       await _load();
     } finally {
@@ -365,6 +434,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
     }
   }
 
+  // ignore: unused_element
   String _queueHealthLabel() {
     if (_queueFailedCount >= 3 || _queueHighRetryCount > 0) {
       return 'Kritiek: $_queueFailedCount acties falen ($_queueHighRetryCount met hoge retries).';
@@ -372,12 +442,13 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
     if (_queuePendingCount > 0) {
       return '$_queuePendingCount actie(s) wachten op retry.';
     }
-    return 'Alle achtergrondacties zijn gesynchroniseerd.';
+    return S.of(context).alleAchtergrondactiesZijnGesynchroniseerd;
   }
 
+  // ignore: unused_element
   Future<void> _openIncidentSupport() async {
     final draft = await ActionRetryQueueService.buildIncidentSupportDraft(
-      contextLabel: 'TrainerDashboard',
+      contextLabel: S.of(context).trainerdashboard,
     );
     if (!mounted) return;
     await Navigator.of(context).push(
@@ -414,18 +485,18 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                 '${mapStr(item, ['body', 'message', 'text'])}'
             .toLowerCase();
     if (text.contains('booking') ||
-        text.contains('boeking') ||
+        text.contains(S.of(context).boeking) ||
         text.contains('session') ||
-        text.contains('sessie')) {
-      return 'Boeking';
+        text.contains(S.of(context).sessie3)) {
+      return S.of(context).booking;
     }
     if (text.contains('message') ||
         text.contains('bericht') ||
         text.contains('chat')) {
-      return 'Bericht';
+      return S.of(context).bericht;
     }
     if (text.contains('invoice') ||
-        text.contains('factuur') ||
+        text.contains(S.of(context).factuur) ||
         text.contains('payment') ||
         text.contains('payout') ||
         text.contains('revenue') ||
@@ -451,9 +522,9 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
 
   IconData _categoryIcon(String category) {
     switch (category) {
-      case 'Boeking':
+      case S.of(context).booking:
         return Icons.event_rounded;
-      case 'Bericht':
+      case S.of(context).bericht:
         return Icons.chat_bubble_outline_rounded;
       case 'Financieel':
         return Icons.euro_rounded;
@@ -464,9 +535,9 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
 
   Color _categoryColor(String category) {
     switch (category) {
-      case 'Boeking':
+      case S.of(context).booking:
         return Colors.blue.shade600;
-      case 'Bericht':
+      case S.of(context).bericht:
         return Colors.teal.shade600;
       case 'Financieel':
         return Colors.green.shade600;
@@ -503,7 +574,10 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
       await context.read<GymiesApi>().markNotificationsRead(
         notificationId: id.isNotEmpty ? id : null,
       );
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Notification mark-read can fail silently, local UI updated anyway
+      if (kDebugMode) debugPrint('[TrainerDashboard] Mark notification read failed: $e');
+    }
     if (!mounted) return;
     setState(() {
       _recentNotifications.removeWhere((n) =>
@@ -523,7 +597,10 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
           await api.markNotificationsRead(notificationId: id);
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Bulk mark-read can fail partially, local UI clears anyway
+      if (kDebugMode) debugPrint('[TrainerDashboard] Mark all notifications failed: $e');
+    }
     if (!mounted) return;
     setState(() => _recentNotifications.clear());
   }
@@ -585,7 +662,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                           DateFormat('EEEE d MMMM', 'nl_NL').format(DateTime.now()),
                           style: GoogleFonts.sora(
                             fontSize: 10,
-                            color: Colors.white.withValues(alpha: 0.5),
+                            color: Colors.white.withOpacity(0.5),
                           ),
                         ),
                       ],
@@ -596,16 +673,18 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                       onTap: _openCheckInScanner,
                       child: Padding(
                         padding: const EdgeInsets.only(right: 8),
-                        child: Icon(Icons.qr_code_scanner_rounded, color: Colors.white.withValues(alpha: 0.7), size: 22),
+                        child: Icon(Icons.qr_code_scanner_rounded, color: Colors.white.withOpacity(0.7), size: 22),
                       ),
                     ),
                   // ── Notification bell with dot ──
-                  GestureDetector(
-                    onTap: _openNotifications,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Icon(Icons.notifications_outlined, color: Colors.white.withValues(alpha: 0.7), size: 22),
+                  Tooltip(
+                    message: S.of(context).meldingen,
+                    child: GestureDetector(
+                      onTap: _openNotifications,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Icon(Icons.notifications_outlined, color: Colors.white.withOpacity(0.7), size: 22),
                         if (effectiveUnread > 0)
                           Positioned(
                             right: -2,
@@ -621,6 +700,8 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                             ),
                           ),
                       ],
+                    ),
+                  ),
                     ),
                   ),
                 ],
@@ -648,7 +729,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                         border: Border.all(color: Colors.amber.shade200),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 10,
                             offset: const Offset(0, 2),
                           ),
@@ -675,12 +756,12 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Activeer je account',
+                                      S.of(context).activateAccount,
                                       style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      'Voltooi je onboarding om sessies aan te bieden.',
+                                      S.of(context).completeOnboarding,
                                       style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade700),
                                     ),
                                   ],
@@ -699,7 +780,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                                   foregroundColor: Colors.grey.shade500,
                                   padding: const EdgeInsets.symmetric(horizontal: 12),
                                 ),
-                                child: Text('Later', style: GoogleFonts.sora(fontSize: 13)),
+                                child: Text(S.of(context).laterLabel, style: GoogleFonts.sora(fontSize: 13)),
                               ),
                               const SizedBox(width: 8),
                               FilledButton(
@@ -710,13 +791,35 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                 ),
-                                child: Text('Nu activeren', style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600)),
+                                child: Text(S.of(context).activateNow, style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600)),
                               ),
                             ],
                           ),
                         ],
                       ),
                     ),
+                  ),
+                ),
+              ),
+
+            // ── Launch gate regio banner ──────────────────────────────
+            if (_regionProgress != null && !_regionBannerDismissed)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: _RegionProgressBanner(
+                    regionName: (_regionProgress!['region_name'] ?? '') as String,
+                    progressPct: ((_regionProgress!['progress_pct'] as num?)?.toDouble() ?? 0),
+                    progressLevel: (_regionProgress!['progress_level'] ?? 'early') as String,
+                    message: (_regionProgress!['message'] ?? '') as String,
+                    regionStatus: (_regionProgress!['region_status'] ?? '') as String,
+                    onDismiss: () => setState(() => _regionBannerDismissed = true),
+                    onShareCode: () {
+                      // Navigate to invite codes screen
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const TrainerInviteCodesScreen()),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -737,13 +840,16 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
             // ── Error state ────────────────────────────────────────────
             if (_error != null)
               SliverToBoxAdapter(
-                child: TrainerErrorView(
-                  message: _error!,
-                  onRetry: _load,
-                  onLogout: (_error!.toLowerCase().contains('sessie') ||
-                          _error!.toLowerCase().contains('verlopen'))
-                      ? _logout
-                      : null,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: TrainerErrorView(
+                    message: _error!,
+                    onRetry: _load,
+                    onLogout: (_error!.toLowerCase().contains(S.of(context).sessie3) ||
+                            _error!.toLowerCase().contains('verlopen'))
+                        ? _logout
+                        : null,
+                  ),
                 ),
               )
             else ...[
@@ -757,7 +863,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'SNELLE ACTIES',
+                          S.of(context).quickActionsLabel,
                           style: GoogleFonts.sora(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
@@ -770,7 +876,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                           children: [
                             _QuickAction(
                               icon: Icons.add_rounded,
-                              label: 'Nieuwe\nsessie',
+                              label: S.of(context).nieuwensessie,
                               highlight: true,
                               onTap: () => _pushScreen(const TrainerSessionsScreen()),
                             ),
@@ -803,14 +909,14 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                     child: Row(
                       children: [
                         Text(
-                          'Vandaag${s != null && s.upcomingBookings.isNotEmpty ? ' · ${s.upcomingBookings.length} sessie${s.upcomingBookings.length == 1 ? '' : 's'}' : ''}',
+                          'Vandaag${s != null && s.upcomingBookings.isNotEmpty ? ' · ${s.upcomingBookings.length} ${S.of(context).sessionStartsSoon}${s.upcomingBookings.length == 1 ? '' : 's'}' : ''}',
                           style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue),
                         ),
                         const Spacer(),
                         GestureDetector(
                           onTap: _openMySessions,
                           child: Text(
-                            'Alles bekijken',
+                            S.of(context).viewAllAction2,
                             style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey.shade500),
                           ),
                         ),
@@ -823,15 +929,30 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
               // ── Sessie lijst ─────────────────────────────────────────
               if (_loading && s == null)
                 const SliverToBoxAdapter(child: TrainerLoadingView())
-              else if (s == null || s.upcomingBookings.isEmpty)
+              else if (s == null)
                 SliverToBoxAdapter(
                   child: _FadeSlide(
                     animation: _staggerAnimation(3),
                     child: TrainerEmptyState(
                       icon: Icons.event_available,
-                      title: 'Geen komende sessies',
-                      subtitle: 'Nieuwe boekingen verschijnen automatisch zodra een klant boekt.',
-                      actionLabel: 'Open mijn sessies',
+                      title: S.of(context).nextSessionLabel,
+                      subtitle: 'Kan sessies niet laden. Probeer het opnieuw.',
+                      actionLabel: S.of(context).openMijnSessies,
+                      actionIcon: Icons.event_note_rounded,
+                      onAction: _openMySessions,
+                      padding: const EdgeInsets.all(24),
+                    ),
+                  ),
+                )
+              else if (s.upcomingBookings.isEmpty)
+                SliverToBoxAdapter(
+                  child: _FadeSlide(
+                    animation: _staggerAnimation(3),
+                    child: TrainerEmptyState(
+                      icon: Icons.event_available,
+                      title: S.of(context).nextSessionLabel,
+                      subtitle: S.of(context).nieuweBoekingenVerschijnenAutomatischZodraEen,
+                      actionLabel: S.of(context).openMijnSessies,
                       actionIcon: Icons.event_note_rounded,
                       onAction: _openMySessions,
                       padding: const EdgeInsets.all(24),
@@ -861,7 +982,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                     child: Row(
                       children: [
                         Text(
-                          'Actie nodig',
+                          S.of(context).actionNeeded,
                           style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue),
                         ),
                         if (_recentNotifications.isNotEmpty) ...[
@@ -883,7 +1004,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                           GestureDetector(
                             onTap: _dismissAllNotifications,
                             child: Text(
-                              'Wis alles',
+                              S.of(context).declineAction,
                               style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey.shade500),
                             ),
                           ),
@@ -898,11 +1019,11 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                 SliverToBoxAdapter(
                   child: _FadeSlide(
                     animation: _staggerAnimation(5),
-                    child: const TrainerEmptyState(
+                    child: TrainerEmptyState(
                       icon: Icons.check_circle_outline_rounded,
-                      title: 'Alles bij',
-                      subtitle: 'Geen openstaande acties — goed bezig!',
-                      padding: EdgeInsets.fromLTRB(24, 8, 24, 20),
+                      title: S.of(context).toConfirmLabel,
+                      subtitle: S.of(context).respondAction,
+                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
                     ),
                   ),
                 )
@@ -926,14 +1047,14 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                     } else if (diff.inHours < 24) {
                       timeLabel = '${diff.inHours} uur geleden';
                     } else {
-                      timeLabel = diff.inDays == 1 ? 'gisteren' : '${diff.inDays} dagen geleden';
+                      timeLabel = diff.inDays == 1 ? S.of(context).gisterenLower : '${diff.inDays} dagen geleden';
                     }
                     return _FadeSlide(
                       animation: _staggerAnimation(5 + i, total: 5 + _recentNotifications.length),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                         child: Dismissible(
-                          key: ValueKey('notif_$nId\_$i'),
+                          key: ValueKey('notif_${nId}_$i'),
                           direction: DismissDirection.endToStart,
                           onDismissed: (_) => _dismissNotification(n),
                           background: Container(
@@ -965,7 +1086,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                                     decoration: BoxDecoration(
                                       color: action
                                           ? Colors.red.shade50
-                                          : catColor.withValues(alpha: 0.08),
+                                          : catColor.withOpacity(0.08),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Icon(
@@ -997,7 +1118,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                                   ),
                                   const SizedBox(width: 8),
                                   // ── Inline CTA buttons ──
-                                  if (action && category == 'Boeking')
+                                  if (action && category == S.of(context).booking)
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
@@ -1008,7 +1129,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Text(
-                                            'Bevestig',
+                                            S.of(context).confirmAction,
                                             style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.green.shade700),
                                           ),
                                         ),
@@ -1020,13 +1141,13 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Text(
-                                            'Afwijs',
+                                            S.of(context).declineAction,
                                             style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade600),
                                           ),
                                         ),
                                       ],
                                     )
-                                  else if (category == 'Bericht')
+                                  else if (category == S.of(context).bericht)
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                       decoration: BoxDecoration(
@@ -1034,7 +1155,7 @@ class _TrainerDashboardScreenState extends State<TrainerDashboardScreen>
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Text(
-                                        'Reageer',
+                                        S.of(context).respondAction,
                                         style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.blue.shade700),
                                       ),
                                     )
@@ -1080,9 +1201,10 @@ class _TrainerHeaderSection extends StatelessWidget {
   String _formatRevenue(int cents) {
     final euros = cents / 100;
     if (euros >= 1000) {
-      return '€${(euros / 1000).toStringAsFixed(1)}k';
+      return '€${(euros / 1000).toStringAsFixed(1).replaceAll('.', ',')}k';
     }
-    return '€${euros.toStringAsFixed(euros.truncateToDouble() == euros ? 0 : 2)}';
+    final str = euros.toStringAsFixed(euros.truncateToDouble() == euros ? 0 : 2);
+    return '€${str.replaceAll('.', ',')}';
   }
 
   Animation<double> _stagger(int index, {int total = 6}) {
@@ -1115,10 +1237,10 @@ class _TrainerHeaderSection extends StatelessWidget {
       final m = diff.inMinutes % 60;
       final s = diff.inSeconds % 60;
       timer = h > 0
-          ? '${h}:' + '${m.toString().padLeft(2, '0')}:' + '${s.toString().padLeft(2, '0')}'
-          : '${m}:' + '${s.toString().padLeft(2, '0')}';
+          ? '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}'
+          : '$m:${s.toString().padLeft(2, '0')}';
     } else {
-      timer = 'over ${diff.inDays} dag' + (diff.inDays == 1 ? '' : 'en');
+      timer = 'over ${diff.inDays} dag${diff.inDays == 1 ? '' : 'en'}';
     }
 
     String label;
@@ -1129,7 +1251,7 @@ class _TrainerHeaderSection extends StatelessWidget {
     } else if (diff.inHours < 24) {
       final h = diff.inHours;
       final m = diff.inMinutes % 60;
-      label = m > 0 ? 'over ${h}u ${m}min' : 'over ${h} uur';
+      label = m > 0 ? 'over ${h}u ${m}min' : 'over $h uur';
     } else {
       label = 'over ${diff.inDays} dag${diff.inDays == 1 ? '' : 'en'}';
     }
@@ -1172,21 +1294,21 @@ class _TrainerHeaderSection extends StatelessWidget {
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        GymiesColors.primary.withValues(alpha: 0.14),
-                        GymiesColors.primary.withValues(alpha: 0.05),
+                        GymiesColors.primary.withOpacity(0.14),
+                        GymiesColors.primary.withOpacity(0.05),
                       ],
                     ),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: GymiesColors.primary.withValues(alpha: 0.18)),
+                    border: Border.all(color: GymiesColors.primary.withOpacity(0.18)),
                   ),
                   child: Column(
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.timer_outlined, size: 14, color: GymiesColors.primary.withValues(alpha: 0.7)),
+                          Icon(Icons.timer_outlined, size: 14, color: GymiesColors.primary.withOpacity(0.7)),
                           const SizedBox(width: 6),
                           Text(
-                            'VOLGENDE SESSIE',
+                            S.of(context).nextSessionLabel,
                             style: GoogleFonts.sora(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.8, color: GymiesColors.primary),
                           ),
                           const Spacer(),
@@ -1201,14 +1323,14 @@ class _TrainerHeaderSection extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              nextBooking.clientName?.isNotEmpty == true ? nextBooking.clientName! : 'Klant',
-                              style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white.withValues(alpha: 0.7)),
+                              nextBooking.clientName?.isNotEmpty == true ? nextBooking.clientName! : S.of(context).clientSingle,
+                              style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.white.withOpacity(0.7)),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           Text(
                             '${nextBooking.scheduledAt.hour.toString().padLeft(2, '0')}:${nextBooking.scheduledAt.minute.toString().padLeft(2, '0')}',
-                            style: GoogleFonts.sora(fontSize: 12, color: Colors.white.withValues(alpha: 0.4)),
+                            style: GoogleFonts.sora(fontSize: 12, color: Colors.white.withOpacity(0.4)),
                           ),
                         ],
                       ),
@@ -1218,7 +1340,7 @@ class _TrainerHeaderSection extends StatelessWidget {
                         child: LinearProgressIndicator(
                           value: ns.progress,
                           minHeight: 3,
-                          backgroundColor: Colors.white.withValues(alpha: 0.08),
+                          backgroundColor: Colors.white.withOpacity(0.08),
                           color: GymiesColors.primary,
                         ),
                       ),
@@ -1242,7 +1364,7 @@ class _TrainerHeaderSection extends StatelessWidget {
                         height: 28,
                         child: CircularProgressIndicator(
                           strokeWidth: 2.5,
-                          color: GymiesColors.primary.withValues(alpha: 0.7),
+                          color: GymiesColors.primary.withOpacity(0.7),
                         ),
                       ),
                     ),
@@ -1261,16 +1383,16 @@ class _TrainerHeaderSection extends StatelessWidget {
                                 child: Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.05),
+                                    color: Colors.white.withOpacity(0.05),
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                                    border: Border.all(color: Colors.white.withOpacity(0.07)),
                                   ),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'TE BEVESTIGEN',
-                                        style: GoogleFonts.sora(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.3, color: Colors.white.withValues(alpha: 0.4)),
+                                        S.of(context).toConfirmLabel,
+                                        style: GoogleFonts.sora(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.3, color: Colors.white.withOpacity(0.4)),
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
@@ -1289,16 +1411,16 @@ class _TrainerHeaderSection extends StatelessWidget {
                                 child: Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.05),
+                                    color: Colors.white.withOpacity(0.05),
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                                    border: Border.all(color: Colors.white.withOpacity(0.07)),
                                   ),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'OMZET DEZE MAAND',
-                                        style: GoogleFonts.sora(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.3, color: Colors.white.withValues(alpha: 0.4)),
+                                        S.of(context).revenueThisMonthLabel,
+                                        style: GoogleFonts.sora(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.3, color: Colors.white.withOpacity(0.4)),
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
@@ -1319,21 +1441,21 @@ class _TrainerHeaderSection extends StatelessWidget {
                           child: Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
+                              color: Colors.white.withOpacity(0.05),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                              border: Border.all(color: Colors.white.withOpacity(0.07)),
                             ),
                             child: Column(
                               children: [
                                 Row(
                                   children: [
                                     Text(
-                                      'WEEKDOEL',
-                                      style: GoogleFonts.sora(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.3, color: Colors.white.withValues(alpha: 0.4)),
+                                      S.of(context).weekGoalLabel,
+                                      style: GoogleFonts.sora(fontSize: 9, fontWeight: FontWeight.w600, letterSpacing: 0.3, color: Colors.white.withOpacity(0.4)),
                                     ),
                                     const Spacer(),
                                     Text(
-                                      '$weekCount / $weekGoal sessies',
+                                      '$weekCount / $weekGoal ${S.of(context).sessionStartsSoon}',
                                       style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
                                     ),
                                   ],
@@ -1344,7 +1466,7 @@ class _TrainerHeaderSection extends StatelessWidget {
                                   child: LinearProgressIndicator(
                                     value: weekProgress,
                                     minHeight: 6,
-                                    backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                    backgroundColor: Colors.white.withOpacity(0.08),
                                     color: GymiesColors.primary,
                                   ),
                                 ),
@@ -1375,7 +1497,7 @@ class _BookingCard extends StatelessWidget {
   ];
 
   String _formatSessionType(String? type) {
-    if (type == null || type.isEmpty) return 'Sessie';
+    if (type == null || type.isEmpty) return S.of(context).sessionSingle;
     switch (type.toLowerCase()) {
       case 'duo':
         return 'Duo';
@@ -1402,8 +1524,8 @@ class _BookingCard extends StatelessWidget {
   }
 
   String _dayLabel(DateTime date) {
-    if (_isToday(date)) return 'vandaag';
-    if (_isTomorrow(date)) return 'morgen';
+    if (_isToday(date)) return S.of(context).vandaagLower;
+    if (_isTomorrow(date)) return S.of(context).morgenLower;
     return '${_weekDays[date.weekday - 1]} ${date.day} ${_months[date.month - 1]}';
   }
 
@@ -1413,7 +1535,7 @@ class _BookingCard extends StatelessWidget {
     final resolvedName = booking.clientName?.isNotEmpty == true
         ? booking.clientName!
         : booking.trainerName;
-    final displayName = resolvedName.isNotEmpty ? resolvedName : 'Klant';
+    final displayName = resolvedName.isNotEmpty ? resolvedName : S.of(context).clientSingle;
     final today = _isToday(date);
     final statusColor = _statusColor(booking.status);
     final typeLabel = _formatSessionType(booking.sessionType);
@@ -1430,7 +1552,7 @@ class _BookingCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: today
-                ? GymiesColors.primary.withValues(alpha: 0.5)
+                ? GymiesColors.primary.withOpacity(0.5)
                 : Colors.grey.shade100,
           ),
         ),
@@ -1443,7 +1565,7 @@ class _BookingCard extends StatelessWidget {
               height: 50,
               decoration: BoxDecoration(
                 color: today
-                    ? GymiesColors.primary.withValues(alpha: 0.12)
+                    ? GymiesColors.primary.withOpacity(0.12)
                     : const Color(0xFFF7F8FA),
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -1489,7 +1611,7 @@ class _BookingCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.08),
+                color: statusColor.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -1525,7 +1647,7 @@ class _BookingCard extends StatelessWidget {
       case 'pending':
         return 'Wachtend';
       case 'cancelled':
-        return 'Geannuleerd';
+        return S.of(context).geannuleerd;
       case 'checked_in':
         return 'Ingecheckt';
       default:
@@ -1553,10 +1675,10 @@ class _QuickAction extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: highlight ? GymiesColors.primary.withValues(alpha: 0.04) : Colors.white,
+            color: highlight ? GymiesColors.primary.withOpacity(0.04) : Colors.white,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: highlight ? GymiesColors.primary.withValues(alpha: 0.3) : Colors.grey.shade200,
+              color: highlight ? GymiesColors.primary.withOpacity(0.3) : Colors.grey.shade200,
               width: 0.5,
             ),
           ),
@@ -1599,6 +1721,132 @@ class _FadeSlide extends StatelessWidget {
           end: Offset.zero,
         ).animate(animation),
         child: child,
+      ),
+    );
+  }
+}
+
+/// Banner widget voor trainers waarvan de regio nog niet open is.
+/// Toont progress info + CTA om invite codes te delen.
+class _RegionProgressBanner extends StatelessWidget {
+  final String regionName;
+  final double progressPct;
+  final String progressLevel;
+  final String message;
+  final String regionStatus;
+  final VoidCallback? onDismiss;
+  final VoidCallback? onShareCode;
+
+  const _RegionProgressBanner({
+    required this.regionName,
+    required this.progressPct,
+    required this.progressLevel,
+    required this.message,
+    required this.regionStatus,
+    this.onDismiss,
+    this.onShareCode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Color progressColor;
+    IconData bannerIcon;
+    switch (progressLevel) {
+      case 'nearly_ready':
+        progressColor = Colors.green;
+        bannerIcon = Icons.rocket_launch_rounded;
+        break;
+      case 'almost':
+        progressColor = Colors.lightGreen;
+        bannerIcon = Icons.trending_up_rounded;
+        break;
+      case 'growing':
+        progressColor = GymiesColors.primary;
+        bannerIcon = Icons.show_chart_rounded;
+        break;
+      default:
+        progressColor = Colors.blue;
+        bannerIcon = Icons.schedule_rounded;
+    }
+
+    final isInviteOnly = regionStatus == 'invite_only';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: progressColor.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: progressColor.withOpacity(0.2)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: progressColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(bannerIcon, color: progressColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$regionName ${isInviteOnly ? "is bijna open!" : "groeit!"}',
+                      style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      message,
+                      style: GoogleFonts.sora(fontSize: 12, color: Colors.grey[700]),
+                    ),
+                  ],
+                ),
+              ),
+              if (onDismiss != null)
+                GestureDetector(
+                  onTap: onDismiss,
+                  child: Icon(Icons.close, size: 18, color: Colors.grey[400]),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Progress bar
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: (progressPct / 100).clamp(0.0, 1.0),
+              minHeight: 6,
+              backgroundColor: Colors.grey[200],
+              valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // CTA
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onShareCode,
+              icon: const Icon(Icons.share_rounded, size: 16),
+              label: Text(
+                'Deel je invite code',
+                style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: progressColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

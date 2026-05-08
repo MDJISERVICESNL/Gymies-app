@@ -124,7 +124,7 @@ class NotificationRealtimeService extends ChangeNotifier {
     String authToken = _auth.token ?? '';
     if (_api != null) {
       try {
-        final ticket = await _api!.getWsTicket();
+        final ticket = await _api.getWsTicket();
         if (ticket != null && ticket.isNotEmpty) {
           authToken = ticket;
           if (kDebugMode) debugPrint('[WS] Ticket-based auth verkregen');
@@ -144,6 +144,9 @@ class NotificationRealtimeService extends ChangeNotifier {
     for (final uri in candidates) {
       if (kDebugMode) debugPrint('[WS] Verbinden met ${_sanitizeWsUri(uri)}');
       try {
+        // Cancel any existing subscription before creating a new one (BUG FIX: prevent memory leak)
+        _subscription?.cancel();
+
         final channel = WebSocketChannel.connect(uri);
         final sub = channel.stream.listen(
           (event) => _onEvent(event),

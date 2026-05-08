@@ -12,6 +12,9 @@ import '../screens/client_invoices_screen.dart';
 import '../screens/trainer_subscription_screen.dart';
 import '../screens/trainer_onboarding_screen.dart';
 import '../screens/client_my_group_sessions_screen.dart';
+import '../screens/gym_finance_screen.dart';
+import '../services/auth_service.dart';
+import 'deep_link_validator.dart';
 
 /// Deep link routes voor gymies://
 /// Voorbeelden:
@@ -101,6 +104,7 @@ class DeepLinkService {
     }
 
     // Mollie Connect success: gymies://mollie-connect/success (terugkeer na OAuth)
+    // Note: Role-aware navigation is handled in main.dart and loading_screen.dart
     if (host == 'mollie-connect' && (path.isEmpty || path == 'success')) {
       return const TrainerOnboardingScreen(mollieConnectSuccess: true);
     }
@@ -173,6 +177,18 @@ class DeepLinkService {
       }
     }
 
+    return null;
+  }
+
+  /// Bepaalt het juiste scherm voor Mollie Connect success op basis van gebruikersrol.
+  /// - Gym owners/managers: navigeren naar GymFinanceScreen
+  /// - Trainers: navigeren naar TrainerOnboardingScreen
+  static Widget? mollieConnectSuccessScreen(AuthService authService) {
+    if (authService.isGymOwner) {
+      return const GymFinanceScreen();
+    } else if (authService.isTrainer) {
+      return const TrainerOnboardingScreen(mollieConnectSuccess: true);
+    }
     return null;
   }
 

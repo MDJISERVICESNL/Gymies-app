@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../services/storefront_cms_provider.dart';
@@ -63,7 +64,7 @@ class _TrainerStorefrontSocialScreenState
       setState(() { _error = e.message; _loading = false; });
     } catch (_) {
       if (!mounted) return;
-      setState(() { _error = 'Kon social media niet laden.'; _loading = false; });
+      setState(() { _error = S.of(context).konSocialMediaNietLaden; _loading = false; });
     }
   }
 
@@ -72,20 +73,24 @@ class _TrainerStorefrontSocialScreenState
     if (_saving) return;
     setState(() => _saving = true);
     try {
+      // ignore: use_build_context_synchronously
       final api = context.read<GymiesApi>();
       await api.updateTrainerStorefrontCms({
         'instagram_url': _instagramController.text.trim(),
         'tiktok_url': _tiktokController.text.trim(),
         'facebook_url': _facebookController.text.trim(),
       });
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
       context.read<StorefrontCmsProvider>().invalidate();
       if (!mounted) return;
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(children: [
             const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
             const SizedBox(width: 8),
-            Text('Social media opgeslagen', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+            Text(S.of(context).socialMediaOpgeslagen, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
           ]),
           backgroundColor: GymiesColors.darkBlue,
           behavior: SnackBarBehavior.floating,
@@ -133,23 +138,25 @@ class _TrainerStorefrontSocialScreenState
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: const GymiesAppBar(title: 'Social Media & Gallery'),
-      body: GymiesListBody(
-        loading: _loading,
-        error: _error,
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: GymiesListBody(
+          loading: _loading,
+          error: _error,
+          onRefresh: _load,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
             // ── Social Media ──
             _sectionCard(
               icon: Icons.share_outlined,
               title: 'Social media',
-              subtitle: 'Toon je socials op je profiel',
+              subtitle: S.of(context).toonJeSocialsOpJeProfiel,
               children: [
                 _buildSocialField(
                   controller: _instagramController,
                   label: 'Instagram',
-                  hint: '@jouwhandle of URL',
+                  hint: S.of(context).jouwhandleOfUrl,
                   icon: Icons.camera_alt_rounded,
                   iconColor: const Color(0xFFE1306C),
                 ),
@@ -177,7 +184,7 @@ class _TrainerStorefrontSocialScreenState
             _sectionCard(
               icon: Icons.photo_library_outlined,
               title: 'Stories & Gallery',
-              subtitle: 'Foto\'s en video\'s op je profiel',
+              subtitle: S.of(context).fotosEnVideosOpJeProfiel,
               children: [
                 const TrainerMediaSection(),
               ],
@@ -194,7 +201,7 @@ class _TrainerStorefrontSocialScreenState
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: GymiesColors.primary.withValues(alpha: 0.3),
+                      color: GymiesColors.primary.withOpacity(0.3),
                       blurRadius: 12,
                       offset: const Offset(0, 4),
                     ),
@@ -212,7 +219,7 @@ class _TrainerStorefrontSocialScreenState
                       const Icon(Icons.save_rounded, color: GymiesColors.darkBlue, size: 22),
                     const SizedBox(width: 10),
                     Text(
-                      _saving ? 'Opslaan...' : 'Social media opslaan',
+                      _saving ? S.of(context).opslaan2 : 'Social media opslaan',
                       style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue),
                     ),
                   ],
@@ -221,6 +228,7 @@ class _TrainerStorefrontSocialScreenState
             ),
             const SizedBox(height: 16),
           ],
+          ),
         ),
       ),
     );
@@ -237,7 +245,7 @@ class _TrainerStorefrontSocialScreenState
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -248,7 +256,7 @@ class _TrainerStorefrontSocialScreenState
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: GymiesColors.primary.withValues(alpha: 0.15),
+                  color: GymiesColors.primary.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, size: 20, color: GymiesColors.darkBlue),
@@ -287,7 +295,7 @@ class _TrainerStorefrontSocialScreenState
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: iconColor.withValues(alpha: 0.12),
+            color: iconColor.withOpacity(0.12),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(icon, size: 20, color: iconColor),

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
+import '../utils/currency_format.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
@@ -53,7 +55,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon promotiecodes niet laden.';
+        _error = S.of(context).konPromotiecodesNietLaden;
         _loading = false;
       });
     }
@@ -85,12 +87,12 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
 
   /// Hilfsfunktion zum Formatieren von Datum für die Anzeige
   String _formatDateDisplay(String? dateStr) {
-    if (dateStr == null || dateStr.isEmpty) return 'Geen einddatum';
+    if (dateStr == null || dateStr.isEmpty) return S.of(context).geenEinddatum;
     try {
       final dt = DateTime.parse(dateStr);
       return '${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year}';
     } catch (_) {
-      return dateStr ?? 'Geen einddatum';
+      return dateStr;
     }
   }
 
@@ -110,7 +112,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
     final type = _discountType(c);
     final cents = _valueCents(c);
     if (type == 'percent') return '-$cents%';
-    return '-\u20AC${(cents / 100).toStringAsFixed(2)}';
+    return '-${formatEuro(cents)}';
   }
 
   Future<void> _showDialog({Map<String, dynamic>? item}) async {
@@ -129,7 +131,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
       text: _getMaxRedemptions(item)?.toString() ?? '',
     );
     String? validUntil = _getValidUntil(item);
-    String selectedPackage = 'Alle pakketten';
+    String selectedPackage = S.of(context).allePakketten;
 
     await showDialog<void>(
       context: context,
@@ -137,26 +139,26 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
         return StatefulBuilder(
           builder: (_, setDialogState) {
             return GymiesDialog(
-              title: item == null ? 'Promocode toevoegen' : 'Promocode bewerken',
+              title: item == null ? S.of(context).promocodeToevoegen : 'Promocode bewerken',
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
                     controller: code,
                     textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(labelText: 'Code'),
+                    decoration: const InputDecoration(labelText: S.of(context).code),
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
-                    value: discountType,
+                    initialValue: discountType,
                     items: const [
                       DropdownMenuItem(
                         value: 'percent',
-                        child: Text('Percentage'),
+                        child: Text(S.of(context).percentage),
                       ),
                       DropdownMenuItem(
                         value: 'fixed',
-                        child: Text('Vast bedrag'),
+                        child: Text(S.of(context).vastBedrag),
                       ),
                     ],
                     onChanged: (v) {
@@ -166,7 +168,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                         value.clear();
                       });
                     },
-                    decoration: const InputDecoration(labelText: 'Type'),
+                    decoration: const InputDecoration(labelText: S.of(context).type),
                   ),
                   const SizedBox(height: 10),
                   TextField(
@@ -188,8 +190,8 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                     controller: maxRedemptions,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
-                      labelText: 'Max. inwisselingen (leeg = onbeperkt)',
-                      hintText: 'bijv. 50',
+                      labelText: S.of(context).maxInwisselingenleegOnbeperkt,
+                      hintText: S.of(context).bijv50,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -197,7 +199,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
-                        'Geldig tot',
+                        S.of(context).geldigTot,
                         style: TextStyle(fontSize: 14, color: Colors.grey),
                       ),
                       ElevatedButton.icon(
@@ -217,17 +219,17 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                           }
                         },
                         icon: const Icon(Icons.calendar_today, size: 16),
-                        label: Text(validUntil != null ? _formatDateDisplay(validUntil) : 'Geen einddatum'),
+                        label: Text(validUntil != null ? _formatDateDisplay(validUntil) : S.of(context).geenEinddatum),
                       ),
                     ],
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
-                    value: selectedPackage,
+                    initialValue: selectedPackage,
                     items: const [
                       DropdownMenuItem(
-                        value: 'Alle pakketten',
-                        child: Text('Alle pakketten'),
+                        value: S.of(context).allePakketten,
+                        child: Text(S.of(context).allePakketten),
                       ),
                     ],
                     onChanged: (v) {
@@ -236,17 +238,17 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                         selectedPackage = v;
                       });
                     },
-                    decoration: const InputDecoration(labelText: 'Geldig voor'),
+                    decoration: const InputDecoration(labelText: S.of(context).geldigVoor),
                   ),
                 ],
               ),
               actions: [
                 GymiesDialogAction(
-                  label: 'Annuleren',
+                  label: S.of(context).annuleren,
                   onPressed: _saving ? null : () => Navigator.of(ctx).pop(),
                 ),
                 GymiesDialogAction(
-                  label: 'Opslaan',
+                  label: S.of(context).opslaan,
                   isPrimary: true,
                   onPressed: _saving
                       ? null
@@ -259,13 +261,13 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                           String? validationError;
 
                           if (codeText.isEmpty) {
-                            validationError = 'Vul een promocode in';
+                            validationError = S.of(context).vulEenPromocodeIn;
                           } else if (discountType == 'percent') {
                             final pct = int.tryParse(value.text.trim());
                             if (pct == null || pct <= 0) {
-                              validationError = 'Vul een geldig percentage in (1-100)';
+                              validationError = S.of(context).vulEenGeldigPercentageIn1100;
                             } else if (pct > 100) {
-                              validationError = 'Percentage mag niet hoger zijn dan 100%';
+                              validationError = S.of(context).percentageMagNietHogerZijnDan;
                             } else {
                               valueCents = pct;
                             }
@@ -274,7 +276,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                               value.text.trim().replaceAll(',', '.'),
                             );
                             if (euro == null || euro <= 0) {
-                              validationError = 'Vul een geldig bedrag in (bijv. 5.00)';
+                              validationError = S.of(context).vulEenGeldigBedragInBijv;
                             } else {
                               valueCents = (euro * 100).round();
                             }
@@ -306,7 +308,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                               final promoId = _resolvePromoId(item);
                               if (promoId == null) {
                                 _showError(
-                                  'Promocode-ID ontbreekt. Vernieuw de lijst en probeer opnieuw.',
+                                  S.of(context).promocodeidOntbreektVernieuwDeLijstEn,
                                 );
                                 return;
                               }
@@ -353,15 +355,15 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
     if (_saving) return;
     final confirmed = await GymiesDialog.destructive(
       context,
-      title: 'Promocode verwijderen?',
-      message: 'Weet je zeker dat je deze promocode wilt verwijderen? Dit kan niet ongedaan worden.',
-      confirmLabel: 'Verwijderen',
+      title: S.of(context).promocodeVerwijderenVraag,
+      message: S.of(context).weetJeZekerDatJeDeze,
+      confirmLabel: S.of(context).verwijderen,
     );
     if (confirmed != true || !mounted) return;
     final promoId = _resolvePromoId(item);
     if (promoId == null) {
       _showError(
-        'Promocode-ID ontbreekt. Vernieuw de lijst en probeer opnieuw.',
+        S.of(context).promocodeidOntbreektVernieuwDeLijstEn,
       );
       return;
     }
@@ -370,7 +372,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
       await context.read<GymiesApi>().deleteTrainerPromoCode(promoId);
       if (!mounted) return;
       await _load();
-      _showSuccess('Promocode verwijderd');
+      _showSuccess(S.of(context).promocodeVerwijderd);
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -472,9 +474,11 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
   // STATS
   // ═══════════════════════════════════════════════════════════════════
 
+  // ignore: unused_element
   int _percentCount() =>
       _codes.where((c) => _discountType(c) == 'percent').length;
 
+  // ignore: unused_element
   int _fixedCount() =>
       _codes.where((c) => _discountType(c) != 'percent').length;
 
@@ -530,7 +534,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
         backgroundColor: GymiesColors.primary,
         foregroundColor: GymiesColors.darkBlue,
         icon: const Icon(Icons.add),
-        label: const Text('Promocode'),
+        label: const Text(S.of(context).promocode),
       ),
       body: GymiesListBody(
         loading: _loading,
@@ -542,8 +546,8 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                 children: [
                   TrainerEmptyState(
                     icon: Icons.local_offer_outlined,
-                    title: 'Nog geen promotiecodes',
-                    subtitle: 'Maak promoties voor klanten.',
+                    title: S.of(context).nogGeenPromotiecodes,
+                    subtitle: S.of(context).maakPromotiesVoorKlanten,
                     actionLabel: 'Promocode toevoegen',
                     actionIcon: Icons.add,
                     onAction: _showDialog,
@@ -572,7 +576,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                           children: [
                             _StatBox(
                               value: '${_activeCodesCount()}',
-                              label: 'Actieve codes',
+                              label: S.of(context).actieveCodes,
                             ),
                             const SizedBox(width: 8),
                             _StatBox(
@@ -619,7 +623,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -661,7 +665,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Text(
-                                            isPercent ? 'Percentage' : 'Vast bedrag',
+                                            isPercent ? S.of(context).percentage : S.of(context).vastBedrag,
                                             style: TextStyle(
                                               fontSize: 11,
                                               fontWeight: FontWeight.w600,
@@ -690,7 +694,7 @@ class _TrainerPromoCodesScreenState extends State<TrainerPromoCodesScreen> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        'Bewerk \u203A',
+                                        S.of(context).bewerku203a,
                                         style: TextStyle(
                                           fontSize: 11,
                                           color: Colors.grey.shade400,
@@ -731,7 +735,7 @@ class _StatBox extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: GymiesColors.primary.withValues(alpha: 0.12),
+          color: GymiesColors.primary.withOpacity(0.12),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Column(
@@ -749,7 +753,7 @@ class _StatBox extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 10,
-                color: GymiesColors.darkBlue.withValues(alpha: 0.6),
+                color: GymiesColors.darkBlue.withOpacity(0.6),
               ),
             ),
           ],

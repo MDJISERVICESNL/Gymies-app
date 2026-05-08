@@ -15,7 +15,7 @@ class GymiesWorkoutController extends Controller
         if (!Schema::hasTable("gymies_exercise_library")) {
             return response()->json(["data" => []]);
         }
-        $exercises = DB::table("gymies_exercise_library")->orderBy("name")->get();
+        $exercises = DB::table("gymies_exercise_library")->orderBy("name")->limit(500)->get();
         return response()->json(["data" => $exercises->toArray()]);
     }
 
@@ -28,13 +28,24 @@ class GymiesWorkoutController extends Controller
         $templates = DB::table("gymies_workout_templates")
             ->where("trainer_user_id", (int) $user->id)
             ->orderByDesc("updated_at")
+            ->limit(200)
             ->get();
 
         $result = [];
+
+        // Batch load exercises for all templates to avoid N+1
+        $templateIds = $templates->pluck('id')->toArray();
+        $allExercises = [];
+        if (Schema::hasTable("gymies_workout_exercises") && !empty($templateIds)) {
+            $allExercises = DB::table("gymies_workout_exercises")
+                ->whereIn("workout_template_id", $templateIds)
+                ->orderBy("sort_order")
+                ->get()
+                ->groupBy('workout_template_id');
+        }
+
         foreach ($templates as $t) {
-            $exercises = Schema::hasTable("gymies_workout_exercises")
-                ? DB::table("gymies_workout_exercises")->where("workout_template_id", $t->id)->orderBy("sort_order")->get()->toArray()
-                : [];
+            $exercises = isset($allExercises[$t->id]) ? $allExercises[$t->id]->toArray() : [];
             $row = (array) $t;
             $row["exercises"] = $exercises;
             $row["exercise_count"] = count($exercises);
@@ -181,6 +192,7 @@ class GymiesWorkoutController extends Controller
             ->where("a.client_user_id", (int) $clientUserId)
             ->select("a.*", "t.title", "t.description")
             ->orderByDesc("a.assigned_at")
+            ->limit(200)
             ->get();
         return response()->json(["data" => $assignments->toArray()]);
     }
@@ -197,14 +209,24 @@ class GymiesWorkoutController extends Controller
             ->where("a.client_user_id", (int) $user->id)
             ->select("a.*", "t.title", "t.description", "tr.display_name as trainer_name")
             ->orderByDesc("a.assigned_at")
+            ->limit(200)
             ->get();
+
+        // Batch load exercises for all templates to avoid N+1
+        $templateIds = $assignments->pluck('workout_template_id')->unique()->toArray();
+        $allExercises = [];
+        if (Schema::hasTable("gymies_workout_exercises") && !empty($templateIds)) {
+            $allExercises = DB::table("gymies_workout_exercises")
+                ->whereIn("workout_template_id", $templateIds)
+                ->orderBy("sort_order")
+                ->get()
+                ->groupBy('workout_template_id');
+        }
 
         $result = [];
         foreach ($assignments as $a) {
             $row = (array) $a;
-            $exercises = Schema::hasTable("gymies_workout_exercises")
-                ? DB::table("gymies_workout_exercises")->where("workout_template_id", $a->workout_template_id)->orderBy("sort_order")->get()->toArray()
-                : [];
+            $exercises = isset($allExercises[$a->workout_template_id]) ? $allExercises[$a->workout_template_id]->toArray() : [];
             $row["exercises"] = $exercises;
             $result[] = $row;
         }

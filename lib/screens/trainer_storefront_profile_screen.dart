@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../services/storefront_cms_provider.dart';
@@ -78,7 +79,7 @@ class _TrainerStorefrontProfileScreenState
         setState(() {
           _error = e is ApiException
               ? 'API fout (${e.statusCode}): ${e.message}'
-              : 'Kon profiel niet laden';
+              : S.of(context).konProfielNietLaden;
         });
       }
     }
@@ -86,36 +87,57 @@ class _TrainerStorefrontProfileScreenState
 
   Future<void> _save() async {
     Haptics.light();
+    FocusScope.of(context).unfocus();
+
+    // Validatie: specialisaties max 20
+    final bioText = _bioController.text.trim();
+    if (bioText.length > 5000) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Bio mag maximaal 5000 tekens zijn',
+            style: GoogleFonts.sora(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (_specTags.length > 20) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            S.of(context).maximaal20Specialisaties,
+            style: GoogleFonts.sora(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final api = context.read<GymiesApi>();
     setState(() => _saving = true);
 
     try {
-      final api = context.read<GymiesApi>();
-
-      // Validatie: specialisaties max 20
-      if (_specTags.length > 20) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Maximaal 20 specialisaties',
-              style: GoogleFonts.sora(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: Colors.red.shade700,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-        setState(() => _saving = false);
-        return;
-      }
-
       await api.updateTrainerStorefrontCms({
         'bio': _bioController.text.trim(),
         'specializations_tags': _specTags,
       });
+      if (!mounted) return;
       context.read<StorefrontCmsProvider>().invalidate();
 
       if (!mounted) return;
@@ -128,7 +150,7 @@ class _TrainerStorefrontProfileScreenState
               const Icon(Icons.check_circle_rounded, color: Colors.white),
               const SizedBox(width: 10),
               Text(
-                'Profiel opgeslagen',
+                S.of(context).profielOpgeslagen,
                 style: GoogleFonts.sora(
                   color: Colors.white,
                   fontSize: 14,
@@ -153,7 +175,7 @@ class _TrainerStorefrontProfileScreenState
           content: Text(
             e is ApiException
                 ? 'Fout bij opslaan (${e.statusCode})'
-                : 'Kon profiel niet opslaan',
+                : S.of(context).konProfielNietOpslaan,
             style: GoogleFonts.sora(
               color: Colors.white,
               fontSize: 14,
@@ -178,7 +200,21 @@ class _TrainerStorefrontProfileScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Voer een specialisatie in',
+            S.of(context).voerEenSpecialisatieIn,
+            style: GoogleFonts.sora(fontSize: 13),
+          ),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    if (tag.length > 50) {
+      Haptics.light();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            S.of(context).specialisatieMaxLengte,
             style: GoogleFonts.sora(fontSize: 13),
           ),
           duration: const Duration(seconds: 1),
@@ -192,7 +228,7 @@ class _TrainerStorefrontProfileScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Deze specialisatie bestaat al',
+            S.of(context).dezeSpecialisatieBestaatAl,
             style: GoogleFonts.sora(fontSize: 13),
           ),
           duration: const Duration(seconds: 1),
@@ -206,7 +242,7 @@ class _TrainerStorefrontProfileScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Maximaal 20 specialisaties bereikt',
+            S.of(context).maximaal20SpecialisatiesBereikt,
             style: GoogleFonts.sora(fontSize: 13),
           ),
           duration: const Duration(seconds: 2),
@@ -231,7 +267,7 @@ class _TrainerStorefrontProfileScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
-      appBar: const GymiesAppBar(title: 'Profiel & Bio'),
+      appBar: const GymiesAppBar(title: S.of(context).profileAndBio),
       body: GymiesListBody(
         loading: _loading,
         error: _error,
@@ -254,7 +290,7 @@ class _TrainerStorefrontProfileScreenState
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -295,7 +331,7 @@ class _TrainerStorefrontProfileScreenState
             _buildSectionHeader(
               icon: Icons.local_offer_outlined,
               title: 'Specialisaties',
-              subtitle: 'Toevoegen max 20 tags',
+              subtitle: S.of(context).toevoegenMax20Tags,
             ),
             const SizedBox(height: 12),
 
@@ -306,7 +342,7 @@ class _TrainerStorefrontProfileScreenState
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -340,7 +376,7 @@ class _TrainerStorefrontProfileScreenState
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.12),
+                        color: GymiesColors.primary.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(
@@ -366,13 +402,13 @@ class _TrainerStorefrontProfileScreenState
                         decoration: BoxDecoration(
                           color: Colors.white,
                           border: Border.all(
-                            color: GymiesColors.primary.withValues(alpha: 0.3),
+                            color: GymiesColors.primary.withOpacity(0.3),
                             width: 1,
                           ),
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
+                              color: Colors.black.withOpacity(0.04),
                               blurRadius: 4,
                             ),
                           ],
@@ -412,7 +448,7 @@ class _TrainerStorefrontProfileScreenState
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Center(
                   child: Text(
-                    'Geen specialisaties toegevoegd',
+                    S.of(context).geenSpecialisatiesToegevoegd,
                     style: GoogleFonts.sora(
                       fontSize: 13,
                       color: Colors.grey.shade500,
@@ -430,7 +466,7 @@ class _TrainerStorefrontProfileScreenState
                 height: 52,
                 decoration: BoxDecoration(
                   color: _saving
-                      ? GymiesColors.primary.withValues(alpha: 0.6)
+                      ? GymiesColors.primary.withOpacity(0.6)
                       : GymiesColors.primary,
                   borderRadius: BorderRadius.circular(14),
                 ),
@@ -441,7 +477,7 @@ class _TrainerStorefrontProfileScreenState
                           height: 20,
                           child: CircularProgressIndicator(
                             valueColor: AlwaysStoppedAnimation<Color>(
-                              GymiesColors.darkBlue.withValues(alpha: 0.5),
+                              GymiesColors.darkBlue.withOpacity(0.5),
                             ),
                             strokeWidth: 2,
                           ),
@@ -456,7 +492,7 @@ class _TrainerStorefrontProfileScreenState
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              'Profiel opslaan',
+                              S.of(context).profielOpslaan,
                               style: GoogleFonts.sora(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -489,7 +525,7 @@ class _TrainerStorefrontProfileScreenState
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-            color: GymiesColors.primary.withValues(alpha: 0.12),
+            color: GymiesColors.primary.withOpacity(0.12),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(

@@ -1,20 +1,23 @@
-import 'dart:async';
-import 'dart:convert';
+
+
+
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../models/booking.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
+import 'dart:async';
+import 'dart:convert';
 import 'widgets/gymies_dialog.dart';
-
 /// Client Check-in QR Screen
 ///
 /// Professioneel QR check-in scherm met:
@@ -118,13 +121,13 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
       setState(() {
         _error = e.message.isNotEmpty
             ? e.message
-            : 'Kon QR-code niet laden. Controleer je internetverbinding.';
+            : S.of(context).konQrcodeNietLadenControleerJe;
         _loading = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Er ging iets mis. Probeer het opnieuw.';
+        _error = S.of(context).erGingIetsMisProbeerHet;
         _loading = false;
       });
     }
@@ -159,8 +162,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
     final ok = await GymiesDialog.destructive(
       context,
       title: 'SOS Noodalert',
-      message: 'Weet je zeker dat je een noodalert wilt versturen?\n\n'
-          'Je noodcontact en het platform worden direct op de hoogte gesteld.',
+      message: '${S.of(context).weetJeZekerDatJeEen} ${S.of(context).jeNoodcontactEnHetPlatformWorden}',
       icon: Icons.emergency_rounded,
       confirmLabel: 'Verstuur SOS',
     );
@@ -187,7 +189,10 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
         lat = pos.latitude;
         lng = pos.longitude;
       }
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Location optional for check-in
+      if (kDebugMode) debugPrint('[CheckInQR] Get location failed: $e');
+    }
 
     if (!mounted) return;
 
@@ -204,7 +209,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
             children: [
               Icon(Icons.check_circle, color: Colors.white, size: 20),
               SizedBox(width: 8),
-              Text('SOS-alert verstuurd. Je noodcontact is op de hoogte.'),
+              Text(S.of(context).sosalertVerstuurdJeNoodcontactIsOpDeHoogte),
             ],
           ),
           backgroundColor: Colors.red.shade700,
@@ -249,7 +254,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
     Haptics.light();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Backup code gekopieerd'),
+        content: const Text(S.of(context).backupCodeGekopieerd),
         backgroundColor: GymiesColors.darkBlue,
         duration: const Duration(seconds: 2),
       ),
@@ -283,7 +288,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
                 ),
                 Expanded(
                   child: Text(
-                    'Check-in',
+                    S.of(context).checkin,
                     style: GoogleFonts.sora(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
@@ -332,9 +337,9 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
           ),
           const SizedBox(height: 16),
           Text(
-            'QR-code genereren...',
+            S.of(context).qrcodeGenereren,
             style: GoogleFonts.sora(
-              color: Colors.white.withValues(alpha: 0.7),
+              color: Colors.white.withOpacity(0.7),
               fontSize: 14,
             ),
           ),
@@ -353,7 +358,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.red.shade900.withValues(alpha: 0.3),
+                color: Colors.red.shade900.withOpacity(0.3),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -376,7 +381,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
             FilledButton.icon(
               onPressed: _loadQr,
               icon: const Icon(Icons.refresh_rounded, size: 20),
-              label: const Text('Opnieuw proberen'),
+              label: const Text(S.of(context).opnieuwProberen),
               style: FilledButton.styleFrom(
                 backgroundColor: GymiesColors.primary,
                 foregroundColor: GymiesColors.darkBlue,
@@ -409,7 +414,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
               width: double.infinity,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
+                color: Colors.white.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -426,7 +431,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
                       children: [
                         Text(
                           widget.booking.trainerName.isEmpty
-                              ? 'Trainer'
+                              ? S.of(context).trainer
                               : widget.booking.trainerName,
                           style: GoogleFonts.sora(
                             color: Colors.white,
@@ -438,7 +443,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
                         Text(
                           '$date om $time',
                           style: GoogleFonts.sora(
-                            color: Colors.white.withValues(alpha: 0.6),
+                            color: Colors.white.withOpacity(0.6),
                             fontSize: 13,
                           ),
                         ),
@@ -460,7 +465,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: GymiesColors.primary.withValues(alpha: 0.15),
+                      color: GymiesColors.primary.withOpacity(0.15),
                       blurRadius: 30,
                       spreadRadius: 5,
                     ),
@@ -543,10 +548,10 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
 
             // ── Instructie ──────────────────────────────────
             Text(
-              'Laat deze QR-code scannen door je trainer',
+              S.of(context).laatDezeQrcodeScannenDoorJeTrainer,
               textAlign: TextAlign.center,
               style: GoogleFonts.sora(
-                color: Colors.white.withValues(alpha: 0.8),
+                color: Colors.white.withOpacity(0.8),
                 fontSize: 15,
                 fontWeight: FontWeight.w500,
               ),
@@ -559,10 +564,10 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
+                  color: Colors.white.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.12),
+                    color: Colors.white.withOpacity(0.12),
                   ),
                 ),
                 child: Column(
@@ -573,13 +578,13 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
                         Icon(
                           Icons.dialpad_rounded,
                           size: 18,
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: Colors.white.withOpacity(0.6),
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Backup code',
+                          S.of(context).backupCode,
                           style: GoogleFonts.sora(
-                            color: Colors.white.withValues(alpha: 0.6),
+                            color: Colors.white.withOpacity(0.6),
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                           ),
@@ -596,7 +601,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
                                 ? Icons.visibility_off_rounded
                                 : Icons.visibility_rounded,
                             size: 20,
-                            color: Colors.white.withValues(alpha: 0.5),
+                            color: Colors.white.withOpacity(0.5),
                           ),
                         ),
                       ],
@@ -611,7 +616,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
+                          color: Colors.white.withOpacity(0.06),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Row(
@@ -633,7 +638,7 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
                             Icon(
                               Icons.copy_rounded,
                               size: 18,
-                              color: GymiesColors.primary.withValues(alpha: 0.6),
+                              color: GymiesColors.primary.withOpacity(0.6),
                             ),
                           ],
                         ),
@@ -641,10 +646,10 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Kan de QR niet gescand worden? Geef deze code aan je trainer.',
+                      S.of(context).kanDeQrNietGescandWordenGeefDezeCodeAanJeTrainer,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.sora(
-                        color: Colors.white.withValues(alpha: 0.4),
+                        color: Colors.white.withOpacity(0.4),
                         fontSize: 12,
                         height: 1.4,
                       ),
@@ -662,11 +667,11 @@ class _ClientCheckInQrScreenState extends State<ClientCheckInQrScreen>
               child: OutlinedButton.icon(
                 onPressed: _loading ? null : _loadQr,
                 icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: const Text('Nieuwe QR genereren'),
+                label: const Text(S.of(context).nieuweQrGenereren),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
                   side: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.25),
+                    color: Colors.white.withOpacity(0.25),
                   ),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(

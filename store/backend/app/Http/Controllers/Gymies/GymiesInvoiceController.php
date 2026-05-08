@@ -66,18 +66,34 @@ final class GymiesInvoiceController extends Controller
         }
 
         if (!Schema::hasTable('gymies_trainer_invoices')) {
-            return response()->json(['invoices' => []]);
+            return response()->json(['invoices' => [], 'total_count' => 0, 'page' => 1, 'per_page' => 50]);
         }
 
-        $invoices = DB::table('gymies_trainer_invoices as i')
+        // Implement pagination
+        $page = max(1, (int) $request->query('page', 1));
+        $perPage = 50;
+        $offset = ($page - 1) * $perPage;
+
+        $query = DB::table('gymies_trainer_invoices as i')
             ->leftJoin('gymies_users as t', 't.id', '=', 'i.trainer_user_id')
-            ->where('i.client_user_id', (int) $user->id)
+            ->where('i.client_user_id', (int) $user->id);
+
+        $totalCount = $query->count();
+
+        $invoices = $query
             ->select('i.*', 't.display_name as trainer_name')
             ->orderByDesc('i.created_at')
-            ->limit(100)
+            ->limit($perPage)
+            ->offset($offset)
             ->get();
 
-        return response()->json(['invoices' => $invoices]);
+        return response()->json([
+            'invoices' => $invoices,
+            'total_count' => $totalCount,
+            'page' => $page,
+            'per_page' => $perPage,
+            'total_pages' => ceil($totalCount / $perPage),
+        ]);
     }
 
     /**

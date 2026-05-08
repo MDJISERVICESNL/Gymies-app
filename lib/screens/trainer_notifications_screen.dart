@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../services/notification_realtime_service.dart';
@@ -95,7 +96,7 @@ class _TrainerNotificationsScreenState
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon meldingen niet laden.';
+        _error = S.of(context).konMeldingenNietLaden;
         _loading = false;
       });
     }
@@ -132,9 +133,9 @@ class _TrainerNotificationsScreenState
     final body = mapStr(item, ['body', 'message', 'text']).toLowerCase();
     final all = '$type $title $body';
     if (all.contains('booking') ||
-        all.contains('boeking') ||
+        all.contains(S.of(context).boeking) ||
         all.contains('session') ||
-        all.contains('sessie')) {
+        all.contains(S.of(context).sessie3)) {
       return 'bookings';
     }
     if (all.contains('message') ||
@@ -143,7 +144,7 @@ class _TrainerNotificationsScreenState
       return 'messages';
     }
     if (all.contains('invoice') ||
-        all.contains('factuur') ||
+        all.contains(S.of(context).factuur) ||
         all.contains('payment') ||
         all.contains('payout') ||
         all.contains('revenue') ||
@@ -190,8 +191,8 @@ class _TrainerNotificationsScreenState
 
   String _labelFromKey(String key) {
     final normalized = key.toLowerCase();
-    if (normalized == 'reminder_t24h_push') return 'Reminder 24 uur vooraf';
-    if (normalized == 'reminder_t2h_push') return 'Reminder 2 uur vooraf';
+    if (normalized == 'reminder_t24h_push') return S.of(context).reminder24UurVooraf;
+    if (normalized == 'reminder_t2h_push') return S.of(context).reminder2UurVooraf;
     if (normalized == 'reminder_check_in_window_push') {
       return 'Reminder check-in venster open';
     }
@@ -238,7 +239,7 @@ class _TrainerNotificationsScreenState
         }
         _filter = 'all';
       });
-      _showSuccess('Meldingen gemarkeerd als gelezen');
+      _showSuccess(S.of(context).meldingenGemarkeerdAlsGelezen);
     } on ApiException catch (e) {
       _showError(e.message);
     } finally {
@@ -386,12 +387,12 @@ class _TrainerNotificationsScreenState
         return;
       }
       if (uri == null) {
-        _showError('Link in melding is ongeldig.');
+        _showError(S.of(context).linkInMeldingIsOngeldig);
         return;
       }
       // Valideer domein en schema vóór openen (voorkomt open-redirect via server-gecontroleerde URLs).
       final opened = await safeLaunchUrl(actionUrl);
-      if (!opened) _showError('Meldingslink kan niet worden geopend (onbekend domein).');
+      if (!opened) _showError(S.of(context).meldingslinkKanNietWordenGeopendOnbekend2);
     }
   }
 
@@ -462,7 +463,7 @@ class _TrainerNotificationsScreenState
           ..sort();
 
     if (boolKeys.isEmpty) {
-      _showError('Geen wijzigbare voorkeurvelden gevonden.');
+      _showError(S.of(context).geenWijzigbareVoorkeurveldenGevonden);
       return;
     }
 
@@ -483,7 +484,7 @@ class _TrainerNotificationsScreenState
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.15),
+                        color: GymiesColors.primary.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(
@@ -495,7 +496,7 @@ class _TrainerNotificationsScreenState
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Melding voorkeuren',
+                        S.of(context).meldingVoorkeuren,
                         style: GoogleFonts.sora(
                           fontSize: 18,
                           color: GymiesColors.darkBlue,
@@ -520,7 +521,7 @@ class _TrainerNotificationsScreenState
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          'Slimme reminders: T-24u, T-2u, check-in venster open en gemiste check-in.',
+                          S.of(context).slimmeRemindersT24uT2uCheckinVensterOpenEnGemisteCheckin,
                           style: GoogleFonts.sora(color: Colors.blue.shade900, fontSize: 13),
                         ),
                       ),
@@ -562,7 +563,7 @@ class _TrainerNotificationsScreenState
                               });
                               if (!mounted) return;
                               navigator.pop();
-                              _showSuccess('Voorkeuren opgeslagen');
+                              _showSuccess(S.of(context).voorkeurenOpgeslagen);
                             } on ApiException catch (e) {
                               _showError(e.message);
                             } finally {
@@ -579,7 +580,7 @@ class _TrainerNotificationsScreenState
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    child: const Text('Opslaan'),
+                    child: const Text(S.of(context).opslaan),
                   ),
                 ),
               ],
@@ -613,7 +614,7 @@ class _TrainerNotificationsScreenState
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.15),
+                      color: GymiesColors.primary.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
@@ -672,7 +673,7 @@ class _TrainerNotificationsScreenState
                       ),
                     ),
                     icon: const Icon(Icons.open_in_new_rounded),
-                    label: const Text('Open gerelateerde pagina'),
+                    label: const Text(S.of(context).openGerelateerdePagina),
                   ),
                 ),
               ],
@@ -714,7 +715,7 @@ class _TrainerNotificationsScreenState
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: GymiesAppBar(
-        title: 'Meldingen',
+        title: S.of(context).meldingen,
         actions: [
           GestureDetector(
             onTap: _savingPreferences ? null : _openPreferencesSheet,
@@ -723,7 +724,7 @@ class _TrainerNotificationsScreenState
               height: 38,
               margin: const EdgeInsets.only(right: 4),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
+                color: Colors.white.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(Icons.tune_rounded, size: 18, color: Colors.white),
@@ -732,7 +733,7 @@ class _TrainerNotificationsScreenState
           TextButton(
             onPressed: _busy ? null : _markAllRead,
             child: Text(
-              'Alles gelezen',
+              S.of(context).allesGelezen,
               style: GoogleFonts.sora(
                 color: GymiesColors.primary,
                 fontSize: 13,
@@ -752,8 +753,8 @@ class _TrainerNotificationsScreenState
                       children: const [
                         TrainerEmptyState(
                           icon: Icons.notifications_none_rounded,
-                          title: 'Geen meldingen',
-                          subtitle: 'Nieuwe updates verschijnen hier.',
+                          title: S.of(context).noNotifications,
+                          subtitle: S.of(context).nieuweUpdatesVerschijnenHier,
                         ),
                       ],
                     )
@@ -765,13 +766,13 @@ class _TrainerNotificationsScreenState
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
-                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                           ),
                           child: Row(
                               children: [
                                 Expanded(
                                   child: _StatTile(
-                                    label: 'Actie vereist',
+                                    label: S.of(context).actieVereist,
                                     value: '${_countBy('action')}',
                                     color: Colors.red.shade600,
                                     icon: Icons.warning_amber_rounded,
@@ -779,7 +780,7 @@ class _TrainerNotificationsScreenState
                                 ),
                                 Expanded(
                                   child: _StatTile(
-                                    label: 'Boekingen',
+                                    label: S.of(context).bookings,
                                     value: '${_countBy('bookings')}',
                                     color: GymiesColors.primary,
                                     icon: Icons.calendar_today_rounded,
@@ -787,7 +788,7 @@ class _TrainerNotificationsScreenState
                                 ),
                                 Expanded(
                                   child: _StatTile(
-                                    label: 'Berichten',
+                                    label: S.of(context).messages,
                                     value: '${_countBy('messages')}',
                                     color: GymiesColors.darkBlue,
                                     icon: Icons.chat_bubble_outline_rounded,
@@ -815,10 +816,10 @@ class _TrainerNotificationsScreenState
                             scrollDirection: Axis.horizontal,
                             child: Row(
                               children: [
-                                _filterPill('Alles', 'all'),
+                                _filterPill(S.of(context).allLabel, 'all'),
                                 _filterPill('Actie vereist', 'action'),
-                                _filterPill('Boekingen', 'bookings'),
-                                _filterPill('Berichten', 'messages'),
+                                _filterPill(S.of(context).bookings, 'bookings'),
+                                _filterPill(S.of(context).messages, 'messages'),
                                 _filterPill('Financieel', 'financial'),
                               ],
                             ),
@@ -828,8 +829,8 @@ class _TrainerNotificationsScreenState
                         if (visible.isEmpty)
                           const TrainerEmptyState(
                             icon: Icons.filter_alt_off_outlined,
-                            title: 'Geen meldingen in dit filter',
-                            subtitle: 'Probeer een andere categorie.',
+                            title: S.of(context).geenMeldingenInDitFilter,
+                            subtitle: S.of(context).probeerEenAndereCategorie,
                             padding: EdgeInsets.symmetric(vertical: 36),
                           )
                         else
@@ -846,20 +847,20 @@ class _TrainerNotificationsScreenState
                               margin: const EdgeInsets.only(bottom: 10),
                               decoration: BoxDecoration(
                                 color: unread
-                                    ? GymiesColors.primary.withValues(alpha: 0.06)
+                                    ? GymiesColors.primary.withOpacity(0.06)
                                     : Colors.white,
                                 borderRadius: BorderRadius.circular(14),
                                 border: Border.all(
                                   color: actionRequired
                                       ? Colors.red.shade300
                                       : unread
-                                          ? GymiesColors.primary.withValues(alpha: 0.4)
+                                          ? GymiesColors.primary.withOpacity(0.4)
                                           : Colors.grey.shade200,
                                   width: actionRequired ? 1.5 : 1,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: GymiesColors.darkBlue.withValues(alpha: 0.05),
+                                    color: GymiesColors.darkBlue.withOpacity(0.05),
                                     blurRadius: 6,
                                     offset: const Offset(0, 2),
                                   ),
@@ -877,7 +878,7 @@ class _TrainerNotificationsScreenState
                                         width: 40,
                                         height: 40,
                                         decoration: BoxDecoration(
-                                          color: catColor.withValues(alpha: 0.12),
+                                          color: catColor.withOpacity(0.12),
                                           borderRadius: BorderRadius.circular(10),
                                         ),
                                         child: Icon(catIcon, color: catColor, size: 20),

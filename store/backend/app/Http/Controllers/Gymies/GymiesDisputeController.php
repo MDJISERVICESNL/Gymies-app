@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Gymies;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -35,38 +36,42 @@ class GymiesDisputeController
 
         $this->ensureTable();
 
-        // Controleer boeking eigendom
-        $booking = DB::table('gymies_bookings')
-            ->where('id', $id)
-            ->first();
-        if (!$booking) {
-            return response()->json(['message' => 'Boeking niet gevonden.'], 404);
-        }
-        // Alleen client of trainer van deze boeking mag een geschil indienen
-        $userId = (int) $user->id;
-        if ($userId !== (int) $booking->client_user_id && $userId !== (int) $booking->trainer_user_id) {
-            return response()->json(['message' => 'Je bent niet betrokken bij deze boeking.'], 403);
-        }
+        // BUG-001: Transaction wrapping to ensure atomic dispute creation
+        return DB::transaction(function () use ($request, $id, $user) {
+            $userId = (int) $user->id;
 
-        // Check of er al een open geschil is
-        if (DB::table(self::DISPUTES)->where('booking_id', $id)->whereIn('status', ['open', 'in_progress'])->exists()) {
-            return response()->json(['message' => 'Er loopt al een geschil voor deze boeking.'], 422);
-        }
+            // Controleer boeking eigendom
+            $booking = DB::table('gymies_bookings')
+                ->where('id', $id)
+                ->first();
+            if (!$booking) {
+                throw new \Exception('Boeking niet gevonden.', 404);
+            }
+            // Alleen client of trainer van deze boeking mag een geschil indienen
+            if ($userId !== (int) $booking->client_user_id && $userId !== (int) $booking->trainer_user_id) {
+                throw new \Exception('Je bent niet betrokken bij deze boeking.', 403);
+            }
 
-        $disputeId = DB::table(self::DISPUTES)->insertGetId([
-            'booking_id'       => $id,
-            'raised_by_user_id' => $userId,
-            'reason'           => trim((string) $request->input('reason')),
-            'details'          => $request->input('details') ? trim((string) $request->input('details')) : null,
-            'status'           => 'open',
-            'created_at'       => now(),
-            'updated_at'       => now(),
-        ]);
+            // Check of er al een open geschil is
+            if (DB::table(self::DISPUTES)->where('booking_id', $id)->whereIn('status', ['open', 'in_progress'])->exists()) {
+                throw new \Exception('Er loopt al een geschil voor deze boeking.', 422);
+            }
 
-        return response()->json([
-            'message' => 'Geschil ingediend. We nemen het zo snel mogelijk in behandeling.',
-            'data'    => ['id' => $disputeId, 'status' => 'open'],
-        ], 201);
+            $disputeId = DB::table(self::DISPUTES)->insertGetId([
+                'booking_id'       => $id,
+                'raised_by_user_id' => $userId,
+                'reason'           => trim((string) $request->input('reason')),
+                'details'          => $request->input('details') ? trim((string) $request->input('details')) : null,
+                'status'           => 'open',
+                'created_at'       => now(),
+                'updated_at'       => now(),
+            ]);
+
+            return response()->json([
+                'message' => 'Geschil ingediend. We nemen het zo snel mogelijk in behandeling.',
+                'data'    => ['id' => $disputeId, 'status' => 'open'],
+            ], 201);
+        });
     }
 
     /**
@@ -252,7 +257,9 @@ CREATE TABLE IF NOT EXISTS " . self::DISPUTES . " (
   KEY gymies_disputes_user (raised_by_user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
-        } catch (\Throwable) {}
+        } catch (\Throwable $e) {
+            Log::warning('Dispute table creation failed: ' . $e->getMessage());
+        }
     }
 
     private function ensureMessagesTable(): void
@@ -271,7 +278,9 @@ CREATE TABLE IF NOT EXISTS " . self::MESSAGES . " (
   KEY gymies_dispute_messages_dispute (dispute_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
-        } catch (\Throwable) {}
+        } catch (\Throwable $e) {
+            Log::warning('Dispute messages table creation failed: ' . $e->getMessage());
+        }
     }
 
     private function resolveUserName(int $userId): string

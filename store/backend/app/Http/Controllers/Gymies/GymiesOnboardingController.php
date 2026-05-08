@@ -640,7 +640,7 @@ final class GymiesOnboardingController extends Controller
 
             $html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Gymies – Mollie</title></head><body style="font-family:sans-serif;max-width:480px;margin:4em auto;padding:1.5em;text-align:center;"><p>' . $message . '</p><p id="msg">U wordt teruggestuurd naar Gymies…</p><p><a href="' . htmlspecialchars($redirectTo) . '">Klik hier als u niet wordt doorgestuurd</a></p><script>
 (function(){
-  var r="' . addslashes($redirectTo) . '";
+  var r=' . json_encode($redirectTo, JSON_UNESCAPED_SLASHES) . ';
   if (window.opener && !window.opener.closed) {
     try { window.opener.location.href=r; } catch(e) {}
     window.close();
@@ -742,5 +742,275 @@ final class GymiesOnboardingController extends Controller
             'vog' => 'certificate',
             default => 'other',
         };
+    }
+
+    // ─── NIEUWE ONBOARDING FLOW (Fase B) ─────────────────────────
+
+    /**
+     * Dien onboarding in voor review.
+     * POST /api/gymies/onboarding/submit
+     */
+    public function submitOnboarding(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user || $user->role !== 'trainer') {
+            return response()->json(['message' => 'Alleen trainers.'], 403);
+        }
+
+        $profile = DB::table('gymies_trainer_profiles')->where('user_id', (int) $user->id)->first();
+        if (!$profile) {
+            return response()->json(['message' => 'Trainer profiel niet gevonden.'], 404);
+        }
+
+        $result = \App\Services\OnboardingService::submitForReview((int) $profile->id, (int) $user->id);
+
+        if (!($result['success'] ?? false)) {
+            return response()->json([
+                'message' => $result['error'] ?? 'Indienen mislukt.',
+                'missing' => $result['missing'] ?? [],
+            ], 422);
+        }
+
+        return response()->json(['data' => $result]);
+    }
+
+    /**
+     * Kies billing cycle (monthly/yearly).
+     * PUT /api/gymies/onboarding/billing-cycle
+     */
+    public function selectBillingCycle(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user || $user->role !== 'trainer') {
+            return response()->json(['message' => 'Alleen trainers.'], 403);
+        }
+
+        $cycle = $request->input('billing_cycle');
+        if (!in_array($cycle, ['monthly', 'yearly'], true)) {
+            return response()->json(['message' => 'Kies "monthly" of "yearly".'], 422);
+        }
+
+        $profile = DB::table('gymies_trainer_profiles')->where('user_id', (int) $user->id)->first();
+        if (!$profile) {
+            return response()->json(['message' => 'Profiel niet gevonden.'], 404);
+        }
+
+        DB::table('gymies_trainer_profiles')
+            ->where('id', $profile->id)
+            ->update([
+                'billing_cycle' => $cycle,
+                'updated_at'    => now(),
+            ]);
+
+        // Bereken prijs preview
+        $planSlug = $profile->selected_plan_slug ?? 'starter';
+        $pricing = \App\Services\OnboardingService::calculateSubscriptionAmount($planSlug, $cycle);
+
+        return response()->json([
+            'data' => [
+                'billing_cycle' => $cycle,
+                'pricing'       => $pricing,
+            ],
+        ]);
+    }
+
+    /**
+     * Sla plan + billing cycle + promo op.
+     * PUT /api/gymies/onboarding/plan-selection
+     */
+    public function savePlanSelection(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user || $user->role !== 'trainer') {
+            return response()->json(['message' => 'Alleen trainers.'], 403);
+        }
+
+        $planSlug = $request->input('plan_slug');
+        $billingCycle = $request->input('billing_cycle', 'monthly');
+        $promoCode = $request->input('promo_code');
+
+        if (!in_array($planSlug, ['starter', 'pro', 'pro_plus'], true)) {
+            return response()->json(['message' => 'Ongeldig plan.'], 422);
+        }
+        if (!in_array($billingCycle, ['monthly', 'yearly'], true)) {
+            return response()->json(['message' => 'Ongeldige billing cycle.'], 422);
+        }
+
+        $profile = DB::table('gymies_trainer_profiles')->where('user_id', (int) $user->id)->first();
+        if (!$profile) {
+            return response()->json(['message' => 'Profiel niet gevonden.'], 404);
+        }
+
+        $updateData = [
+            'selected_plan_slug' => $planSlug,
+            'billing_cycle'      => $billingCycle,
+            'updated_at'         => now(),
+        ];
+
+        // Check launch promo feature flag
+        if (GymiesFeatureFlags::isEnabled('launch_promo_free_month')) {
+            $updateData['promo_applied'] = 'launch_free_month';
+        }
+
+        DB::table('gymies_trainer_profiles')
+            ->where('id', $profile->id)
+            ->update($updateData);
+
+        $pricing = \App\Services\OnboardingService::calculateSubscriptionAmount($planSlug, $billingCycle);
+
+        return response()->json([
+            'data' => [
+                'plan_slug'     => $planSlug,
+                'billing_cycle' => $billingCycle,
+                'promo_applied' => $updateData['promo_applied'] ?? null,
+                'pricing'       => $pricing,
+            ],
+        ]);
+    }
+
+    /**
+     * Valideer uitnodigingscode.
+     * POST /api/gymies/onboarding/validate-code
+     */
+    public function validateInvitationCode(Request $request): JsonResponse
+    {
+        $code = trim((string) $request->input('code', ''));
+        if (empty($code)) {
+            return response()->json(['message' => 'Code is verplicht.'], 422);
+        }
+
+        $result = \App\Services\InvitationCodeService::validate($code);
+
+        return response()->json(['data' => $result]);
+    }
+
+    /**
+     * Start €0,01 Mollie mandaat betaling.
+     * POST /api/gymies/onboarding/initiate-mandaat
+     */
+    public function initiateMandaat(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user || $user->role !== 'trainer') {
+            return response()->json(['message' => 'Alleen trainers.'], 403);
+        }
+
+        $profile = DB::table('gymies_trainer_profiles')->where('user_id', (int) $user->id)->first();
+        if (!$profile) {
+            return response()->json(['message' => 'Profiel niet gevonden.'], 404);
+        }
+
+        // Controleer dat trainer goedgekeurd is
+        if (($profile->onboarding_status ?? '') !== 'approved') {
+            return response()->json(['message' => 'Je aanvraag moet eerst goedgekeurd zijn door ons team.'], 422);
+        }
+
+        $result = \App\Services\OnboardingService::createMollieMandaat((int) $profile->id);
+
+        if (!($result['success'] ?? false)) {
+            return response()->json(['message' => $result['error'] ?? 'Mandaat starten mislukt.'], 422);
+        }
+
+        return response()->json(['data' => $result]);
+    }
+
+    /**
+     * Mollie mandaat webhook — ontvangt betaalstatus.
+     * POST /api/gymies/webhooks/mandaat
+     */
+    public function mandaatWebhook(Request $request): JsonResponse
+    {
+        $paymentId = $request->input('id');
+        if (empty($paymentId)) {
+            return response()->json(['message' => 'Missing payment ID.'], 400);
+        }
+
+        $result = \App\Services\OnboardingService::handleMandaatWebhook($paymentId);
+
+        // Webhook moet altijd 200 teruggeven aan Mollie
+        return response()->json(['received' => true]);
+    }
+
+    /**
+     * Mandaat callback pagina — redirect terug naar app.
+     * GET /api/gymies/onboarding/mandaat-callback
+     */
+    public function mandaatCallback(Request $request)
+    {
+        $trainerId = (int) $request->query('trainer_id', 0);
+        $redirectUrl = 'gymies://onboarding/mandaat-complete?trainer_id=' . $trainerId;
+
+        $html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Gymies</title></head><body>
+<p>Machtiging verwerkt. Je wordt teruggestuurd naar de app...</p>
+<script>(function(){
+  var r="' . $redirectUrl . '";
+  if(/iPhone|iPad|Android/i.test(navigator.userAgent)){
+    setTimeout(function(){ window.location.href=r; }, 300);
+  } else {
+    window.location.href=r;
+  }
+})();</script></body></html>';
+
+        return response($html, 200, ['Content-Type' => 'text/html; charset=utf-8']);
+    }
+
+    /**
+     * Prijs preview voor plan + billing cycle.
+     * GET /api/gymies/onboarding/pricing-preview
+     */
+    public function pricingPreview(Request $request): JsonResponse
+    {
+        $planSlug = $request->query('plan', 'starter');
+        $billingCycle = $request->query('cycle', 'monthly');
+
+        if (!in_array($planSlug, ['starter', 'pro', 'pro_plus'], true)) {
+            $planSlug = 'starter';
+        }
+        if (!in_array($billingCycle, ['monthly', 'yearly'], true)) {
+            $billingCycle = 'monthly';
+        }
+
+        $pricing = \App\Services\OnboardingService::calculateSubscriptionAmount($planSlug, $billingCycle);
+
+        $launchPromoActive = GymiesFeatureFlags::isEnabled('launch_promo_free_month');
+
+        return response()->json([
+            'data' => [
+                'plan_slug'          => $planSlug,
+                'billing_cycle'      => $billingCycle,
+                'pricing'            => $pricing,
+                'launch_promo_active' => $launchPromoActive,
+                'trial_days'         => $launchPromoActive ? 60 : 30,
+            ],
+        ]);
+    }
+
+    /**
+     * Genereer referral code voor trainer.
+     * POST /api/gymies/onboarding/referral-code
+     */
+    public function generateReferralCode(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user || $user->role !== 'trainer') {
+            return response()->json(['message' => 'Alleen trainers.'], 403);
+        }
+
+        $profile = DB::table('gymies_trainer_profiles')->where('user_id', (int) $user->id)->first();
+        if (!$profile) {
+            return response()->json(['message' => 'Profiel niet gevonden.'], 404);
+        }
+
+        if (($profile->onboarding_status ?? '') !== 'active') {
+            return response()->json(['message' => 'Alleen actieve trainers kunnen referral codes genereren.'], 422);
+        }
+
+        $result = \App\Services\InvitationCodeService::generateReferralCode((int) $profile->id);
+
+        if (!($result['success'] ?? false)) {
+            return response()->json(['message' => $result['error'] ?? 'Code aanmaken mislukt.'], 422);
+        }
+
+        return response()->json(['data' => $result]);
     }
 }

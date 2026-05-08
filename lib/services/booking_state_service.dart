@@ -97,7 +97,7 @@ class BookingStateService extends ChangeNotifier {
           ? await _api.getTrainerBookings()
           : await _api.getBookings();
 
-      _bookings = (list is List) ? list : [];
+      _bookings = list as List;
       _lastFetched = DateTime.now();
       _error = null;
 

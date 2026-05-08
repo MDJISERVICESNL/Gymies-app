@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
 import 'api_client.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// Force Update Service
 /// ────────────────────
@@ -43,7 +44,7 @@ class ForceUpdateService {
       if (!context.mounted) return false;
 
       final message = response['message'] as String? ??
-          'Er is een belangrijke update beschikbaar. Werk de app bij om door te gaan.';
+          S.of(context).forceUpdateMessage;
       final updateUrl = Platform.isIOS
           ? (response['update_url_ios'] as String? ?? 'https://apps.apple.com/app/gymies/id${AppConfig.iosAppStoreId}')
           : (response['update_url_android'] as String? ?? 'https://play.google.com/store/apps/details?id=com.gymies.app');

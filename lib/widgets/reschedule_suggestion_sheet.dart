@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// RescheduleSuggestionSheet
 /// ─────────────────────────
@@ -132,7 +133,7 @@ class RescheduleSuggestionSheet extends StatelessWidget {
               onCancelAnyway();
             },
             child: Text(
-              'Nee, toch annuleren',
+              S.of(context).neeTochAnnuleren,
               style: GoogleFonts.sora(
                 fontSize: 13,
                 color: Colors.grey.shade500,

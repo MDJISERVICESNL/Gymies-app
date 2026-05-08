@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../services/subscription_entitlements_service.dart';
@@ -31,41 +32,43 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
   bool _showPreview = false;
   bool _isScheduled = false;
   DateTime? _scheduledDateTime;
+  // ignore: unused_field
   String? _error;
 
   late TabController _tabController;
+  late Future<List<Map<String, dynamic>>> _historyFuture;
 
   // Templates
   final Map<String, Map<String, String>> _templates = {
     'Nieuw schema': {
-      'subject': 'Nieuw trainingsschema beschikbaar! 📅',
+      'subject': S.of(context).nieuwTrainingsschemaBeschikbaar,
       'body':
-          'Hallo!\n\nJe nieuwe trainingsschema is nu beschikbaar in de app. Bekijk de updates en zorg dat je goed bent voorbereid voor je volgende sessies.\n\nBijzonderheden:\n• Aangepast aan jouw doelen\n• Progressieve oefeningen\n• Flexibel in te delen\n\nBen je klaar? Laten we aan de slag gaan!\n\nGroeten,\nJe trainer'
+          S.of(context).hallonnjeNieuweTrainingsschemaIsNuBeschikbaar
     },
     'Vakantie': {
       'subject': 'Vakantieperiode – Studio gesloten 🏖️',
       'body':
-          'Hallo!\n\nWe willen je graag informeren dat onze studio gesloten is van [datum] tot [datum] vanwege vakantie.\n\nWij zijn dan niet beschikbaar voor sessies, maar je kunt je trainingsplan volgen via de app.\n\nWe kijken ernaar uit je binnenkort weer te zien!\n\nGroeten,\nJe trainer'
+          S.of(context).hallonnweWillenJeGraagInformerenDat
     },
     'Actie': {
-      'subject': 'Exclusieve actie voor onze klanten! 🎉',
+      'subject': S.of(context).exclusieveActieVoorOnzeKlanten,
       'body':
-          'Hallo!\n\nWe hebben een speciale aanbieding voor jou! Als dank voor je vertrouwen en inzet bieden we dit week:\n\n🎁 [Beschrijving van aanbieding]\n💰 [Voordeel voor jou]\n⏰ Geldig tot [datum]\n\nNot gemist! Dit aanbod is exclusief voor onze vaste klanten.\n\nGroeten,\nJe trainer'
+          S.of(context).hallonnweHebbenEenSpecialeAanbiedingVoor
     },
     'Tips': {
-      'subject': 'FitnessTip van de week 💪',
+      'subject': S.of(context).fitnesstipVanDeWeek,
       'body':
-          'Hallo!\n\nDeze week delen we een waardevolle fitnessTip met je:\n\n📌 [Tip/advies]\n\nWaarom is dit belangrijk?\n[Uitleg van het voordeel]\n\nHoe pas je dit toe?\n[Praktische stappen]\n\nVragen? Laat het weten! Je trainer is altijd beschikbaar.\n\nGroeten,\nJe trainer'
+          S.of(context).hallonndezeWeekDelenWeEenWaardevolle
     },
     'Evenement': {
-      'subject': 'Kom naar ons event! 🎪',
+      'subject': S.of(context).komNaarOnsEvent,
       'body':
-          'Hallo!\n\nWe organiseren een speciaal event en je bent van harte uitgenodigd!\n\n📅 Datum: [datum en tijd]\n📍 Locatie: [adres]\n👥 Wat te verwachten:\n   • [Activiteit 1]\n   • [Activiteit 2]\n   • [Activiteit 3]\n\nSnel aanmelden! Beperkt aantal plaatsen beschikbaar.\n\nGroeten,\nJe trainer'
+          S.of(context).hallonnweOrganiserenEenSpeciaalEventEn
     },
     'Update': {
-      'subject': 'Belangrijk update van je trainer 📢',
+      'subject': S.of(context).belangrijkUpdateVanJeTrainer,
       'body':
-          'Hallo!\n\nWe willen je graag op de hoogte stellen van de volgende updates:\n\n✅ [Update 1]\n✅ [Update 2]\n✅ [Update 3]\n\nDeze veranderingen helpen ons om je beter van dienst te zijn. Heb je vragen? Neem gerust contact op!\n\nGroeten,\nJe trainer'
+          S.of(context).hallonnweWillenJeGraagOpDe
     },
   };
 
@@ -75,6 +78,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
     _tabController = TabController(length: 2, vsync: this);
     _subjectController.addListener(() => setState(() {}));
     _bodyController.addListener(() => setState(() {}));
+    _historyFuture = context.read<GymiesApi>().getTrainerNewsletterHistory();
   }
 
   @override
@@ -108,6 +112,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
 
     if (selectedDate == null) return;
 
+    if (!mounted) return;
     final selectedTime = await showTimePicker(
       context: context,
       initialTime:
@@ -155,7 +160,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
 
       if (_isScheduled) {
         if (_scheduledDateTime == null) {
-          throw Exception('Selecteer een datum en tijd');
+          throw Exception(S.of(context).selecteerEenDatumEnTijd);
         }
 
         await api.scheduleNewsletter(
@@ -209,7 +214,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
         if (mounted) {
           await GymiesDialog.custom<void>(
             context,
-            title: 'Nieuwsbrief verstuurd!',
+            title: S.of(context).nieuwsbriefVerstuurd,
             icon: Icons.celebration,
             iconColor: GymiesColors.primary,
             content: Text(
@@ -236,7 +241,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
       String errorMessage = e.message;
       if (e.statusCode == 429 || e.message.contains('429')) {
         errorMessage =
-            'Je hebt het limiet bereikt. Maximaal 2 nieuwsbrieven per week.';
+            S.of(context).jeHebtHetLimietBereiktMaximaal;
       }
 
       setState(() {
@@ -264,7 +269,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Fout bij versturen/inplannen nieuwsbrief'),
+            content: const Text(S.of(context).foutBijVerstureninplannenNieuwsbrief),
             backgroundColor: Colors.red.shade700,
           ),
         );
@@ -283,12 +288,12 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
     if (!isProPlus) {
       return Scaffold(
         backgroundColor: const Color(0xFFF7F8FA),
-        appBar: const GymiesAppBar(title: 'Nieuwsbrief'),
+        appBar: const GymiesAppBar(title: S.of(context).newsletterLabel),
         body: const GymiesUpgradePrompt(
           icon: Icons.newspaper_rounded,
-          feature: 'Nieuwsbrief',
+          feature: S.of(context).newsletterLabel,
           tier: 'Pro+',
-          description: 'Stuur nieuwsbrieven naar je klanten met templates en analytics.',
+          description: S.of(context).stuurNieuwsbrievenNaarJeKlantenMet,
         ),
       );
     }
@@ -296,7 +301,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: GymiesAppBar(
-        title: 'Nieuwsbrief',
+        title: S.of(context).newsletterLabel,
         bottom: GymiesSegmentTabBar(
           controller: _tabController,
           tabs: const ['Nieuw', 'Verzonden'],
@@ -324,7 +329,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,7 +338,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: GymiesColors.darkBlue.withValues(alpha: 0.08),
+                    color: GymiesColors.darkBlue.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(Icons.info_outline_rounded, size: 16, color: GymiesColors.darkBlue),
@@ -341,8 +346,8 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Stuur een nieuwsbrief naar al je actieve klanten '
-                    '(sessie in de afgelopen 60 dagen). Maximaal 2 per week.',
+                    S.of(context).stuurEenNieuwsbriefNaarAlJe
+                    S.of(context).sessieInDeAfgelopen60Dagen,
                     style: GoogleFonts.sora(
                       fontSize: 13,
                       color: Colors.grey.shade600,
@@ -392,7 +397,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                   style: GoogleFonts.sora(),
                   decoration: InputDecoration(
                     hintText:
-                        'Bijvoorbeeld: "Nieuw trainingsschema beschikbaar"',
+                        S.of(context).bijvoorbeeldNieuwTrainingsschemaBeschikbaar,
                     counterText: '',
                     contentPadding: const EdgeInsets.all(16),
                     border: OutlineInputBorder(
@@ -406,10 +411,10 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Vul een onderwerp in';
+                      return S.of(context).vulEenOnderwerpIn;
                     }
                     if (value.trim().length > 200) {
-                      return 'Onderwerp mag niet langer zijn dan 200 tekens';
+                      return S.of(context).onderwerpMagNietLangerZijnDan;
                     }
                     return null;
                   },
@@ -427,7 +432,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                 const SizedBox(height: 24),
 
                 // Body field
-                GymiesSectionHeader('Bericht'),
+                GymiesSectionHeader(S.of(context).bericht),
                 TextFormField(
                   controller: _bodyController,
                   maxLength: 2000,
@@ -438,8 +443,8 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                   style: GoogleFonts.sora(),
                   decoration: InputDecoration(
                     hintText:
-                        'Schrijf je bericht hier. '
-                        'Zorg ervoor dat je klanten goed begrijpen wat je wilt communiceren.',
+                        S.of(context).schrijfJeBerichtHier
+                        S.of(context).zorgErvoorDatJeKlantenGoed,
                     counterText: '',
                     alignLabelWithHint: true,
                     contentPadding: const EdgeInsets.all(16),
@@ -454,13 +459,13 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Vul een bericht in';
+                      return S.of(context).vulEenBerichtIn;
                     }
                     if (value.trim().length < 10) {
-                      return 'Bericht moet minstens 10 tekens lang zijn';
+                      return S.of(context).berichtMoetMinstens10TekensLang;
                     }
                     if (value.trim().length > 2000) {
-                      return 'Bericht mag niet langer zijn dan 2000 tekens';
+                      return S.of(context).berichtMagNietLangerZijnDan;
                     }
                     return null;
                   },
@@ -490,7 +495,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                     ),
                     child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -506,7 +511,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                               ),
                               const SizedBox(width: 12),
                               Text(
-                                'Voorbeeld bekijken',
+                                S.of(context).voorbeeldBekijken,
                                 style: GoogleFonts.sora(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w500,
@@ -536,13 +541,13 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                         ),
                         child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Voorbeeld e-mail',
+                                S.of(context).voorbeeldEmail,
                                 style: GoogleFonts.sora(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -587,7 +592,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(14),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                   ),
                   child: Row(
                     children: [
@@ -613,7 +618,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Nu versturen',
+                                    S.of(context).nuVersturen,
                                     style: GoogleFonts.sora(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w500,
@@ -653,7 +658,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Inplannen',
+                                    S.of(context).inplannen,
                                     style: GoogleFonts.sora(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w500,
@@ -683,7 +688,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(14),
-                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                           ),
                           child: Row(
                               mainAxisAlignment:
@@ -694,7 +699,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                                       CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Verzendtijd',
+                                      S.of(context).verzendtijd,
                                       style: GoogleFonts.sora(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w500,
@@ -704,7 +709,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                                     const SizedBox(height: 4),
                                     Text(
                                       _scheduledDateTime == null
-                                          ? 'Klik om datum/tijd te selecteren'
+                                          ? S.of(context).klikOmDatumtijdTeSelecteren
                                           : _formatScheduledTime(),
                                       style: GoogleFonts.sora(
                                         fontSize: 14,
@@ -748,7 +753,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                             ),
                           )
                         : Text(
-                            _isScheduled ? 'Inplannen' : 'Versturen',
+                            _isScheduled ? S.of(context).inplannen : S.of(context).submitLabel,
                             style: GoogleFonts.sora(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -767,7 +772,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
 
   Widget _buildHistoryTab() {
     return FutureBuilder<List<Map<String, dynamic>>>(
-      future: context.read<GymiesApi>().getTrainerNewsletterHistory(),
+      future: _historyFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
@@ -794,7 +799,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Fout bij laden geschiedenis',
+                  S.of(context).foutBijLadenGeschiedenis,
                   style: GoogleFonts.sora(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -831,7 +836,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Geen nieuwsbrieven verzonden',
+                    S.of(context).geenNieuwsbrievenVerzonden,
                     style: GoogleFonts.sora(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -840,7 +845,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Schrijf en verstuur je eerste nieuwsbrief via het tabblad "Nieuw"',
+                    S.of(context).schrijfEnVerstuurJeEersteNieuwsbrief,
                     style: GoogleFonts.sora(
                       fontSize: 13,
                       color: Colors.grey.shade600,
@@ -858,8 +863,8 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
           itemCount: newsletters.length,
           itemBuilder: (context, index) {
             final newsletter = newsletters[index];
-            final subject = newsletter['subject'] as String? ?? 'Geen onderwerp';
-            final sentDate = newsletter['sent_at'] as String? ?? 'Onbekende datum';
+            final subject = newsletter['subject'] as String? ?? S.of(context).geenOnderwerp;
+            final sentDate = newsletter['sent_at'] as String? ?? S.of(context).onbekendeDatum;
             final recipientCount =
                 newsletter['recipient_count'] as int? ?? 0;
             final openRate = (newsletter['open_rate'] as num?)?.toDouble() ?? 0.0;
@@ -873,7 +878,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -938,7 +943,7 @@ class _TrainerNewsletterScreenState extends State<TrainerNewsletterScreen>
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.12),
+              color: GymiesColors.primary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(7),
             ),
             child: Icon(

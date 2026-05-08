@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../config/timing_constants.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/trainer_models.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
@@ -25,7 +26,7 @@ class _CopyWeeksChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: GymiesColors.primary.withValues(alpha: 0.15),
+      color: GymiesColors.primary.withOpacity(0.15),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -87,14 +88,16 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
   }
 
   Future<void> _load() async {
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
       final slots = await api.getTrainerAvailabilitySlots();
+      if (!mounted) return;
       final exceptions = await api.getTrainerAvailabilityExceptions();
+      if (!mounted) return;
       final settings = await api.getTrainerAvailabilitySettings();
       if (!mounted) return;
       setState(() {
@@ -120,7 +123,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon agenda niet laden.';
+        _error = S.of(context).konAgendaNietLaden;
         _loading = false;
       });
     }
@@ -136,12 +139,13 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
     final endController = TextEditingController(text: slot?.endTime ?? '17:00');
     final isNew = slot == null;
 
-    await showDialog<void>(
-      context: context,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (_, setModalState) {
-            return Dialog(
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (sheetContext) {
+          return StatefulBuilder(
+            builder: (_, setModalState) {
+              return Dialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
               child: Padding(
@@ -156,7 +160,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: GymiesColors.primary.withValues(alpha: 0.15),
+                                color: GymiesColors.primary.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
@@ -183,7 +187,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Kies de dag en tijden. Je beschikbaarheid geldt automatisch voor alle weken.',
+                          S.of(context).kiesDeDagEnTijdenJeBeschikbaarheidGeldtAutomatischVoorAlleWeken,
                           style: TextStyle(
                             fontSize: 13,
                             color: Colors.grey.shade600,
@@ -191,7 +195,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                         ),
                         const SizedBox(height: 20),
                         Text(
-                          'Dag',
+                          S.of(context).dag,
                           style: GoogleFonts.sora(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -209,14 +213,14 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                               label: Text(_weekdayLabel(value)),
                               selected: selected,
                               onSelected: (_) => setModalState(() => weekday = value),
-                              selectedColor: GymiesColors.primary.withValues(alpha: 0.3),
+                              selectedColor: GymiesColors.primary.withOpacity(0.3),
                               checkmarkColor: GymiesColors.darkBlue,
                             );
                           }),
                         ),
                         const SizedBox(height: 20),
                         Text(
-                          'Tijden',
+                          S.of(context).tijden,
                           style: GoogleFonts.sora(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -231,7 +235,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                 controller: startController,
                                 readOnly: true,
                                 decoration: InputDecoration(
-                                  labelText: 'Start',
+                                  labelText: S.of(context).start,
                                   suffixIcon: const Icon(Icons.access_time_rounded, size: 20),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
@@ -253,7 +257,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                 controller: endController,
                                 readOnly: true,
                                 decoration: InputDecoration(
-                                  labelText: 'Eind',
+                                  labelText: S.of(context).eind,
                                   suffixIcon: const Icon(Icons.access_time_rounded, size: 20),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
@@ -274,7 +278,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                         if (isNew) ...[
                           const SizedBox(height: 24),
                           Text(
-                            'Kopieer voor de aankomende',
+                            S.of(context).kopieerVoorDeAankomende,
                             style: GoogleFonts.sora(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -283,7 +287,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Stel één keer in en pas toe op alle dagen. Geldt voor alle weken.',
+                            S.of(context).stelnKeerInEnPasToeOpAlleDagenGeldtVoorAlleWeken,
                             style: GoogleFonts.sora(
                               fontSize: 12,
                               color: Colors.grey.shade600,
@@ -339,7 +343,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                             Expanded(
                               child: TextButton(
                                 onPressed: () => Navigator.of(sheetContext).pop(),
-                                child: const Text('Annuleren'),
+                                child: Text(S.of(context).cancelLabel),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -360,7 +364,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                   backgroundColor: GymiesColors.primary,
                                   foregroundColor: GymiesColors.darkBlue,
                                 ),
-                                child: Text(isNew ? 'Alleen deze dag' : 'Opslaan'),
+                                child: Text(isNew ? S.of(context).alleenDezeDag : S.of(context).opslaan),
                               ),
                             ),
                           ],
@@ -373,7 +377,11 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
           },
         );
       },
-    );
+      );
+    } finally {
+      startController.dispose();
+      endController.dispose();
+    }
   }
 
   Future<void> _saveSlot({
@@ -388,13 +396,13 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
     if (_mutating) return;
     if (!_validTime(start) || !_validTime(end)) {
       ScaffoldMessenger.of(parentContext).showSnackBar(
-        const SnackBar(content: Text('Voer geldige tijden in (bijv. 09:00)')),
+        SnackBar(content: Text(S.of(context).enterValidTimes)),
       );
       return;
     }
     if (!_isStartBeforeEnd(start, end)) {
       ScaffoldMessenger.of(parentContext).showSnackBar(
-        const SnackBar(content: Text('Eindtijd moet later zijn dan starttijd.')),
+        SnackBar(content: Text(S.of(context).endTimeMustBeLater)),
       );
       return;
     }
@@ -458,13 +466,13 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
     if (_mutating) return;
     if (!_validTime(start) || !_validTime(end)) {
       ScaffoldMessenger.of(parentContext).showSnackBar(
-        const SnackBar(content: Text('Voer eerst geldige tijden in.')),
+        SnackBar(content: Text(S.of(context).enterValidTimes)),
       );
       return;
     }
     if (!_isStartBeforeEnd(start, end)) {
       ScaffoldMessenger.of(parentContext).showSnackBar(
-        const SnackBar(content: Text('Eindtijd moet later zijn dan starttijd.')),
+        SnackBar(content: Text(S.of(context).endTimeMustBeLater)),
       );
       return;
     }
@@ -505,10 +513,10 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
     final messenger = ScaffoldMessenger.maybeOf(context);
     final confirm = await GymiesDialog.destructive(
       context,
-      title: 'Tijdslot verwijderen',
+      title: S.of(context).tijdslotVerwijderen,
       message: 'Verwijder ${_weekdayLabel(slot.weekday)} ${slot.startTime}-${slot.endTime}?',
-      confirmLabel: 'Verwijderen',
-      cancelLabel: 'Annuleren',
+      confirmLabel: S.of(context).verwijderen,
+      cancelLabel: S.of(context).annuleren,
     );
     if (confirm != true) return;
     setState(() => _mutating = true);
@@ -516,7 +524,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
       await api.deleteTrainerAvailabilitySlot(slot.id);
       if (!mounted) return;
       await _load();
-      _showSuccess('Tijdslot verwijderd');
+      _showSuccess(S.of(context).tijdslotVerwijderd);
     } on ApiException catch (e) {
       if (!mounted) return;
       messenger?.showSnackBar(
@@ -537,11 +545,12 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
     );
     final dateController = TextEditingController(text: _fmtDate(selectedDate));
     final reasonController = TextEditingController();
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
         return GymiesDialog(
-          title: 'Uitzondering toevoegen',
+          title: S.of(context).uitzonderingToevoegen,
           content: StatefulBuilder(
             builder: (_, setModalState) => Column(
               mainAxisSize: MainAxisSize.min,
@@ -550,7 +559,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                   controller: dateController,
                   readOnly: true,
                   decoration: const InputDecoration(
-                    labelText: 'Datum',
+                    labelText: S.of(context).datum,
                     suffixIcon: Icon(Icons.calendar_today_rounded),
                   ),
                   onTap: () async {
@@ -577,7 +586,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                 TextField(
                   controller: reasonController,
                   decoration: const InputDecoration(
-                    labelText: 'Reden (optioneel)',
+                    labelText: S.of(context).redenoptioneel,
                   ),
                 ),
               ],
@@ -585,11 +594,11 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
           ),
           actions: [
             GymiesDialogAction(
-              label: 'Annuleren',
+              label: S.of(context).annuleren,
               returnValue: null,
             ),
             GymiesDialogAction(
-              label: 'Opslaan',
+              label: S.of(context).opslaan,
               isPrimary: true,
               onPressed: () async {
                 if (_mutating) return;
@@ -622,7 +631,11 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
           ],
         );
       },
-    );
+      );
+    } finally {
+      dateController.dispose();
+      reasonController.dispose();
+    }
   }
 
   Future<void> _deleteException(TrainerAvailabilityException item) async {
@@ -632,10 +645,10 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
     final messenger = ScaffoldMessenger.maybeOf(context);
     final confirm = await GymiesDialog.destructive(
       context,
-      title: 'Blokkering verwijderen',
+      title: S.of(context).blokkeringVerwijderen,
       message: 'Verwijder blokkering op ${_fmtDate(item.date)}?',
-      confirmLabel: 'Verwijderen',
-      cancelLabel: 'Annuleren',
+      confirmLabel: S.of(context).verwijderen,
+      cancelLabel: S.of(context).annuleren,
     );
     if (confirm != true) return;
     setState(() => _mutating = true);
@@ -643,7 +656,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
       await api.deleteTrainerAvailabilityException(item.id);
       if (!mounted) return;
       await _load();
-      _showSuccess('Blokkering verwijderd');
+      _showSuccess(S.of(context).blokkeringVerwijderd);
     } on ApiException catch (e) {
       if (!mounted) return;
       messenger?.showSnackBar(
@@ -662,6 +675,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
   }
 
   static const List<int> _advanceDaysOptions = [7, 14, 21, 28, 42, 56, 90];
+  // Hardcoded payment method labels instead of using S.of(context) in static const
   static const Map<String, String> _paymentMethodLabels = {
     'transfer_only': 'Accepteert alleen overboekingen',
     'transfer_and_cash': 'Accepteert overboekingen & cash',
@@ -693,7 +707,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: GymiesColors.primary.withValues(alpha: 0.15),
+                                color: GymiesColors.primary.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
@@ -705,7 +719,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                'Beschikbaarheid-instellingen',
+                                S.of(context).beschikbaarheidinstellingen,
                                 style: GoogleFonts.sora(
                                   fontSize: 18,
                                   color: GymiesColors.darkBlue,
@@ -720,7 +734,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Deze instellingen worden getoond op je profiel zodat klanten weten hoe ver ze kunnen boeken en hoe ze kunnen betalen.',
+                          S.of(context).dezeInstellingenWordenGetoondOpJeProfielZodatKlantenWetenHoeVerZeKunnenBoekenEnHoeZeKunnenBetalen,
                           style: GoogleFonts.sora(
                             fontSize: 13,
                             color: Colors.grey.shade600,
@@ -728,7 +742,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                         ),
                         const SizedBox(height: 24),
                         Text(
-                          'Boeken van tevoren',
+                          S.of(context).boekenVanTevoren,
                           style: GoogleFonts.sora(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -737,7 +751,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Hoeveel dagen van tevoren kan een klant een sessie boeken?',
+                          S.of(context).hoeveelDagenVanTevorenKanEenKlantEenSessieBoeken,
                           style: GoogleFonts.sora(
                             fontSize: 12,
                             color: Colors.grey.shade600,
@@ -768,14 +782,14 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                               onSelected: (_) =>
                                   setModalState(() => advanceDays = days),
                               selectedColor:
-                                  GymiesColors.primary.withValues(alpha: 0.3),
+                                  GymiesColors.primary.withOpacity(0.3),
                               checkmarkColor: GymiesColors.darkBlue,
                             );
                           }).toList(),
                         ),
                         const SizedBox(height: 24),
                         Text(
-                          'Betaalmethode',
+                          S.of(context).betaalmethode,
                           style: GoogleFonts.sora(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -784,7 +798,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Wat toon je op je profiel?',
+                          S.of(context).watToonJeOpJeProfiel,
                           style: GoogleFonts.sora(
                             fontSize: 12,
                             color: Colors.grey.shade600,
@@ -816,7 +830,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                             Expanded(
                               child: TextButton(
                                 onPressed: () => Navigator.of(sheetContext).pop(),
-                                child: const Text('Annuleren'),
+                                child: Text(S.of(context).cancelLabel),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -838,7 +852,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                       _bookingAdvanceDays = advanceDays;
                                       _paymentMethod = paymentMethod;
                                     });
-                                    _showSuccess('Instellingen opgeslagen');
+                                    _showSuccess(S.of(context).instellingenOpgeslagen);
                                   } on ApiException catch (e) {
                                     if (!mounted) return;
                                     messenger?.showSnackBar(
@@ -855,7 +869,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                   backgroundColor: GymiesColors.primary,
                                   foregroundColor: GymiesColors.darkBlue,
                                 ),
-                                child: const Text('Opslaan'),
+                                child: const Text(S.of(context).opslaan),
                               ),
                             ),
                           ],
@@ -940,7 +954,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
       case 7:
         return 'Zondag';
       default:
-        return 'Onbekend';
+        return S.of(context).statusOnbekend;
     }
   }
 
@@ -1054,18 +1068,18 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: GymiesAppBar(
-        title: 'Agenda',
+        title: S.of(context).agenda,
         actions: [
           GymiesAppBarAction(
             icon: Icons.settings_rounded,
-            tooltip: 'Beschikbaarheid-instellingen',
+            tooltip: S.of(context).beschikbaarheidinstellingen,
             onTap: _mutating ? () {} : _showAvailabilitySettings,
           ),
           const SizedBox(width: 8),
         ],
         bottom: GymiesSegmentTabBar(
           controller: _tabController,
-          tabs: const ['Beschikbaarheid', 'Uitzonderingen'],
+          tabs: const [S.of(context).beschikbaarheid, 'Uitzonderingen'],
         ),
       ),
       floatingActionButton: _tabController.index == 0
@@ -1074,14 +1088,14 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
               backgroundColor: GymiesColors.primary,
               foregroundColor: GymiesColors.darkBlue,
               icon: const Icon(Icons.add),
-              label: const Text('Tijdslot'),
+              label: const Text(S.of(context).tijdslot),
             )
           : FloatingActionButton.extended(
               onPressed: _mutating ? null : _showExceptionDialog,
               backgroundColor: GymiesColors.primary,
               foregroundColor: GymiesColors.darkBlue,
               icon: const Icon(Icons.block),
-              label: const Text('Blokkering'),
+              label: const Text(S.of(context).blokkering),
             ),
       body: _error != null
           ? TrainerErrorView(message: _error!, onRetry: _load)
@@ -1098,9 +1112,9 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                           children: [
                             TrainerEmptyState(
                               icon: Icons.schedule_rounded,
-                              title: 'Nog geen beschikbaarheid ingesteld',
+                              title: S.of(context).nogGeenBeschikbaarheidIngesteld,
                               subtitle:
-                                  'Klanten zien alleen jouw vrije tijdslots als je ze hier instelt. Tik op "+ Tijdslot" hieronder om te beginnen.',
+                                  S.of(context).klantenZienAlleenJouwVrijeTijdslots,
                               padding: const EdgeInsets.all(28),
                             ),
                           ],
@@ -1125,9 +1139,9 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                 padding: const EdgeInsets.all(14),
                                 margin: const EdgeInsets.only(bottom: 12),
                                 decoration: BoxDecoration(
-                                  color: GymiesColors.primary.withValues(alpha: 0.08),
+                                  color: GymiesColors.primary.withOpacity(0.08),
                                   borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: GymiesColors.primary.withValues(alpha: 0.2)),
+                                  border: Border.all(color: GymiesColors.primary.withOpacity(0.2)),
                                 ),
                                 child: Row(
                                   children: [
@@ -1135,7 +1149,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                       width: 40,
                                       height: 40,
                                       decoration: BoxDecoration(
-                                        color: GymiesColors.primary.withValues(alpha: 0.15),
+                                        color: GymiesColors.primary.withOpacity(0.15),
                                         borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: const Icon(Icons.access_time_rounded, size: 20, color: GymiesColors.darkBlue),
@@ -1171,13 +1185,13 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                             Container(
                               padding: const EdgeInsets.all(3),
                               decoration: BoxDecoration(
-                                color: GymiesColors.darkBlue.withValues(alpha: 0.06),
+                                color: GymiesColors.darkBlue.withOpacity(0.06),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Row(
                                 children: [
-                                  _weekToggle('Deze week', 'this'),
-                                  _weekToggle('Volgende week', 'next'),
+                                  _weekToggle(S.of(context).dezeWeek, 'this'),
+                                  _weekToggle(S.of(context).volgendeWeek, 'next'),
                                 ],
                               ),
                             ),
@@ -1194,7 +1208,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.04),
+                                      color: Colors.black.withOpacity(0.04),
                                       blurRadius: 10,
                                       offset: const Offset(0, 2),
                                     ),
@@ -1206,8 +1220,8 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                     height: 38,
                                     decoration: BoxDecoration(
                                       color: blocked
-                                          ? Colors.red.shade700.withValues(alpha: 0.1)
-                                          : GymiesColors.primary.withValues(alpha: 0.15),
+                                          ? Colors.red.shade700.withOpacity(0.1)
+                                          : GymiesColors.primary.withOpacity(0.15),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Center(
@@ -1229,11 +1243,11 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                   ),
                                   subtitle: blocked
                                       ? Text(
-                                          'Geblokkeerd (uitzondering)',
+                                          S.of(context).geblokkeerduitzondering,
                                           style: TextStyle(color: Colors.red.shade700),
                                         )
                                       : (daySlots.isEmpty
-                                            ? const Text('Niet beschikbaar')
+                                            ? const Text(S.of(context).nietBeschikbaar)
                                             : Text(
                                                 daySlots
                                                     .map(
@@ -1252,14 +1266,14 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                   width: 28,
                                   height: 28,
                                   decoration: BoxDecoration(
-                                    color: GymiesColors.darkBlue.withValues(alpha: 0.1),
+                                    color: GymiesColors.darkBlue.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: const Icon(Icons.date_range_rounded, size: 15, color: GymiesColors.darkBlue),
                                 ),
                                 const SizedBox(width: 10),
                                 Text(
-                                  'Wekelijkse tijdslots',
+                                  S.of(context).wekelijkseTijdslots,
                                   style: GoogleFonts.sora(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,
@@ -1282,7 +1296,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.04),
+                                      color: Colors.black.withOpacity(0.04),
                                       blurRadius: 10,
                                       offset: const Offset(0, 2),
                                     ),
@@ -1302,7 +1316,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                             height: 32,
                                             decoration: BoxDecoration(
                                               color: GymiesColors.primary
-                                                  .withValues(alpha: 0.15),
+                                                  .withOpacity(0.15),
                                               borderRadius: BorderRadius.circular(9),
                                             ),
                                             child: Center(
@@ -1401,9 +1415,9 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                           children: [
                             TrainerEmptyState(
                               icon: Icons.event_available_rounded,
-                              title: 'Geen blokkeringen',
+                              title: S.of(context).geenBlokkeringen,
                               subtitle:
-                                  'Voeg een blokkering toe voor dagen dat je niet beschikbaar bent, zoals vakantie of ziekte.',
+                                  S.of(context).voegEenBlokkeringToeVoorDagen,
                               padding: const EdgeInsets.all(28),
                             ),
                           ],
@@ -1417,14 +1431,14 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                   width: 28,
                                   height: 28,
                                   decoration: BoxDecoration(
-                                    color: Colors.red.shade700.withValues(alpha: 0.1),
+                                    color: Colors.red.shade700.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Icon(Icons.block_rounded, size: 15, color: Colors.red.shade700),
                                 ),
                                 const SizedBox(width: 10),
                                 Text(
-                                  'Geblokkeerde dagen',
+                                  S.of(context).geblokkeerdeDagen,
                                   style: GoogleFonts.sora(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,
@@ -1450,7 +1464,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.04),
+                                      color: Colors.black.withOpacity(0.04),
                                       blurRadius: 10,
                                       offset: const Offset(0, 2),
                                     ),
@@ -1468,7 +1482,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                           decoration: BoxDecoration(
                                             color: isPast
                                                 ? Colors.grey.shade200
-                                                : Colors.red.shade700.withValues(alpha: 0.08),
+                                                : Colors.red.shade700.withOpacity(0.08),
                                             borderRadius: BorderRadius.circular(10),
                                           ),
                                           child: Icon(
@@ -1495,7 +1509,7 @@ class _TrainerAgendaScreenState extends State<TrainerAgendaScreen>
                                             Text(
                                               e.reason?.isNotEmpty == true
                                                   ? e.reason!
-                                                  : 'Geen reden opgegeven',
+                                                  : S.of(context).geenRedenOpgegeven,
                                               style: TextStyle(
                                                 fontSize: 12,
                                                 color: Colors.grey.shade600,

@@ -441,6 +441,7 @@ class GymiesBuddyController
             ->where('p.user_id', $user->id)
             ->where('p.status', 'matched')
             ->orderByDesc('p.matched_at')
+            ->limit(50)
             ->get([
                 'p.id as pool_id',
                 'p.matched_user_id',

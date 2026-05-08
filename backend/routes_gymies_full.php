@@ -166,6 +166,17 @@ Route::prefix('api/gymies')->name('api.gymies.')->group(function () {
     Route::match(['get', 'post'], 'cron/recalculate-quality-scores', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'recalculateQualityScores'])->name('cron.recalculate-quality-scores');
     Route::match(['get', 'post'], 'cron/evaluate-ambassador-tiers', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'evaluateAmbassadorTiers'])->name('cron.evaluate-ambassador-tiers');
 
+    // Missing cron routes — voeg toe na hierboven
+    Route::match(['get', 'post'], 'cron/booking-reminders', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'bookingReminders'])->name('cron.booking-reminders');
+    Route::match(['get', 'post'], 'cron/spoed-inval-batch-1', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'spoedInvalBatch1'])->name('cron.spoed-inval-batch-1');
+    Route::match(['get', 'post'], 'cron/refresh-pro-client-health', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'refreshProClientHealth'])->name('cron.refresh-pro-client-health');
+    Route::match(['get', 'post'], 'cron/process-notification-emails', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'processNotificationEmails'])->name('cron.process-notification-emails');
+
+    // Health check endpoints (public, no auth required)
+    Route::get('health', [\App\Http\Controllers\GymiesHealthController::class, 'ping'])->middleware('gymies.rate.limit:health')->name('health.ping');
+    Route::get('health/status', [\App\Http\Controllers\GymiesHealthController::class, 'status'])->middleware('gymies.rate.limit:health')->name('health.status');
+    Route::post('cron/run-all', [\App\Http\Controllers\GymiesHealthController::class, 'runAllCrons'])->middleware('gymies.rate.limit:cron')->name('cron.run-all');
+
     // --- Beveiligd (Bearer token): Klanten, Trainers, Gyms, Admin ---
     // EnsureGymiesAuthPreempt zet user; GymiesAuthMiddleware valideert (gymies_personal_access_tokens + gymies_sessions).
     Route::middleware([
@@ -324,7 +335,7 @@ Route::prefix('api/gymies')->name('api.gymies.')->group(function () {
         Route::get('gym/bookings/stats', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'bookingsStats'])->name('gym.bookings.stats');
         Route::get('gym/bookings/export', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'exportBookingsCsv'])->name('gym.bookings.export');
         Route::get('gym/bookings/{id}', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'bookingDetail'])->name('gym.bookings.detail');
-        Route::get('gym/settlements', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'settlements'])->name('gym.settlements');
+        Route::get('gym/settlements', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'gymPayouts'])->name('gym.settlements');
         Route::get('gym/settlements/{id}', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'settlementDetail'])->name('gym.settlements.detail');
         Route::get('gym/revenue/export', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'exportRevenueCsv'])->name('gym.revenue.export');
         Route::get('gym/trainers/export', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'exportTrainersCsv'])->name('gym.trainers.export');
@@ -340,7 +351,14 @@ Route::prefix('api/gymies')->name('api.gymies.')->group(function () {
             Route::post('gym/settlements/{id}/adjustments', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'addSettlementAdjustment'])->name('gym.settlements.adjustments');
             Route::post('gym/settlements/{id}/transition', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'transitionSettlement'])->name('gym.settlements.transition');
         });
-        Route::get('trainer/packages', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'packages'])->name('trainer.packages');
+        
+        // ── Gym Mollie & Payout ──
+        Route::get('gym/mollie-status', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'mollieStatus'])->name('gym.mollie.status');
+        Route::post('gym/mollie-disconnect', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'mollieDisconnect'])->name('gym.mollie.disconnect');
+        Route::get('gym/payout-settings', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'payoutSettings'])->name('gym.payout.settings');
+        Route::put('gym/payout-settings', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'updatePayoutSettings'])->name('gym.payout.settings.update');
+        Route::get('gym/settlements/{id}/download', [\App\Http\Controllers\Gymies\GymiesGymController::class, 'downloadSettlementInvoice'])->name('gym.settlements.download');
+        Route::get('trainer/packages' , [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'packages'])->name('trainer.packages');
         Route::post('trainer/packages', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'storePackage'])->name('trainer.packages.store');
         Route::put('trainer/packages/{id}', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'updatePackage'])->name('trainer.packages.update');
         Route::delete('trainer/packages/{id}', [\App\Http\Controllers\Gymies\GymiesTrainerOpsController::class, 'deletePackage'])->name('trainer.packages.delete');

@@ -92,22 +92,19 @@ class SlotHoldManager extends ChangeNotifier {
         availabilitySlotId: availabilitySlotId,
       );
 
-      if (result is Map) {
-        _holdId = (result['hold_id'] ?? result['id'] ?? '').toString();
-        final expiresIn =
-            int.tryParse((result['expires_in'] ?? '300').toString()) ?? 300;
-        _expiresAt = DateTime.now().add(Duration(seconds: expiresIn));
-        _extendAttempts = 0;
-        _startCountdown();
-        notifyListeners();
+      _holdId = (result['hold_id'] ?? result['id'] ?? '').toString();
+      final expiresIn =
+          int.tryParse((result['expires_in'] ?? '300').toString()) ?? 300;
+      _expiresAt = DateTime.now().add(Duration(seconds: expiresIn));
+      _extendAttempts = 0;
+      _startCountdown();
+      notifyListeners();
 
-        if (kDebugMode) {
-          debugPrint(
-              '[SlotHold] Slot gereserveerd: $_holdId, verloopt over ${expiresIn}s');
-        }
-        return true;
+      if (kDebugMode) {
+        debugPrint(
+            '[SlotHold] Slot gereserveerd: $_holdId, verloopt over ${expiresIn}s');
       }
-      return false;
+      return true;
     } catch (e) {
       if (kDebugMode) debugPrint('[SlotHold] Hold mislukt: $e');
       return false;
@@ -149,26 +146,23 @@ class SlotHoldManager extends ChangeNotifier {
 
     try {
       final result = await _api.extendSlotHold(_holdId!);
-      if (result is Map) {
-        final expiresIn =
-            int.tryParse((result['expires_in'] ?? '300').toString()) ?? 300;
-        _expiresAt = DateTime.now().add(Duration(seconds: expiresIn));
+      final expiresIn =
+          int.tryParse((result['expires_in'] ?? '300').toString()) ?? 300;
+      _expiresAt = DateTime.now().add(Duration(seconds: expiresIn));
 
-        if (kDebugMode) {
-          debugPrint('[SlotHold] Slot verlengd, nog ${expiresIn}s');
-        }
-
-        _extending = false;
-        notifyListeners();
-        return true;
+      if (kDebugMode) {
+        debugPrint('[SlotHold] Slot verlengd, nog ${expiresIn}s');
       }
+
+      _extending = false;
+      notifyListeners();
+      return true;
     } catch (e) {
       if (kDebugMode) debugPrint('[SlotHold] Extend mislukt: $e');
+      _extending = false;
+      notifyListeners();
+      return false;
     }
-
-    _extending = false;
-    notifyListeners();
-    return false;
   }
 
   // ── Countdown ────────────────────────────────────────────────────────

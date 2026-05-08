@@ -13,6 +13,7 @@ use App\Http\Controllers\Gymies\GymiesFeatureFlags;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * SendGymiesNotificationEmail
@@ -77,13 +78,31 @@ class SendGymiesNotificationEmail implements ShouldQueue
         }
 
         $subject = $this->resolveSubject();
-        $body    = $this->resolveBody($user);
+        $textBody = $this->resolveBody($user);
+        $htmlBody = null;
+
+        // Use new branded templates for client-facing emails
+        if (in_array($this->type, ['booking_confirmed', 'booking_cancelled', 'payment_received', 'session_reminder'], true)) {
+            [$subject, $textBody, $htmlBody] = $this->buildClientTemplate($user);
+        }
+
+        // Onboarding-gerelateerde emails met templates
+        $onboardingTypes = [
+            'welcome_onboarding', 'onboarding_approved', 'onboarding_rejected',
+            'trial_expiring_soon', 'payment_reminder',
+            'onboarding_reminder_24h', 'onboarding_nudge_72h',
+        ];
+        if (in_array($this->type, $onboardingTypes, true)) {
+            [$subject, $textBody, $htmlBody] = $this->buildOnboardingTemplate($user);
+        }
 
         try {
-            Mail::raw($body, function ($message) use ($user, $subject) {
-                $message->to($user->email, $user->display_name ?? '')
-                    ->subject($subject);
-            });
+            \App\Helpers\GymiesNotificationEmail::send(
+                trim((string) $user->email),
+                $subject,
+                $textBody,
+                $htmlBody,
+            );
 
             Log::info("[Queue] Email verstuurd: type={$this->type} user={$this->userId}");
         } catch (\Throwable $e) {
@@ -93,6 +112,73 @@ class SendGymiesNotificationEmail implements ShouldQueue
             ]);
             throw $e; // Laat de queue het opnieuw proberen
         }
+    }
+
+    /**
+     * Build branded client-facing email using GymiesMailTemplates.
+     */
+    private function buildClientTemplate(object $user): array
+    {
+        $clientName = $user->display_name ?? 'Gymies klant';
+        $trainerId = (int) ($this->data['trainer_user_id'] ?? 0);
+        $trainerBrand = $trainerId > 0 ? $this->getTrainerBrandingData($trainerId) : null;
+
+        return match ($this->type) {
+            'booking_confirmed' => \App\Helpers\GymiesMailTemplates::boekingBevestigd(
+                $clientName,
+                $this->data['trainer_name'] ?? 'Je trainer',
+                $this->data['scheduled_at'] ?? now()->toDateTimeString(),
+                (int) ($this->data['duration_minutes'] ?? 60),
+                $trainerBrand,
+            ),
+            'booking_cancelled' => \App\Helpers\GymiesMailTemplates::boekingGeannuleerd(
+                $clientName,
+                $this->data['trainer_name'] ?? 'Je trainer',
+                $this->data['reason'] ?? 'Geen reden opgegeven',
+                $trainerBrand,
+            ),
+            'payment_received' => \App\Helpers\GymiesMailTemplates::betalingOntvangen(
+                $clientName,
+                $this->data['trainer_name'] ?? 'Je trainer',
+                $this->data['amount'] ?? '€0,00',
+                $trainerBrand,
+            ),
+            'session_reminder' => \App\Helpers\GymiesMailTemplates::boekingHerinnering(
+                $clientName,
+                $this->data['trainer_name'] ?? 'Je trainer',
+                $this->data['scheduled_at'] ?? now()->toDateTimeString(),
+                $trainerBrand,
+            ),
+            default => ['', '', null],
+        };
+    }
+
+    /**
+     * Build onboarding-specific email templates.
+     */
+    private function buildOnboardingTemplate(object $user): array
+    {
+        $trainerName = $this->data['trainer_name'] ?? $user->display_name ?? 'Trainer';
+
+        return match ($this->type) {
+            'welcome_onboarding'     => \App\Helpers\GymiesMailTemplates::welcomeOnboarding($trainerName),
+            'onboarding_approved'    => \App\Helpers\GymiesMailTemplates::onboardingApproved($trainerName),
+            'onboarding_rejected'    => \App\Helpers\GymiesMailTemplates::onboardingRejected(
+                $trainerName,
+                $this->data['reason'] ?? 'Geen reden opgegeven',
+            ),
+            'trial_expiring_soon'    => \App\Helpers\GymiesMailTemplates::trialExpiringSoon(
+                $trainerName,
+                (int) ($this->data['days_left'] ?? 3),
+            ),
+            'payment_reminder'       => \App\Helpers\GymiesMailTemplates::paymentReminder(
+                $trainerName,
+                (int) ($this->data['attempt'] ?? 1),
+            ),
+            'onboarding_reminder_24h' => \App\Helpers\GymiesMailTemplates::onboardingReminder24h($trainerName),
+            'onboarding_nudge_72h'    => \App\Helpers\GymiesMailTemplates::onboardingNudge72h($trainerName),
+            default                   => ['GYMIES — Notificatie', '', null],
+        };
     }
 
     private function resolveSubject(): string
@@ -119,5 +205,33 @@ class SendGymiesNotificationEmail implements ShouldQueue
             'session_reminder'   => "Hoi {$name},\n\nHerinnering: je sessie begint binnenkort.\n\n— Team GYMIES",
             default              => "Hoi {$name},\n\nJe hebt een nieuwe notificatie in de GYMIES app.\n\n— Team GYMIES",
         };
+    }
+
+    /**
+     * Get trainer branding data for Pro+ trainers.
+     * Returns array with color, logo_url, name or null if not Pro+.
+     */
+    private function getTrainerBrandingData(int $trainerId): ?array
+    {
+        if (!Schema::hasTable('gymies_trainer_pro_plus_settings')) {
+            return null;
+        }
+        $branding = DB::table('gymies_trainer_pro_plus_settings')
+            ->where('trainer_user_id', $trainerId)
+            ->first(['brand_color', 'brand_logo_url']);
+        if (!$branding) {
+            return null;
+        }
+        $color = trim((string) ($branding->brand_color ?? ''));
+        $logoUrl = trim((string) ($branding->brand_logo_url ?? ''));
+        if ($color === '' && $logoUrl === '') {
+            return null;
+        }
+        $trainerName = DB::table('gymies_users')->where('id', $trainerId)->value('display_name') ?? 'Trainer';
+        return [
+            'color' => $color ?: '#FF8A00',
+            'logo_url' => $logoUrl ?: null,
+            'name' => $trainerName,
+        ];
     }
 }

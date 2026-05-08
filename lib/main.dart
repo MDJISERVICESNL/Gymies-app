@@ -8,6 +8,8 @@ import 'package:app_links/app_links.dart';
 import 'package:gymies_app/config/app_config.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:gymies_app/l10n/generated/app_localizations.dart';
+import 'package:gymies_app/services/locale_provider.dart';
 import 'package:gymies_app/screens/client_sessions_screen.dart';
 import 'package:gymies_app/screens/client_trainer_profile_screen.dart';
 import 'package:gymies_app/screens/loading_screen.dart';
@@ -23,9 +25,6 @@ import 'package:gymies_app/services/push_notification_service.dart';
 import 'package:gymies_app/services/action_retry_queue_service.dart';
 import 'package:gymies_app/services/connectivity_service.dart';
 import 'package:gymies_app/services/storefront_cms_provider.dart';
-import 'package:gymies_app/services/precache_service.dart';
-import 'package:gymies_app/services/optimistic_action_service.dart';
-import 'package:gymies_app/services/milestone_service.dart';
 import 'package:gymies_app/services/promotion_service.dart';
 import 'package:gymies_app/services/subscription_entitlements_service.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -36,6 +35,10 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:gymies_app/theme/gymies_theme.dart';
 import 'package:gymies_app/utils/haptics.dart';
 import 'package:gymies_app/screens/login_register_screen.dart';
+import 'package:gymies_app/screens/trainer_inbox_screen.dart';
+import 'package:gymies_app/screens/client_messages_screen.dart';
+import 'package:gymies_app/screens/staff_dashboard_screen.dart';
+import 'package:gymies_app/screens/waitlist_offer_screen.dart';
 
 /// Booking-ID van gymies://payment/complete?booking_id=X (app cold-start).
 String? _initialPaymentBookingId;
@@ -51,6 +54,9 @@ Uri? _initialDashboardUri;
 
 /// Wachtwoord reset bij cold start (gymies://wachtwoord-reset?token=X&email=Y).
 Uri? _initialPasswordResetUri;
+
+/// Gym registratie bij cold start (gymies://gym/register?token=X).
+Uri? _initialGymRegisterUri;
 
 /// Subscription payment return bij cold start (gymies://subscription/complete?tier=pro).
 String? _initialSubscriptionTier;
@@ -69,10 +75,13 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 /// Mollie Connect success bij cold start (gymies://mollie-connect/success).
 bool _initialMollieConnectSuccess = false;
 
+/// Mandaat complete bij cold start (gymies://onboarding/mandaat-complete).
+bool _initialMandaatComplete = false;
+
 
 /// Sentry DSN — override via --dart-define=SENTRY_DSN=https://...
 /// Laat leeg om Sentry uit te schakelen (alleen Crashlytics).
-const _sentryDsn = String.fromEnvironment('SENTRY_DSN', defaultValue: 'https://ddf226f4c6f9c2a4eb02730d1af99a95@o4511314784354304.ingest.de.sentry.io/4511314816991312');
+const _sentryDsn = String.fromEnvironment('SENTRY_DSN', defaultValue: '');
 
 void main() {
   runZonedGuarded(() async {
@@ -230,8 +239,9 @@ void main() {
       // Retry queue mag appstart niet blokkeren.
       if (kDebugMode) debugPrint('[Init] Retry queue flush fout: $e');
     }
+    PushNotificationService? pushService;
     try {
-      final pushService = PushNotificationService(auth: auth, api: gymApi, localPush: localPush);
+      pushService = PushNotificationService(auth: auth, api: gymApi, localPush: localPush);
       await pushService.start().timeout(
         const Duration(seconds: 5),
         onTimeout: () {
@@ -242,6 +252,136 @@ void main() {
       // Push-notificaties mogen appstart niet blokkeren (Firebase-config kan ontbreken).
       if (kDebugMode) debugPrint('[Init] Push notificatie service fout: $e');
     }
+
+    // Luister naar push notification taps voor navigatie
+    StreamSubscription? _notifSub;
+    _notifSub = pushService?.onNotificationTap.listen((data) {
+      if (!auth.isLoggedIn) return;
+      final type = data['type']?.toString() ?? '';
+      final screen = data['screen']?.toString() ?? '';
+
+      switch (type) {
+        case 'chat_message':
+          final conversationId = data['conversation_id']?.toString() ?? '';
+          final senderName = data['sender_name']?.toString() ?? '';
+          if (conversationId.isEmpty) return;
+          if (auth.isTrainer) {
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const TrainerInboxScreen()),
+            );
+          } else {
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(
+                builder: (_) => ClientChatScreen(
+                  conversationId: conversationId,
+                  title: senderName.isNotEmpty ? senderName : 'Chat',
+                ),
+              ),
+            );
+          }
+          break;
+
+        // ─── Staff notificaties → Staff Dashboard met juiste tab ───
+        case 'new_ticket':
+        case 'ticket_escalated':
+          if (auth.isAdmin) {
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const StaffDashboardScreen(initialTab: 5)),
+            );
+          }
+          break;
+
+        case 'ticket_reply':
+          // Klant/trainer ontvangt antwoord op ticket — navigeer naar client support
+          // Voor nu: als staff, ga naar support tab; anders negeer (client support screen tbd)
+          if (auth.isAdmin) {
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const StaffDashboardScreen(initialTab: 5)),
+            );
+          }
+          break;
+
+        case 'booking_cancelled':
+        case 'booking_rescheduled':
+          if (auth.isAdmin) {
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const StaffDashboardScreen(initialTab: 8)),
+            );
+          } else {
+            // Trainer/client: navigeer naar sessies
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const ClientSessionsScreen()),
+            );
+          }
+          break;
+
+        case 'new_booking':
+          if (auth.isTrainer) {
+            // Trainer: navigeer naar sessies/inbox
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const TrainerInboxScreen()),
+            );
+          } else if (auth.isAdmin) {
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const StaffDashboardScreen(initialTab: 8)),
+            );
+          }
+          break;
+
+        case 'refund_processed':
+          // Client ontvangt refund melding — geen specifieke navigatie nodig
+          break;
+
+        case 'document_reviewed':
+          // Trainer: document goedgekeurd/afgekeurd — trainer dashboard
+          break;
+
+        case 'dispute_message':
+        case 'dispute_resolved':
+          if (auth.isAdmin) {
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const StaffDashboardScreen(initialTab: 10)),
+            );
+          }
+          break;
+
+        case 'subscription_changed':
+          // Trainer ontvangt subscription wijziging — geen specifieke navigatie
+          break;
+
+        case 'waitlist_spot_available':
+          final waitlistId = data['waitlist_id']?.toString() ?? '';
+          final trainerName = data['trainer_name']?.toString() ?? '';
+          final sessionDate = data['session_date']?.toString() ?? '';
+          final sessionTime = data['session_time']?.toString() ?? '';
+          final expiresStr = data['expires_at']?.toString() ?? '';
+          if (waitlistId.isNotEmpty) {
+            final expiresAt = DateTime.tryParse(expiresStr) ??
+                DateTime.now().add(const Duration(minutes: 15));
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(
+                builder: (_) => WaitlistOfferScreen(
+                  waitlistId: waitlistId,
+                  trainerName: trainerName,
+                  sessionDate: sessionDate,
+                  sessionTime: sessionTime,
+                  expiresAt: expiresAt,
+                ),
+              ),
+            );
+          }
+          break;
+
+        default:
+          // Onbekend type — als er een screen hint is, probeer staff dashboard
+          if (screen == 'staff_dashboard' && auth.isAdmin) {
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(builder: (_) => const StaffDashboardScreen()),
+            );
+          }
+          break;
+      }
+    });
 
     // Deep link bij cold start (payment, trainer slug, of dashboard routes)
     try {
@@ -262,8 +402,12 @@ void main() {
           _initialBuddyUri = uri;
         } else if (host == 'wachtwoord-reset') {
           _initialPasswordResetUri = uri;
+        } else if (host == 'gym' && uri.path.toLowerCase().contains('register')) {
+          _initialGymRegisterUri = uri;
         } else if (host == 'mollie-connect') {
           _initialMollieConnectSuccess = true;
+        } else if (host == 'onboarding' && uri.path.toLowerCase().contains('mandaat-complete')) {
+          _initialMandaatComplete = true;
         } else if (!DeepLinkService.isPaymentOrSlug(uri)) {
           _initialDashboardUri = uri;
         }
@@ -293,13 +437,7 @@ void main() {
             create: (_) => StorefrontCmsProvider(api: gymApi),
           ),
           ChangeNotifierProvider(
-            create: (_) => PrecacheService(api: gymApi),
-          ),
-          ChangeNotifierProvider(
-            create: (_) => OptimisticActionService(api: gymApi),
-          ),
-          ChangeNotifierProvider(
-            create: (_) => MilestoneService()..init(),
+            create: (_) => LocaleProvider(),
           ),
         ],
         child: GymiesApp(navigatorKey: navigatorKey),
@@ -308,7 +446,8 @@ void main() {
 
     // Luister naar deep links wanneer app in foreground komt
     final appLinks = AppLinks();
-    appLinks.uriLinkStream.listen((uri) {
+    StreamSubscription? _deepLinkSub;
+    _deepLinkSub = appLinks.uriLinkStream.listen((uri) {
       final host = uri.host.toLowerCase();
       // Buddy-uitnodiging: altijd tonen (ook voor niet-ingelogde vrienden)
       if (host == 'buddy') {
@@ -320,6 +459,14 @@ void main() {
       }
       // Wachtwoord reset: altijd tonen (geen login vereist)
       if (host == 'wachtwoord-reset') {
+        final screen = DeepLinkService.screenFromUri(uri);
+        if (screen != null) {
+          navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => screen));
+        }
+        return;
+      }
+      // Gym registratie: altijd tonen (geen login vereist — token-gebaseerde registratie)
+      if (host == 'gym' && uri.path.toLowerCase().contains('register')) {
         final screen = DeepLinkService.screenFromUri(uri);
         if (screen != null) {
           navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => screen));
@@ -343,8 +490,16 @@ void main() {
         }
         return;
       }
-      // Mollie Connect success (trainer)
+      // Mollie Connect success (trainer or gym owner)
       if (host == 'mollie-connect') {
+        final screen = DeepLinkService.mollieConnectSuccessScreen(auth);
+        if (screen != null && auth.isLoggedIn && (auth.isTrainer || auth.isGymOwner)) {
+          navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => screen));
+        }
+        return;
+      }
+      // Onboarding mandaat complete (trainer)
+      if (host == 'onboarding') {
         final screen = DeepLinkService.screenFromUri(uri);
         if (screen != null && auth.isLoggedIn && auth.isTrainer) {
           navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => screen));
@@ -423,12 +578,10 @@ class GymiesApp extends StatelessWidget {
       builder: (ColorScheme? lightDynamic, ColorScheme? _) {
         // Behoud Gymies gold als primary — meng optioneel met systeem accent
         final theme = gymiesTheme.copyWith(
-          colorScheme: lightDynamic != null
-              ? lightDynamic.copyWith(
+          colorScheme: lightDynamic?.copyWith(
                     primary: GymiesColors.primary,
                     onPrimary: GymiesColors.darkBlue,
-                  )
-              : null,
+                  ),
         );
 
         return MaterialApp(
@@ -436,12 +589,10 @@ class GymiesApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           title: AppConfig.appName,
           theme: theme,
-          locale: const Locale('nl', 'NL'),
-          supportedLocales: const [
-            Locale('nl', 'NL'),
-            Locale('en', 'US'),
-          ],
+          locale: context.watch<LocaleProvider>().locale,
+          supportedLocales: LocaleProvider.supportedLocales,
           localizationsDelegates: const [
+            S.delegate,
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
@@ -452,8 +603,10 @@ class GymiesApp extends StatelessWidget {
             initialBuddyUri: _initialBuddyUri,
             initialDashboardUri: _initialDashboardUri,
             initialPasswordResetUri: _initialPasswordResetUri,
+            initialGymRegisterUri: _initialGymRegisterUri,
             initialSubscriptionTier: _initialSubscriptionTier,
             initialMollieConnectSuccess: _initialMollieConnectSuccess,
+            initialMandaatComplete: _initialMandaatComplete,
           ),
         );
       },

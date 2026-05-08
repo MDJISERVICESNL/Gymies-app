@@ -16,6 +16,7 @@ import 'admin_fee_management_screen.dart';
 import 'admin_subscription_features_screen.dart';
 import 'admin_user_detail_screen.dart';
 import 'admin_messages_screen.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// Control Tower – admin dashboard voor medewerkers.
 /// Mobiel-first UX: snel overzicht, zoeken en support afhandelen.
@@ -82,10 +83,8 @@ class _ControlTowerScreenState extends State<ControlTowerScreen> {
 
       try {
         final res = await api.getAdminTickets(status: 'open');
-        if (res is List) {
-          tickets = res.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
-        }
-      } catch (e) {
+        tickets = res.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
+            } catch (e) {
         if (kDebugMode) debugPrint('[ControlTower] Tickets laden mislukt: $e');
       }
 
@@ -105,7 +104,7 @@ class _ControlTowerScreenState extends State<ControlTowerScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon Control Tower niet laden.';
+        _error = S.of(context).konControlTowerNietLaden;
         _loading = false;
       });
     }
@@ -162,7 +161,7 @@ class _ControlTowerScreenState extends State<ControlTowerScreen> {
         backgroundColor: UiConstants.darkNavyBackground,
         elevation: 0,
         title: Text(
-          'Control Tower',
+          S.of(context).controlTower,
           style: GoogleFonts.sora(
             fontSize: 22,
             fontWeight: FontWeight.bold,
@@ -206,7 +205,7 @@ class _ControlTowerScreenState extends State<ControlTowerScreen> {
                   children: [
                     Icon(Icons.tune, color: Colors.white70, size: 20),
                     SizedBox(width: 12),
-                    Text('Abonnement features'),
+                    Text(S.of(context).abonnementFeatures),
                   ],
                 ),
               ),
@@ -216,7 +215,7 @@ class _ControlTowerScreenState extends State<ControlTowerScreen> {
                   children: [
                     Icon(Icons.payments_outlined, color: Colors.white70, size: 20),
                     SizedBox(width: 12),
-                    Text('Fee-beheer'),
+                    Text(S.of(context).feebeheer),
                   ],
                 ),
               ),
@@ -226,7 +225,7 @@ class _ControlTowerScreenState extends State<ControlTowerScreen> {
                   children: [
                     Icon(Icons.logout, color: Colors.white70),
                     SizedBox(width: 12),
-                    Text('Uitloggen'),
+                    Text(S.of(context).uitloggen),
                   ],
                 ),
               ),
@@ -279,8 +278,8 @@ class _ControlTowerScreenState extends State<ControlTowerScreen> {
   }
 
   Widget _buildError() {
-    final msg = _error ?? 'Er ging iets mis.';
-    final isSessionError = msg.toLowerCase().contains('sessie') ||
+    final msg = _error ?? S.of(context).erGingIetsMis;
+    final isSessionError = msg.toLowerCase().contains(S.of(context).sessie3) ||
         msg.toLowerCase().contains('verlopen');
     return Center(
       child: Padding(
@@ -302,7 +301,7 @@ class _ControlTowerScreenState extends State<ControlTowerScreen> {
                 child: FilledButton.icon(
                   onPressed: _logout,
                   icon: const Icon(Icons.login_rounded),
-                  label: const Text('Log opnieuw in'),
+                  label: const Text(S.of(context).logOpnieuwIn),
                   style: FilledButton.styleFrom(
                     backgroundColor: GymiesColors.primary,
                     foregroundColor: GymiesColors.darkBlue,
@@ -312,7 +311,7 @@ class _ControlTowerScreenState extends State<ControlTowerScreen> {
             FilledButton.icon(
               onPressed: _load,
               icon: const Icon(Icons.refresh),
-              label: const Text('Opnieuw proberen'),
+              label: const Text(S.of(context).opnieuwProberen),
               style: FilledButton.styleFrom(
                 backgroundColor: GymiesColors.primary,
                 foregroundColor: GymiesColors.darkBlue,
@@ -343,7 +342,7 @@ decoration: BoxDecoration(
           color: UiConstants.blueGrayAccent,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: GymiesColors.primary.withValues(alpha: 0.4),
+            color: GymiesColors.primary.withOpacity(0.4),
               width: 1,
             ),
           ),
@@ -352,7 +351,7 @@ decoration: BoxDecoration(
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: GymiesColors.primary.withValues(alpha: 0.2),
+                  color: GymiesColors.primary.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
@@ -367,7 +366,7 @@ decoration: BoxDecoration(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Berichtencentrum',
+                      S.of(context).berichtencentrum,
                       style: GoogleFonts.sora(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -376,9 +375,9 @@ decoration: BoxDecoration(
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Tickets van klanten en trainers beantwoorden',
+                      S.of(context).ticketsVanKlantenEnTrainersBeantwoorden,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: Colors.white.withOpacity(0.7),
                         fontSize: 13,
                       ),
                     ),
@@ -399,7 +398,7 @@ decoration: BoxDecoration(
 
   Widget _buildWelcomeHeader() {
     final hour = DateTime.now().hour;
-    final greeting = hour < 12 ? 'Goedemorgen' : hour < 18 ? 'Goedemiddag' : 'Goedenavond';
+    final greeting = hour < 12 ? S.of(context).goedemorgen : hour < 18 ? 'Goedemiddag' : 'Goedenavond';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -407,15 +406,15 @@ decoration: BoxDecoration(
           greeting,
           style: GoogleFonts.sora(
             fontSize: 18,
-            color: Colors.white.withValues(alpha: 0.95),
+            color: Colors.white.withOpacity(0.95),
           ),
         ),
         const SizedBox(height: 2),
         Text(
-          'Overzicht voor vandaag',
+          S.of(context).overzichtVoorVandaag,
           style: GoogleFonts.sora(
             fontSize: 13,
-            color: Colors.white.withValues(alpha: 0.85),
+            color: Colors.white.withOpacity(0.85),
           ),
         ),
       ],
@@ -430,8 +429,8 @@ decoration: BoxDecoration(
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Zoek gebruiker (e-mail, naam)',
-              hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+              hintText: S.of(context).zoekGebruikeremailNaam,
+              hintStyle: TextStyle(color: Colors.white.withOpacity(0.75)),
               prefixIcon: const Icon(Icons.search, color: GymiesColors.primary),
               filled: true,
               fillColor: UiConstants.blueGrayAccent,
@@ -488,7 +487,7 @@ decoration: BoxDecoration(
             Expanded(
               child: _StatCard(
                 icon: Icons.inbox,
-                label: 'Actiepunten',
+                label: S.of(context).actiepunten,
                 value: '$inboxCount',
                 color: Colors.blue,
               ),
@@ -549,12 +548,12 @@ decoration: BoxDecoration(
 decoration: BoxDecoration(
         color: UiConstants.blueGrayAccent,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: GymiesColors.primary.withValues(alpha: 0.2)),
+        border: Border.all(color: GymiesColors.primary.withOpacity(0.2)),
       ),
         child: Center(
           child: Text(
-            'Geen open tickets',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+            S.of(context).geenOpenTickets,
+            style: TextStyle(color: Colors.white.withOpacity(0.85)),
           ),
         ),
       );
@@ -574,12 +573,12 @@ decoration: BoxDecoration(
 decoration: BoxDecoration(
         color: UiConstants.blueGrayAccent,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: GymiesColors.primary.withValues(alpha: 0.2)),
+        border: Border.all(color: GymiesColors.primary.withOpacity(0.2)),
       ),
         child: Center(
           child: Text(
             'Geen resultaten voor "$_searchQuery"',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+            style: TextStyle(color: Colors.white.withOpacity(0.85)),
           ),
         ),
       );
@@ -594,11 +593,11 @@ decoration: BoxDecoration(
           margin: const EdgeInsets.only(bottom: 8),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
-            side: BorderSide(color: GymiesColors.primary.withValues(alpha: 0.2)),
+            side: BorderSide(color: GymiesColors.primary.withOpacity(0.2)),
           ),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: GymiesColors.primary.withValues(alpha: 0.35),
+              backgroundColor: GymiesColors.primary.withOpacity(0.35),
               child: const Icon(Icons.person, color: GymiesColors.primary),
             ),
             title: Text(
@@ -649,12 +648,12 @@ class _StatCard extends StatelessWidget {
         color: UiConstants.blueGrayAccent,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: color.withValues(alpha: 0.4),
+          color: color.withOpacity(0.4),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
+            color: Colors.black.withOpacity(0.2),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -666,7 +665,7 @@ class _StatCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.3),
+              color: color.withOpacity(0.3),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: color, size: 24),
@@ -684,7 +683,7 @@ class _StatCard extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.9),
+              color: Colors.white.withOpacity(0.9),
               fontSize: 12,
             ),
           ),
@@ -713,7 +712,7 @@ class _TicketCard extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
-          color: GymiesColors.primary.withValues(alpha: 0.25),
+          color: GymiesColors.primary.withOpacity(0.25),
           width: 1,
         ),
       ),
@@ -732,7 +731,7 @@ class _TicketCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      subject.isNotEmpty ? subject : 'Geen onderwerp',
+                      subject.isNotEmpty ? subject : S.of(context).geenOnderwerp,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
@@ -744,7 +743,7 @@ class _TicketCard extends StatelessWidget {
                       Text(
                         author,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.9),
+                          color: Colors.white.withOpacity(0.9),
                           fontSize: 13,
                         ),
                       ),
@@ -754,7 +753,7 @@ class _TicketCard extends StatelessWidget {
                       Text(
                         dateStr,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
+                          color: Colors.white.withOpacity(0.75),
                           fontSize: 12,
                         ),
                       ),
@@ -767,7 +766,7 @@ class _TicketCard extends StatelessWidget {
                   margin: const EdgeInsets.only(right: 8),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.3),
+                    color: GymiesColors.primary.withOpacity(0.3),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(

@@ -69,27 +69,38 @@ mixin AppLifecycleManager<T extends StatefulWidget> on State<T>
     try {
       final connectivity = context.read<ConnectivityService>();
       await connectivity.checkNow();
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Connectivity check optional, continue anyway
+      if (kDebugMode) debugPrint('[Lifecycle] Connectivity check failed: $e');
+    }
 
     // Reconnect WebSocket als nodig
     try {
+      // ignore: use_build_context_synchronously
       final realtime = context.read<NotificationRealtimeService>();
       if (!realtime.isConnected) {
         if (kDebugMode) debugPrint('[Lifecycle] WebSocket reconnect na resume');
-        await realtime.reconnect();
+        await realtime.start();
       }
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: WebSocket reconnect optional
+      if (kDebugMode) debugPrint('[Lifecycle] WebSocket reconnect failed: $e');
+    }
 
     // Als app langer dan 5 min in background was: refresh auth data
     if (_pausedAt != null &&
         DateTime.now().difference(_pausedAt!) > _refreshThreshold) {
       if (kDebugMode) debugPrint('[Lifecycle] App was >5min in background — refresh data');
       try {
+        // ignore: use_build_context_synchronously
         final auth = context.read<AuthService>();
         if (auth.isLoggedIn) {
           onDataRefreshNeeded();
         }
-      } catch (_) {}
+      } catch (e) {
+        // Fail-open: Background refresh optional
+        if (kDebugMode) debugPrint('[Lifecycle] Background refresh failed: $e');
+      }
     }
 
     _pausedAt = null;
@@ -124,6 +135,5 @@ mixin AppLifecycleManager<T extends StatefulWidget> on State<T>
   Future<bool> didPushRoute(String route) async => false;
   @override
   Future<bool> didPushRouteInformation(RouteInformation routeInformation) async => false;
-  @override
-  Future<AppExitResponse> didRequestAppExit() async => AppExitResponse.exit;
+  // didRequestAppExit wordt niet geoverride — standaard Flutter gedrag.
 }

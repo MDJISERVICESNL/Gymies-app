@@ -9,6 +9,7 @@ import '../services/api_client.dart';
 import '../utils/map_utils.dart';
 import '../utils/haptics.dart';
 import 'admin_ticket_detail_screen.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// Admin berichtencentrum – tickets van klanten en trainers.
 /// Tabs: Klanten | Trainers. Alleen open/pending tickets. Afgehandeld verdwijnt uit lijst.
@@ -49,7 +50,8 @@ class _AdminMessagesScreenState extends State<AdminMessagesScreen>
 
   bool _isFromTrainer(Map<String, dynamic> t) {
     final role = mapStr(t, ['author_role', 'user_role', 'role', 'type']).toLowerCase();
-    return role.contains('trainer');
+    // Check for common trainer role strings to avoid context.read during build
+    return role.contains('trainer') || role.contains('coach') || role == 'pro';
   }
 
   bool _isFromClient(Map<String, dynamic> t) {
@@ -86,7 +88,7 @@ class _AdminMessagesScreenState extends State<AdminMessagesScreen>
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon tickets niet laden.';
+        _error = S.of(context).konTicketsNietLaden;
         _loading = false;
       });
     }
@@ -117,7 +119,7 @@ class _AdminMessagesScreenState extends State<AdminMessagesScreen>
           },
         ),
         title: Text(
-          'Berichtencentrum',
+          S.of(context).berichtencentrum,
           style: GoogleFonts.sora(
             fontSize: 20,
             fontWeight: FontWeight.bold,
@@ -147,13 +149,13 @@ class _AdminMessagesScreenState extends State<AdminMessagesScreen>
                 children: [
                   const Icon(Icons.person_outline, size: 20),
                   const SizedBox(width: 8),
-                  const Text('Klanten'),
+                  Text(S.of(context).klanten),
                   if (_clientTickets.isNotEmpty) ...[
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.3),
+                        color: GymiesColors.primary.withOpacity(0.3),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
@@ -171,13 +173,13 @@ class _AdminMessagesScreenState extends State<AdminMessagesScreen>
                 children: [
                   const Icon(Icons.fitness_center, size: 20),
                   const SizedBox(width: 8),
-                  const Text('Trainers'),
+                  Text(S.of(context).trainers),
                   if (_trainerTickets.isNotEmpty) ...[
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.3),
+                        color: GymiesColors.primary.withOpacity(0.3),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
@@ -201,8 +203,8 @@ class _AdminMessagesScreenState extends State<AdminMessagesScreen>
               : TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildTicketList(_clientTickets, 'Klant'),
-                    _buildTicketList(_trainerTickets, 'Trainer'),
+                    _buildTicketList(_clientTickets, S.of(context).clientSingle),
+                    _buildTicketList(_trainerTickets, S.of(context).trainer),
                   ],
                 ),
     );
@@ -218,7 +220,7 @@ class _AdminMessagesScreenState extends State<AdminMessagesScreen>
             Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
             const SizedBox(height: 16),
             Text(
-              _error ?? 'Er ging iets mis.',
+              _error ?? S.of(context).erGingIetsMis,
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.white70),
             ),
@@ -229,7 +231,7 @@ class _AdminMessagesScreenState extends State<AdminMessagesScreen>
                 _load();
               },
               icon: const Icon(Icons.refresh),
-              label: const Text('Opnieuw proberen'),
+              label: Text(S.of(context).opnieuwProberen),
               style: FilledButton.styleFrom(
                 backgroundColor: GymiesColors.primary,
                 foregroundColor: GymiesColors.darkBlue,
@@ -255,7 +257,7 @@ class _AdminMessagesScreenState extends State<AdminMessagesScreen>
               Icon(
                 Icons.inbox_outlined,
                 size: 64,
-                color: Colors.white.withValues(alpha: 0.4),
+                color: Colors.white.withOpacity(0.4),
               ),
               const SizedBox(height: 16),
               Text(
@@ -271,7 +273,7 @@ class _AdminMessagesScreenState extends State<AdminMessagesScreen>
                 'Nieuwe tickets van ${roleLabel.toLowerCase()} verschijnen hier.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6),
+                  color: Colors.white.withOpacity(0.6),
                   fontSize: 14,
                 ),
               ),
@@ -314,7 +316,7 @@ class _TicketCard extends StatelessWidget {
       'author_name',
       'user_name',
       'client_name',
-      'trainer_name',
+      S.of(context).trainername,
       'created_by_name',
     ]);
     final email = str(ticket, ['author_email', 'user_email', 'email']);
@@ -343,7 +345,7 @@ class _TicketCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      subject.isNotEmpty ? subject : 'Geen onderwerp',
+                      subject.isNotEmpty ? subject : S.of(context).geenOnderwerp,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
@@ -357,7 +359,7 @@ class _TicketCard extends StatelessWidget {
                             ? (email.isNotEmpty ? '$author · $email' : author)
                             : email,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
+                          color: Colors.white.withOpacity(0.7),
                           fontSize: 13,
                         ),
                       ),
@@ -367,7 +369,7 @@ class _TicketCard extends StatelessWidget {
                       Text(
                         preview.length > 80 ? '${preview.substring(0, 80)}…' : preview,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: Colors.white.withOpacity(0.6),
                           fontSize: 12,
                         ),
                         maxLines: 2,
@@ -379,7 +381,7 @@ class _TicketCard extends StatelessWidget {
                       Text(
                         dateStr,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
+                          color: Colors.white.withOpacity(0.5),
                           fontSize: 11,
                         ),
                       ),
@@ -392,7 +394,7 @@ class _TicketCard extends StatelessWidget {
                   margin: const EdgeInsets.only(right: 8),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.2),
+                    color: GymiesColors.primary.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -415,7 +417,7 @@ class _TicketCard extends StatelessWidget {
   String _statusLabel(String s) {
     final lower = s.toLowerCase();
     if (lower.contains('open') || lower.contains('new')) return 'Open';
-    if (lower.contains('pending') || lower.contains('waiting')) return 'In behandeling';
+    if (lower.contains('pending') || lower.contains('waiting')) return S.of(context).statusInBehandeling;
     if (lower.contains('closed') || lower.contains('resolved')) return 'Afgehandeld';
     return s.isEmpty ? 'Open' : s;
   }

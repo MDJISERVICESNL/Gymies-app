@@ -119,6 +119,9 @@ final class GymiesGroupSessionController extends Controller
             'g.trainer_location_id',
             'u.display_name as trainer_name',
         ];
+        if (Schema::hasColumn('gymies_group_sessions', 'price_per_participant_cents')) {
+            $select[] = 'g.price_per_participant_cents';
+        }
         if (Schema::hasColumn('gymies_group_sessions', 'min_participants')) {
             $select[] = 'g.min_participants';
         }
@@ -637,15 +640,22 @@ final class GymiesGroupSessionController extends Controller
         $feeCents = self::PLATFORM_FEE_CENTS;
         $payoutCents = max(0, $priceCents - $feeCents);
 
-        foreach ($participants as $p) {
-            DB::table('gymies_group_session_participants')->where('id', $p->id)->update([
+        // Batch update: collect IDs and update in single query
+        $participantIds = collect($participants)->pluck('id')->toArray();
+        if (!empty($participantIds)) {
+            DB::table('gymies_group_session_participants')->whereIn('id', $participantIds)->update([
                 'status' => 'payment_pending',
                 'amount_cents' => $priceCents,
                 'platform_fee_cents' => $feeCents,
                 'trainer_payout_cents' => $payoutCents,
             ]);
-            if (Schema::hasTable('gymies_notification_queue')) {
-                DB::table('gymies_notification_queue')->insert([
+        }
+
+        // Batch insert notifications
+        if (Schema::hasTable('gymies_notification_queue') && !empty($participants)) {
+            $notifications = [];
+            foreach ($participants as $p) {
+                $notifications[] = [
                     'user_id' => (int) $p->client_user_id,
                     'channel' => 'in_app',
                     'event_type' => 'group_session_confirmed',
@@ -656,8 +666,9 @@ final class GymiesGroupSessionController extends Controller
                     ], JSON_UNESCAPED_UNICODE),
                     'scheduled_for' => now(),
                     'created_at' => now(),
-                ]);
+                ];
             }
+            DB::table('gymies_notification_queue')->insert($notifications);
         }
 
         $row = DB::table('gymies_group_sessions as g')
@@ -713,22 +724,30 @@ final class GymiesGroupSessionController extends Controller
         $payoutCents = max(0, $priceCents - $feeCents);
 
         $paymentDeadline = now()->addMinutes(60);
-        foreach ($participants as $p) {
-            $update = [
-                'status' => 'payment_pending',
-                'amount_cents' => $priceCents,
-            ];
-            if (Schema::hasColumn('gymies_group_session_participants', 'platform_fee_cents')) {
-                $update['platform_fee_cents'] = $feeCents;
-                $update['trainer_payout_cents'] = $payoutCents;
-            }
-            if (Schema::hasColumn('gymies_group_session_participants', 'payment_deadline_at')) {
-                $update['payment_deadline_at'] = $paymentDeadline;
-            }
-            DB::table('gymies_group_session_participants')->where('id', $p->id)->update($update);
 
-            if (Schema::hasTable('gymies_notification_queue')) {
-                DB::table('gymies_notification_queue')->insert([
+        // Batch update participants
+        $update = [
+            'status' => 'payment_pending',
+            'amount_cents' => $priceCents,
+        ];
+        if (Schema::hasColumn('gymies_group_session_participants', 'platform_fee_cents')) {
+            $update['platform_fee_cents'] = $feeCents;
+            $update['trainer_payout_cents'] = $payoutCents;
+        }
+        if (Schema::hasColumn('gymies_group_session_participants', 'payment_deadline_at')) {
+            $update['payment_deadline_at'] = $paymentDeadline;
+        }
+
+        $participantIds = collect($participants)->pluck('id')->toArray();
+        if (!empty($participantIds)) {
+            DB::table('gymies_group_session_participants')->whereIn('id', $participantIds)->update($update);
+        }
+
+        // Batch insert notifications for participants
+        if (Schema::hasTable('gymies_notification_queue') && !empty($participants)) {
+            $notifications = [];
+            foreach ($participants as $p) {
+                $notifications[] = [
                     'user_id' => (int) $p->client_user_id,
                     'channel' => 'in_app',
                     'event_type' => 'group_session_min_reached_confirmed',
@@ -740,8 +759,9 @@ final class GymiesGroupSessionController extends Controller
                     ], JSON_UNESCAPED_UNICODE),
                     'scheduled_for' => now(),
                     'created_at' => now(),
-                ]);
+                ];
             }
+            DB::table('gymies_notification_queue')->insert($notifications);
         }
 
         if (Schema::hasTable('gymies_notification_queue')) {

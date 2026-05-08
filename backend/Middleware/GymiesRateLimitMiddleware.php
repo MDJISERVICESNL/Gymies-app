@@ -62,14 +62,16 @@ final class GymiesRateLimitMiddleware
     }
 
     /**
-     * @return array{0:int,1:int,2:int}
+     * @return array{0:int,1:int,2:int} [maxAttempts, windowSeconds, blockSeconds]
      */
     private function limitsForProfile(string $profile): array
     {
         return match ($profile) {
-            'login' => [5, 60, 600],
-            'register' => [4, 300, 900],
-            default => [120, 60, 120],
+            'login' => [5, 60, 600],                  // 5 per minute, then block 10 min
+            'register' => [4, 300, 900],              // 4 per 5 min, then block 15 min
+            'health' => [30, 60, 30],                 // 30 per minute (lenient for monitoring)
+            'cron' => [10, 60, 120],                  // 10 per minute, then block 2 min
+            default => [120, 60, 120],                // Standard: 120 per minute
         };
     }
 }

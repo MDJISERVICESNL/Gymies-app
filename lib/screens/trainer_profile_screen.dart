@@ -1,5 +1,4 @@
 
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/gymies_api.dart';
@@ -58,13 +58,14 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
 
   Future<void> _load() async {
     if (!mounted) return;
+    final api = context.read<GymiesApi>();
+    final auth = context.read<AuthService>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
-      if (kDebugMode) debugPrint('[TrainerProfile] Profiel laden...');
+      if (kDebugMode) debugPrint(S.of(context).trainerprofileProfielLaden);
       final p = await api.getTrainerProfile();
       if (kDebugMode) debugPrint('[TrainerProfile] OK – ${p.length} velden geladen');
 
@@ -87,7 +88,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
         // Fallback: gebruik AuthService user data als minimaal profiel
         final fallback = _buildFallbackProfile();
         if (fallback != null && (e.statusCode == 404 || e.statusCode == 500)) {
-          if (kDebugMode) debugPrint('[TrainerProfile] Fallback profiel gebruikt vanuit AuthService');
+          if (kDebugMode) debugPrint(S.of(context).trainerprofileFallbackProfielGebruiktVanuitAuthservice);
           _syncingFromLoad = true;
           _displayNameController.text =
               (fallback['display_name'] ?? fallback['name'] ?? '').toString();
@@ -112,7 +113,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
       if (mounted) {
         final fallback = _buildFallbackProfile();
         if (fallback != null) {
-          if (kDebugMode) debugPrint('[TrainerProfile] Fallback profiel gebruikt na fout');
+          if (kDebugMode) debugPrint(S.of(context).trainerprofileFallbackProfielGebruiktNaFout);
           _syncingFromLoad = true;
           _displayNameController.text =
               (fallback['display_name'] ?? fallback['name'] ?? '').toString();
@@ -127,7 +128,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
           });
         } else {
           setState(() {
-            _error = 'Kon profiel niet laden. Probeer opnieuw.';
+            _error = S.of(context).konProfielNietLadenProbeerOpnieuw;
             _loading = false;
           });
         }
@@ -145,7 +146,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
         'display_name': user['display_name'] ?? user['name'] ?? '',
         'email': user['email'] ?? '',
         'avatar_url': user['avatar_url'] ?? user['avatarUrl'] ?? '',
-        'role': user['role'] ?? 'trainer',
+        'role': user['role'] ?? S.of(context).trainer2,
         'bio': '',
         'specialty': '',
         'region': '',
@@ -160,9 +161,9 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false) || _saving) return;
     Haptics.light();
+    final api = context.read<GymiesApi>();
     setState(() => _saving = true);
     try {
-      final api = context.read<GymiesApi>();
       final updated = await api.updateTrainerProfile(
         displayName: _displayNameController.text.trim(),
       );
@@ -171,12 +172,14 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
         _profile = updated;
         _dirty = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profiel opgeslagen'),
-          backgroundColor: GymiesColors.darkBlue,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile saved'),
+            backgroundColor: GymiesColors.darkBlue,
+          ),
+        );
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -212,7 +215,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
               ),
               const SizedBox(height: 20),
               Text(
-                'Profielfoto kiezen',
+                S.of(context).profielfotoKiezen,
                 style: GoogleFonts.sora(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
@@ -225,15 +228,15 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                    color: GymiesColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(Icons.camera_alt_rounded,
                       color: GymiesColors.darkBlue),
                 ),
-                title: Text('Camera',
+                title: Text(S.of(context).camera,
                     style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
-                subtitle: Text('Maak een nieuwe foto',
+                subtitle: Text(S.of(context).maakEenNieuweFoto,
                     style: GoogleFonts.sora(
                         fontSize: 12, color: Colors.grey.shade600)),
                 onTap: () => Navigator.pop(ctx, ImageSource.camera),
@@ -244,15 +247,15 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                    color: GymiesColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(Icons.photo_library_rounded,
                       color: GymiesColors.darkBlue),
                 ),
-                title: Text('Galerij',
+                title: Text(S.of(context).galerij,
                     style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
-                subtitle: Text('Kies uit je fotorol',
+                subtitle: Text(S.of(context).kiesUitJeFotorol,
                     style: GoogleFonts.sora(
                         fontSize: 12, color: Colors.grey.shade600)),
                 onTap: () => Navigator.pop(ctx, ImageSource.gallery),
@@ -302,7 +305,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Profielfoto bijgewerkt'),
+          content: Text(S.of(context).profielfotoBijgewerkt),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -315,7 +318,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Kon foto niet uploaden: $e'),
+          content: Text(S.of(context).konFotoNietUploaden(e.toString())),
           backgroundColor: Colors.red,
         ),
       );
@@ -327,9 +330,9 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
   Future<void> _logout() async {
     final confirmed = await GymiesDialog.destructive(
       context,
-      title: 'Uitloggen',
-      message: 'Weet je zeker dat je wilt uitloggen?',
-      confirmLabel: 'Uitloggen',
+      title: S.of(context).uitloggen,
+      message: S.of(context).logoutConfirmMessage,
+      confirmLabel: S.of(context).uitloggen,
     );
     if (confirmed != true || !mounted) return;
     Haptics.heavy();
@@ -354,8 +357,8 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
         if (didPop || !_dirty || _saving) return;
         GymiesDialog.destructive(
           context,
-          title: 'Wijzigingen niet opgeslagen',
-          message: 'Weet je zeker dat je zonder opslaan wilt sluiten?',
+          title: S.of(context).wijzigingenNietOpgeslagen,
+          message: S.of(context).weetJeZekerDatJeZonder,
           confirmLabel: 'Sluiten',
         ).then((discard) {
           if (discard == true && context.mounted) {
@@ -365,7 +368,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFF7F8FA),
-        appBar: const GymiesAppBar(title: 'Mijn profiel'),
+        appBar: const GymiesAppBar(title: S.of(context).myProfileTitle),
         body: GymiesListBody(
           loading: _loading,
           error: _error,
@@ -388,9 +391,9 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                             height: 110,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: GymiesColors.primary.withValues(alpha: 0.15),
+                              color: GymiesColors.primary.withOpacity(0.15),
                               border: Border.all(
-                                color: GymiesColors.primary.withValues(alpha: 0.3),
+                                color: GymiesColors.primary.withOpacity(0.3),
                                 width: 3,
                               ),
                             ),
@@ -412,7 +415,9 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                                           width: 110,
                                           height: 110,
                                           fit: BoxFit.cover,
-                                          placeholder: (_, __) => Center(
+                                          cacheWidth: 220,
+                                          cacheHeight: 220,
+                                          placeholder: (_, _) => Center(
                                             child: Text(
                                               initial,
                                               style: GoogleFonts.sora(
@@ -422,7 +427,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                                               ),
                                             ),
                                           ),
-                                          errorWidget: (_, __, ___) => Center(
+                                          errorWidget: (_, _, _) => Center(
                                             child: Text(
                                               initial,
                                               style: GoogleFonts.sora(
@@ -458,7 +463,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                                 border: Border.all(color: Colors.white, width: 2.5),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.1),
+                                    color: Colors.black.withOpacity(0.1),
                                     blurRadius: 4,
                                     offset: const Offset(0, 2),
                                   ),
@@ -478,7 +483,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                   const SizedBox(height: 8),
                   Center(
                     child: Text(
-                      'Tik om foto te wijzigen',
+                      S.of(context).tikOmFotoTeWijzigen,
                       style: GoogleFonts.sora(
                         fontSize: 12,
                         color: Colors.grey.shade500,
@@ -489,7 +494,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
 
                   // ── Profielgegevens ──
                   Text(
-                    'Profielgegevens',
+                    S.of(context).profielgegevens,
                     style: GoogleFonts.sora(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -503,13 +508,13 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                     controller: _displayNameController,
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) {
-                        return 'Weergavenaam is verplicht';
+                        return S.of(context).weergavenaamIsVerplicht;
                       }
                       return null;
                     },
                     style: GoogleFonts.sora(fontSize: 15),
                     decoration: InputDecoration(
-                      labelText: 'Weergavenaam',
+                      labelText: S.of(context).weergavenaam,
                       labelStyle: GoogleFonts.sora(
                           fontSize: 14, fontWeight: FontWeight.w500),
                       prefixIcon: const Icon(Icons.person_outline_rounded,
@@ -542,7 +547,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'E-mail',
+                                S.of(context).email,
                                 style: GoogleFonts.sora(
                                   fontSize: 11,
                                   color: Colors.grey.shade500,
@@ -584,14 +589,14 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : Text('Opslaan',
+                        : Text(S.of(context).opslaan,
                             style: GoogleFonts.sora(
                                 fontWeight: FontWeight.w700, fontSize: 15)),
                   ),
                   if (_dirty) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'Niet-opgeslagen wijzigingen',
+                      S.of(context).nietopgeslagenWijzigingen,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.sora(
                         color: Colors.orange.shade800,
@@ -618,7 +623,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'Specialiteiten, tarief, bio en media kun je aanpassen in de Etalage-editor.',
+                            S.of(context).specialiteitenTariefBioEnMediaKunJeAanpassenInDeEtalageeditor,
                             style: GoogleFonts.sora(
                               fontSize: 12,
                               color: Colors.blue.shade700,
@@ -640,7 +645,7 @@ class _TrainerProfileScreenState extends State<TrainerProfileScreen> {
                     child: OutlinedButton.icon(
                       icon: const Icon(Icons.logout_rounded, color: Colors.red),
                       label: Text(
-                        'Uitloggen',
+                        S.of(context).uitloggen,
                         style: GoogleFonts.sora(color: Colors.red),
                       ),
                       style: OutlinedButton.styleFrom(

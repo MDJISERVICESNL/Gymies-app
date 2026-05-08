@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../utils/currency_format.dart';
+import '../l10n/generated/app_localizations.dart';
 
 import '../models/promotion.dart';
 import '../theme/gymies_theme.dart';
@@ -84,6 +86,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
     TrainerSubscriptionTier.proPlus: 'Pro+',
   };
 
+  // Fallback subtitles — hardcoded strings instead of S.of(context) in static const
   static const Map<TrainerSubscriptionTier, String> _fallbackSubtitle = {
     TrainerSubscriptionTier.starter: 'Basis voor starten als trainer',
     TrainerSubscriptionTier.pro: 'Meest gekozen door startende trainers',
@@ -102,7 +105,8 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
     TrainerSubscriptionTier.proPlus: 'VOOR DE SERIEUZE TRAINER',
   };
 
-  // Fallback feature matrix — sync met backend SUBSCRIPTION_FEATURES
+  // Fallback feature matrix — hardcoded strings instead of S.of(context) in static const
+  // This ensures the app compiles and falls back to hardcoded descriptions when API unavailable
   static const List<_SubscriptionFeature> _fallbackFeatures = [
     // ── Starter ──
     _SubscriptionFeature('profile', 'Eigen profiel op Gymies', 'Je eigen trainerspagina', TrainerSubscriptionTier.starter),
@@ -114,8 +118,8 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
     _SubscriptionFeature('search_priority', 'Prioriteit in zoekresultaten', 'Hoger in de lijst voor klanten', TrainerSubscriptionTier.pro),
     _SubscriptionFeature('group_sessions', 'Groepslessen beheer', 'Plan en beheer groepssessies', TrainerSubscriptionTier.pro),
     _SubscriptionFeature('packages', 'Strippenkaarten & pakketten', 'Trainingsabonnementen aanbieden', TrainerSubscriptionTier.pro),
-    _SubscriptionFeature('promo_codes', 'Promo-codes aanmaken', 'Kortingscodes voor klanten', TrainerSubscriptionTier.pro),
-    _SubscriptionFeature('crm', 'Klantenbestand (CRM)', 'Klantbeheer, tags en segmenten', TrainerSubscriptionTier.pro),
+    _SubscriptionFeature('promo_codes', 'Promocodes aanmaken', 'Kortingscodes voor klanten', TrainerSubscriptionTier.pro),
+    _SubscriptionFeature('crm', 'Klantenbeheer (CRM)', 'Klantbeheer, tags en segmenten', TrainerSubscriptionTier.pro),
     _SubscriptionFeature('income_dashboard', 'Inkomsten dashboard & rapportages', 'Inzicht in je verdiensten', TrainerSubscriptionTier.pro),
     _SubscriptionFeature('marketing_tools', 'Marketing tools & templates', 'Promotie en klantwerving', TrainerSubscriptionTier.pro),
     _SubscriptionFeature('priority_support', 'Prioriteit support', 'Snellere reactie van ons team', TrainerSubscriptionTier.pro),
@@ -123,12 +127,12 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
     _SubscriptionFeature('branded_profile', 'Eigen branded profielpagina', 'Volledig gepersonaliseerd profiel', TrainerSubscriptionTier.proPlus),
     _SubscriptionFeature('custom_url', 'Eigen URL (gymies.nl/jouw-naam)', 'Deel je persoonlijke link', TrainerSubscriptionTier.proPlus),
     _SubscriptionFeature('profile_branding', 'Logo & kleur op je profiel', 'Je huisstijl op Gymies', TrainerSubscriptionTier.proPlus),
-    _SubscriptionFeature('intro_video', 'Intro-video op je profiel', 'Laat zien wie je bent', TrainerSubscriptionTier.proPlus),
+    _SubscriptionFeature('intro_video', 'Introvideo op je profiel', 'Laat zien wie je bent', TrainerSubscriptionTier.proPlus),
     _SubscriptionFeature('verified_badge', 'Verified trainer badge', 'Blauw vinkje op je profiel', TrainerSubscriptionTier.proPlus),
     _SubscriptionFeature('newsletter', 'Nieuwsbrief naar klanten sturen', 'Direct contact met je klanten', TrainerSubscriptionTier.proPlus),
-    _SubscriptionFeature('booking_widget', 'Boekingswidget voor je website', 'Boekingen via je eigen site', TrainerSubscriptionTier.proPlus),
+    _SubscriptionFeature('booking_widget', 'Boekingswidget voor je website', 'Boekingenvia je eigen site', TrainerSubscriptionTier.proPlus),
     _SubscriptionFeature('profile_qr', 'QR-code voor je profiel', 'Deel je profiel offline', TrainerSubscriptionTier.proPlus),
-    _SubscriptionFeature('client_analytics', 'Klant analytics', 'Actief / risico / inactief inzichten', TrainerSubscriptionTier.proPlus),
+    _SubscriptionFeature('client_analytics', 'Klant Analytics', 'Actief / risico / inactief inzichten', TrainerSubscriptionTier.proPlus),
   ];
 
   // ─────────────────────────────────────────────────
@@ -167,8 +171,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
       if (label.isNotEmpty) return label.replaceAll(RegExp(r'/mnd$'), '').trim();
       final cents = plan['amount_cents'] ?? plan['amount'];
       if (cents != null) {
-        final euro = (cents is int ? cents : int.tryParse(cents.toString()) ?? 0) / 100;
-        return '€${euro.toStringAsFixed(2).replaceAll('.', ',')}';
+        return formatEuro(cents);
       }
     }
     return _fallbackPrice[tier] ?? '';
@@ -330,7 +333,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: GymiesColors.primary.withValues(alpha: 0.15),
+                            color: GymiesColors.primary.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Icon(
@@ -371,7 +374,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.08),
+                        color: GymiesColors.primary.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
@@ -450,10 +453,10 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.08),
+                        color: GymiesColors.primary.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: GymiesColors.primary.withValues(alpha: 0.3),
+                          color: GymiesColors.primary.withOpacity(0.3),
                         ),
                       ),
                       child: Column(
@@ -463,8 +466,8 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                             isUpgrade
                                 ? 'Betaling starten voor $label'
                                 : isDowngrade
-                                    ? 'Weet je zeker dat je wilt downgraden?'
-                                    : 'Weet je zeker dat je van abonnement wilt veranderen?',
+                                    ? S.of(context).weetJeZekerDatJeWilt
+                                    : S.of(context).weetJeZekerDatJeVan,
                             style: GoogleFonts.sora(
                               fontSize: 16,
                               color: GymiesColors.darkBlue,
@@ -477,7 +480,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                                 : 'Bij je volgende factuurdatum ($dateStr) wordt je abonnement gewijzigd naar $label. Je betaalt dan $price per maand.',
                             style: GoogleFonts.sora(
                               fontSize: 14,
-                              color: GymiesColors.darkBlue.withValues(alpha: 0.9),
+                              color: GymiesColors.darkBlue.withOpacity(0.9),
                               height: 1.4,
                             ),
                           ),
@@ -497,7 +500,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                                 side: BorderSide(color: GymiesColors.darkBlue),
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                               ),
-                              child: const Text('Annuleren'),
+                              child: const Text(S.of(context).annuleren),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -522,7 +525,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                                         color: GymiesColors.darkBlue,
                                       ),
                                     )
-                                  : Text(isUpgrade ? 'Doorgaan naar betaling' : 'Ja, wijzig abonnement'),
+                                  : Text(isUpgrade ? S.of(context).doorgaanNaarBetaling : 'Ja, wijzig abonnement'),
                             ),
                           ),
                         ],
@@ -558,7 +561,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
         if (ctx.mounted) {
           messenger.showSnackBar(
             const SnackBar(
-              content: Text('Geen betaal-URL ontvangen. Probeer opnieuw.'),
+              content: Text(S.of(context).geenBetaalurlOntvangenProbeerOpnieuw),
               backgroundColor: Colors.red,
             ),
           );
@@ -570,7 +573,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Je wordt doorgestuurd naar de betaalpagina. Na betaling keer je terug naar de app.',
+            S.of(context).jeWordtDoorgestuurdNaarDeBetaalpaginaNaBetalingKeerJeTerugNaarDeApp,
           ),
           backgroundColor: Colors.green.shade700,
         ),
@@ -586,7 +589,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
       if (ctx.mounted) {
         messenger.showSnackBar(
           SnackBar(
-            content: Text('Betaling starten mislukt: ${e is ApiException ? e.message : e}'),
+            content: Text(S.of(context).betalingStartenMislukt(e is ApiException ? e.message : e.toString())),
             backgroundColor: Colors.red.shade700,
           ),
         );
@@ -625,7 +628,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
       if (ctx.mounted) {
         messenger.showSnackBar(
           SnackBar(
-            content: Text('Kon abonnement niet wijzigen: $e'),
+            content: Text(S.of(context).konAbonnementNietWijzigen(e.toString())),
             backgroundColor: Colors.red.shade700,
           ),
         );
@@ -641,7 +644,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
     final promoService = context.watch<PromotionService>();
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
-      appBar: const GymiesAppBar(title: 'Abonnement'),
+      appBar: const GymiesAppBar(title: S.of(context).abonnement),
       body: Consumer<SubscriptionEntitlementsService>(
         builder: (context, entitlements, _) {
           final currentTier = _tierFromString(entitlements.tier);
@@ -656,7 +659,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                 onTap: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Je profiteert al van deze actie!'),
+                      content: Text(S.of(context).jeProfiteertAlVanDezeActie),
                       backgroundColor: GymiesColors.darkBlue,
                     ),
                   );
@@ -667,7 +670,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                 decoration: BoxDecoration(
                   color: GymiesColors.darkBlue,
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: [BoxShadow(color: GymiesColors.darkBlue.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 4))],
+                  boxShadow: [BoxShadow(color: GymiesColors.darkBlue.withOpacity(0.25), blurRadius: 12, offset: const Offset(0, 4))],
                 ),
                 child: Row(
                   children: [
@@ -675,7 +678,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.15),
+                        color: GymiesColors.primary.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Icon(Icons.workspace_premium_rounded, size: 22, color: GymiesColors.primary),
@@ -697,7 +700,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                           Text(
                             '$enabledCount van ${_features.length} features actief.',
                             style: TextStyle(
-                              color: GymiesColors.primary.withValues(alpha: 0.9),
+                              color: GymiesColors.primary.withOpacity(0.9),
                               fontWeight: FontWeight.w600,
                               fontSize: 13,
                             ),
@@ -712,10 +715,10 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: GymiesColors.primary.withValues(alpha: 0.08),
+                  color: GymiesColors.primary.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: GymiesColors.primary.withValues(alpha: 0.25),
+                    color: GymiesColors.primary.withOpacity(0.25),
                   ),
                 ),
                 child: Row(
@@ -729,10 +732,10 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Als je een abonnement wilt wijzigen, bekijk de features en verander je abonnement. Je abonnement gaat in bij de volgende factuurdatum.',
+                        S.of(context).alsJeEenAbonnementWiltWijzigenBekijkDeFeaturesEnVeranderJeAbonnementJeAbonnementGaatInBijDeVolgendeFactuurdatum,
                         style: TextStyle(
                           fontSize: 14,
-                          color: GymiesColors.darkBlue.withValues(alpha: 0.9),
+                          color: GymiesColors.darkBlue.withOpacity(0.9),
                           height: 1.4,
                         ),
                       ),
@@ -747,14 +750,14 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                     width: 28,
                     height: 28,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.12),
+                      color: GymiesColors.primary.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(Icons.tune_rounded, size: 15, color: GymiesColors.darkBlue),
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Kies een plan',
+                    S.of(context).kiesEenPlan,
                     style: GoogleFonts.sora(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -806,7 +809,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(14),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                         ),
                         child: Row(
                           children: [
@@ -814,7 +817,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                               width: 36,
                               height: 36,
                               decoration: BoxDecoration(
-                                color: (active ? Colors.green.shade700 : GymiesColors.darkBlue).withValues(alpha: 0.1),
+                                color: (active ? Colors.green.shade700 : GymiesColors.darkBlue).withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(9),
                               ),
                               child: Icon(
@@ -888,7 +891,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Text(
-                                    'Actief',
+                                    S.of(context).actief,
                                     style: TextStyle(
                                       color: Colors.green.shade800,
                                       fontWeight: FontWeight.w700,
@@ -908,7 +911,7 @@ class _TrainerSubscriptionScreenState extends State<TrainerSubscriptionScreen> {
               const SizedBox(height: 20),
               // ── Promo-code invoerveld ──
               Text(
-                'Heb je een kortingscode?',
+                S.of(context).hebJeEenKortingscode,
                 style: GoogleFonts.sora(
                   fontSize: 15,
                   color: GymiesColors.darkBlue,

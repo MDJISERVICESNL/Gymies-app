@@ -69,11 +69,18 @@ final class GymiesRateLimitMiddleware
             : 'ip:' . $request->ip();
         $key = "gymies_rate_limit:{$type}:{$identifier}";
 
-        // Check huidige count
-        $attempts = (int) Cache::get($key, 0);
+        // Increment atomically to prevent race conditions
+        $attempts = Cache::increment($key, 1, $decaySeconds);
 
-        if ($attempts >= $maxAttempts) {
-            $retryAfter = Cache::get("{$key}:timer", $decaySeconds);
+        // Set expiry timer on first increment
+        if ($attempts === 1) {
+            Cache::put("{$key}:timer", $decaySeconds, $decaySeconds);
+        }
+
+        if ($attempts > $maxAttempts) {
+            // Get remaining TTL for accurate Retry-After header
+            $ttl = Cache::getStore()->connection()->ttl($key);
+            $retryAfter = max(1, (int) ceil($ttl));
 
             Log::warning('[RateLimit] Limiet bereikt', [
                 'type'       => $type,
@@ -94,15 +101,7 @@ final class GymiesRateLimitMiddleware
             ]);
         }
 
-        // Verhoog counter
-        if ($attempts === 0) {
-            Cache::put($key, 1, $decaySeconds);
-            Cache::put("{$key}:timer", $decaySeconds, $decaySeconds);
-        } else {
-            Cache::increment($key);
-        }
-
-        $remaining = max(0, $maxAttempts - $attempts - 1);
+        $remaining = max(0, $maxAttempts - $attempts);
 
         /** @var Response $response */
         $response = $next($request);

@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../theme/gymies_theme.dart';
 import '../models/trainer.dart';
 import '../utils/haptics.dart';
@@ -28,8 +29,8 @@ import '../config/app_config.dart';
 import '../config/timing_constants.dart';
 import '../config/ui_constants.dart';
 
-const _kFavoritesKey = 'gymies_favorite_trainer_ids';
-const _kRemovedFromMyTrainersKey = 'gymies_removed_from_my_trainers_ids';
+const _kFavoritesKey = S.of(context).gymiesfavoritetrainerids;
+const _kRemovedFromMyTrainersKey = S.of(context).gymiesremovedfrommytrainersids;
 const _kClientCityKey = 'gymies_client_city';
 
 /// Klant-dashboard met GYMIES thema.
@@ -148,7 +149,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _removeFromMyTrainers(Trainer trainer) async {
     final id = trainer.userId;
     if (id.isEmpty) return;
-    setState(() => _removedFromMyTrainersIds.add(id));
+    setState(() => _removedFromMyTrainersIds = {..._removedFromMyTrainersIds, id});
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
       _kRemovedFromMyTrainersKey,
@@ -235,7 +236,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
       if (mounted) {
-        setState(() => _error = 'Kon gegevens niet laden. Probeer opnieuw.');
+        setState(() => _error = S.of(context).couldNotLoadData);
+      }
+    }
+
+    // Story status parallel laden (batched, niet N+1)
+    if (trainers.isNotEmpty) {
+      try {
+        final storyFutures = trainers.map((t) =>
+          api.hasStories(t.id).catchError((_) => false),
+        ).toList();
+        final storyResults = await Future.wait(storyFutures);
+        for (int i = 0; i < trainers.length; i++) {
+          if (storyResults[i]) {
+            trainers[i] = Trainer(
+              id: trainers[i].id,
+              name: trainers[i].name,
+              avatarUrl: trainers[i].avatarUrl,
+              hasActiveStory: true,
+              specialty: trainers[i].specialty,
+              region: trainers[i].region,
+              hourlyRateCents: trainers[i].hourlyRateCents,
+              tierRaw: trainers[i].tierRaw,
+              trainerVerifiedFlag: trainers[i].trainerVerifiedFlag,
+              woman2womanFlag: trainers[i].woman2womanFlag,
+              isAmbassadorFlag: trainers[i].isAmbassadorFlag,
+              rating: trainers[i].rating,
+              reviewCount: trainers[i].reviewCount,
+              city: trainers[i].city,
+              categories: trainers[i].categories,
+              lessonTypes: trainers[i].lessonTypes,
+              distanceKm: trainers[i].distanceKm,
+              isBoosted: trainers[i].isBoosted,
+              specializationsTags: trainers[i].specializationsTags,
+              profileSlug: trainers[i].profileSlug,
+              bio: trainers[i].bio,
+              totalSessions: trainers[i].totalSessions,
+              hasOwnLocationFlag: trainers[i].hasOwnLocationFlag,
+              offersDuoTrainingFlag: trainers[i].offersDuoTrainingFlag,
+              hasIntroOfferFlag: trainers[i].hasIntroOfferFlag,
+              diplomaVerifiedFlag: trainers[i].diplomaVerifiedFlag,
+              specialistCategory: trainers[i].specialistCategory,
+            );
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Dashboard] Story status laden fout: $e');
       }
     }
 
@@ -497,7 +543,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     'apeldoorn': (52.2112, 5.9699),
     'arnhem': (51.9851, 5.8987),
     'zaandam': (52.4389, 4.8264),
-    'amstelveen': (52.3008, 4.8636),
+    S.of(context).amstelveen: (52.3008, 4.8636),
     'haarlemmermeer': (52.3333, 4.6667),
   };
 
@@ -546,7 +592,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return s.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
-  static const List<String> _lessonTypeOptions = ['Duo', '1-op-1', 'Groepsles'];
+  static const List<String> _lessonTypeOptions = ['Duo', '1-op-1', S.of(context).groepsles];
 
   void _clearFilters() {
     setState(() {
@@ -636,9 +682,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Haptics.light();
     setState(() {
       if (_favoriteIds.contains(trainer.userId)) {
-        _favoriteIds.remove(trainer.userId);
+        _favoriteIds = _favoriteIds.where((id) => id != trainer.userId).toSet();
       } else {
-        _favoriteIds.add(trainer.userId);
+        _favoriteIds = {..._favoriteIds, trainer.userId};
       }
     });
     await _saveFavorites();
@@ -732,7 +778,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (kDebugMode) debugPrint('[Dashboard] Groepslessen laden fout: $e');
       if (!mounted) return;
       setState(() {
-        _groupSessionsError = 'Kon groepslessen niet laden.';
+        _groupSessionsError = S.of(context).konGroepslessenNietLaden;
         _groupSessionsLoading = false;
       });
     }
@@ -799,7 +845,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
               title: Text(
-                'Ontdekken',
+                S.of(context).ontdekken,
                 style: GoogleFonts.sora(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
@@ -935,7 +981,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Mijn trainers',
+                        S.of(context).mijnTrainers,
                         style: GoogleFonts.sora(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -950,7 +996,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                         ),
                         child: Text(
-                          'Alle ›',
+                          S.of(context).alle,
                           style: GoogleFonts.sora(
                             fontSize: 13,
                             color: const Color(0xFFB8860B),
@@ -991,13 +1037,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Row(
                   children: [
                     _PillTab(
-                      label: 'Trainers',
+                      label: S.of(context).trainers,
                       isActive: !_showGroupSessions,
                       onTap: () => _switchView(false),
                     ),
                     const SizedBox(width: 8),
                     _PillTab(
-                      label: 'Groepslessen',
+                      label: S.of(context).groepslessen,
                       isActive: _showGroupSessions,
                       onTap: () => _switchView(true),
                     ),
@@ -1061,7 +1107,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                'Sorteer',
+                                S.of(context).sorteer,
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: const Color(0xFFB8860B),
@@ -1102,6 +1148,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                         child: _TrainerCard(
                           trainer: t,
+                          hasActiveStory: t.hasActiveStory,
                           isFavorite: _favoriteIds.contains(t.userId),
                           onToggleFavorite: () => _toggleFavorite(t),
                           onTap: () => _openTrainerProfile(t),
@@ -1144,13 +1191,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Icon(Icons.groups_outlined, size: 64, color: Colors.grey.shade400),
                         const SizedBox(height: 16),
                         Text(
-                          'Geen groepslessen gevonden',
+                          S.of(context).geenGroepslessenGevonden,
                           style: GoogleFonts.sora(fontSize: 18, color: GymiesColors.darkBlue),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Er zijn momenteel geen groepslessen gepland\nin de komende 60 dagen.',
+                          S.of(context).erZijnMomenteelGeenGroepslessenGeplandninDeKomende60Dagen,
                           style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                           textAlign: TextAlign.center,
                         ),
@@ -1170,10 +1217,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       child: OutlinedButton.icon(
                         onPressed: _openMyGroupSessions,
                         icon: const Icon(Icons.event_available_rounded, size: 18),
-                        label: const Text('Mijn inschrijvingen'),
+                        label: const Text(S.of(context).mijnInschrijvingen),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: GymiesColors.darkBlue,
-                          side: BorderSide(color: GymiesColors.darkBlue.withValues(alpha: 0.4)),
+                          side: BorderSide(color: GymiesColors.darkBlue.withOpacity(0.4)),
                         ),
                       ),
                     );
@@ -1186,11 +1233,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       final s = _groupSessions[i];
                       final id = mapStr(s, ['id', 'group_session_id']);
                       final rawTitle = mapStr(s, ['title', 'name']);
-                      final title = rawTitle.isEmpty ? 'Groepsles' : rawTitle;
+                      final title = rawTitle.isEmpty ? S.of(context).groepsles : rawTitle;
                       final startsAt = DateTime.tryParse(mapStr(s, [
                             'starts_at', 'startsAt', 'start_at', 'date',
                         ])) ?? DateTime.now();
-                      final trainerName = mapStr(s, ['trainer_name', 'trainerName', 'name']);
+                      final trainerName = mapStr(s, [S.of(context).trainername, S.of(context).trainername2, 'name']);
                       final capacity = int.tryParse(mapStr(s, ['capacity', 'max_participants'])) ?? 0;
                       final enrolled = int.tryParse(mapStr(s, ['enrolled_count', 'participants_count'])) ?? 0;
                       final city = mapStr(s, ['city', 'location']);
@@ -1214,7 +1261,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 Container(
                                   width: 56, height: 56,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFB8860B).withValues(alpha: 0.10),
+                                    color: const Color(0xFFB8860B).withOpacity(0.10),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Column(
@@ -1223,7 +1270,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       Text('${startsAt.day}',
                                         style: GoogleFonts.sora(fontSize: 22, color: GymiesColors.darkBlue, height: 1)),
                                       Text(_shortMonth(startsAt.month),
-                                        style: TextStyle(fontSize: 11, color: GymiesColors.darkBlue.withValues(alpha: 0.7), fontWeight: FontWeight.w600)),
+                                        style: TextStyle(fontSize: 11, color: GymiesColors.darkBlue.withOpacity(0.7), fontWeight: FontWeight.w600)),
                                     ],
                                   ),
                                 ),
@@ -1295,7 +1342,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.1),
+                      color: GymiesColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(
@@ -1306,7 +1353,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Kies stad',
+                    S.of(context).kiesStad,
                     style: GoogleFonts.sora(
                       fontSize: 18,
                       color: GymiesColors.darkBlue,
@@ -1372,7 +1419,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.1),
+                      color: GymiesColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(
@@ -1383,7 +1430,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Kies specialiteit',
+                    S.of(context).kiesSpecialiteit,
                     style: GoogleFonts.sora(
                       fontSize: 18,
                       color: GymiesColors.darkBlue,
@@ -1448,7 +1495,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.1),
+                      color: GymiesColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(
@@ -1459,7 +1506,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Kies lesvorm',
+                    S.of(context).kiesLesvorm,
                     style: GoogleFonts.sora(
                       fontSize: 18,
                       color: GymiesColors.darkBlue,
@@ -1522,7 +1569,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.1),
+                      color: GymiesColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(
@@ -1533,7 +1580,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Max. prijs per sessie',
+                    S.of(context).maxPrijsPerSessie,
                     style: GoogleFonts.sora(
                       fontSize: 18,
                       color: GymiesColors.darkBlue,
@@ -1556,7 +1603,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   children: [
                     ...options.map(
                       (p) => ListTile(
-                        title: Text(p == 0 ? 'Geen limiet' : 'Tot €$p'),
+                        title: Text(p == 0 ? S.of(context).geenLimiet : 'Tot €$p'),
                         trailing: _maxPrice == p
                             ? const Icon(Icons.check, color: GymiesColors.primary)
                             : null,
@@ -1598,7 +1645,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.1),
+                      color: GymiesColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(
@@ -1609,7 +1656,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Afstand',
+                    S.of(context).afstand,
                     style: GoogleFonts.sora(
                       fontSize: 18,
                       color: GymiesColors.darkBlue,
@@ -1644,7 +1691,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   ListTile(
-                    title: const Text('Geen afstandsfilter'),
+                    title: const Text(S.of(context).geenAfstandsfilter),
                     trailing: _maxDistanceKm == null
                         ? const Icon(Icons.check, color: GymiesColors.primary)
                         : null,
@@ -1684,7 +1731,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.1),
+                      color: GymiesColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(
@@ -1695,7 +1742,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Min. beoordeling',
+                    S.of(context).minBeoordeling,
                     style: GoogleFonts.sora(
                       fontSize: 18,
                       color: GymiesColors.darkBlue,
@@ -1741,9 +1788,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showSortFilterSheet() {
     final options = [
       ('name', 'Naam A–Z'),
-      ('priceLowHigh', 'Prijs: laag naar hoog'),
-      ('priceHighLow', 'Prijs: hoog naar laag'),
-      ('ratingHighLow', 'Beoordeling: hoog naar laag'),
+      ('priceLowHigh', S.of(context).prijsLaagNaarHoog),
+      ('priceHighLow', S.of(context).prijsHoogNaarLaag),
+      ('ratingHighLow', S.of(context).beoordelingHoogNaarLaag),
     ];
     showDialog(
       context: context,
@@ -1762,7 +1809,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.1),
+                      color: GymiesColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(
@@ -1773,7 +1820,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Sorteren op',
+                    S.of(context).sorterenOp,
                     style: GoogleFonts.sora(
                       fontSize: 18,
                       color: GymiesColors.darkBlue,
@@ -1896,7 +1943,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   style: GoogleFonts.sora(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: GymiesColors.darkBlue.withValues(alpha: 0.5),
+                    color: GymiesColors.darkBlue.withOpacity(0.5),
                     letterSpacing: 0.8,
                   ),
                 ),
@@ -1932,7 +1979,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Filters',
+                          S.of(context).filters,
                           style: GoogleFonts.sora(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
@@ -1947,7 +1994,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               setState(() {});
                             },
                             child: Text(
-                              'Wis alles',
+                              S.of(context).wisAlles,
                               style: GoogleFonts.sora(
                                 fontSize: 13,
                                 color: accent,
@@ -1992,7 +2039,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ],
 
                         // ── Afstand ──
-                        sectionLabel('Afstand'),
+                        sectionLabel(S.of(context).afstand),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -2054,12 +2101,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const SizedBox(height: 20),
 
                         // ── Prijs ──
-                        sectionLabel('Max. prijs per sessie'),
+                        sectionLabel(S.of(context).maxPrijsPerSessie),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
                           children: [0, 50, 75, 100, 150, 200].map((p) => chipOption(
-                            p == 0 ? 'Geen limiet' : 'Tot €$p',
+                            p == 0 ? S.of(context).geenLimiet : 'Tot €$p',
                             _maxPrice == p,
                             () {
                               setState(() { _maxPrice = p; _applyFilterUpdate(); });
@@ -2070,7 +2117,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const SizedBox(height: 20),
 
                         // ── Beoordeling ──
-                        sectionLabel('Min. beoordeling'),
+                        sectionLabel(S.of(context).minBeoordeling),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -2112,7 +2159,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const SizedBox(height: 20),
 
                         // ── Sortering ──
-                        sectionLabel('Sorteren op'),
+                        sectionLabel(S.of(context).sorterenOp),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -2199,7 +2246,7 @@ class _FilterSection extends StatelessWidget {
             style: GoogleFonts.sora(
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: GymiesColors.darkBlue.withValues(alpha: 0.6),
+              color: GymiesColors.darkBlue.withOpacity(0.6),
             ),
           ),
         ),
@@ -2302,7 +2349,7 @@ class _SearchBar extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
+                  color: Colors.black.withOpacity(0.06),
                   blurRadius: 12,
                   offset: const Offset(0, 3),
                 ),
@@ -2312,11 +2359,11 @@ class _SearchBar extends StatelessWidget {
               controller: controller,
               style: GoogleFonts.sora(fontSize: 14, color: GymiesColors.darkBlue),
               decoration: InputDecoration(
-                hintText: 'Zoek trainer, specialisme of stad...',
+                hintText: S.of(context).zoekTrainerSpecialismeOfStad,
                 hintStyle: GoogleFonts.sora(color: Colors.grey.shade400, fontSize: 14),
                 prefixIcon: Padding(
                   padding: const EdgeInsets.only(left: 14, right: 8),
-                  child: Icon(Icons.search_rounded, color: GymiesColors.darkBlue.withValues(alpha: 0.4), size: 22),
+                  child: Icon(Icons.search_rounded, color: GymiesColors.darkBlue.withOpacity(0.4), size: 22),
                 ),
                 prefixIconConstraints: const BoxConstraints(minWidth: 44),
                 suffixIcon: loading
@@ -2358,14 +2405,14 @@ class _SearchBar extends StatelessWidget {
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [GymiesColors.darkBlue, GymiesColors.darkBlue.withValues(alpha: 0.9)],
+                colors: [GymiesColors.darkBlue, GymiesColors.darkBlue.withOpacity(0.9)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: GymiesColors.darkBlue.withValues(alpha: 0.2),
+                  color: GymiesColors.darkBlue.withOpacity(0.2),
                   blurRadius: 8,
                   offset: const Offset(0, 3),
                 ),
@@ -2493,7 +2540,7 @@ class _MyTrainerChip extends StatelessWidget {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFB8860B).withValues(alpha: 0.2),
+                    color: const Color(0xFFB8860B).withOpacity(0.2),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -2502,7 +2549,7 @@ class _MyTrainerChip extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFFB8860B).withValues(alpha: 0.15),
+                  color: const Color(0xFFB8860B).withOpacity(0.15),
                   image: trainer.avatarUrl != null && trainer.avatarUrl!.isNotEmpty
                       ? DecorationImage(
                           image: CachedNetworkImageProvider(trainer.avatarUrl!, errorListener: (_) {}),
@@ -2581,7 +2628,10 @@ class _PillTab extends StatelessWidget {
 }
 
 class _TrainerCard extends StatelessWidget {
+  final bool hasActiveStory;
+
   const _TrainerCard({
+    this.hasActiveStory = false,
     required this.trainer,
     required this.isFavorite,
     required this.onToggleFavorite,
@@ -2621,34 +2671,12 @@ class _TrainerCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Rounded-square avatar (72px)
-                  Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      color: _accentLight,
-                      image: trainer.avatarUrl != null && trainer.avatarUrl!.isNotEmpty
-                          ? DecorationImage(
-                              image: CachedNetworkImageProvider(trainer.avatarUrl!, errorListener: (_) {}),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                    ),
-                    child: trainer.avatarUrl == null || trainer.avatarUrl!.isEmpty
-                        ? Center(
-                            child: Text(
-                              trainer.nameOrEmail.isNotEmpty
-                                  ? trainer.nameOrEmail[0].toUpperCase()
-                                  : '?',
-                              style: GoogleFonts.sora(
-                                fontSize: 24,
-                                color: _accent,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          )
-                        : null,
+                  // Rounded-square avatar (72px) met story ring
+                  _StoryAvatarSquare(
+                    avatarUrl: trainer.avatarUrl,
+                    name: trainer.nameOrEmail,
+                    hasStory: hasActiveStory || trainer.hasActiveStory,
+                    size: 72,
                   ),
                   const SizedBox(width: 12),
                   // Info column
@@ -2680,7 +2708,7 @@ class _TrainerCard extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  'Verified',
+                                  S.of(context).verified,
                                   style: TextStyle(fontSize: 10, color: _accent, fontWeight: FontWeight.w600),
                                 ),
                               ),
@@ -2762,7 +2790,7 @@ class _TrainerCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
-                          color: GymiesColors.darkBlue.withValues(alpha: 0.7),
+                          color: GymiesColors.darkBlue.withOpacity(0.7),
                         ),
                       ),
                     )),
@@ -2796,7 +2824,7 @@ class _TrainerCard extends StatelessWidget {
                                 ),
                               ),
                               TextSpan(
-                                text: ' /sessie',
+                                text: S.of(context).sessie2,
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey.shade500,
@@ -2807,7 +2835,7 @@ class _TrainerCard extends StatelessWidget {
                           ),
                         )
                       : Text(
-                          'Prijs op aanvraag',
+                          S.of(context).prijsOpAanvraag,
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -2828,7 +2856,7 @@ class _TrainerCard extends StatelessWidget {
                           border: Border.all(color: Colors.grey.shade300),
                         ),
                         child: Text(
-                          'Bekijk',
+                          S.of(context).bekijk,
                           style: GoogleFonts.sora(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
@@ -2844,7 +2872,7 @@ class _TrainerCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          'Boek nu',
+                          S.of(context).boekNu,
                           style: GoogleFonts.sora(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
@@ -3008,7 +3036,7 @@ class _QuickFiltersRow extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           _FilterChip(
-            label: maxDistanceKm == null ? 'Afstand' : '< ${maxDistanceKm}km',
+            label: maxDistanceKm == null ? S.of(context).afstand : '< ${maxDistanceKm}km',
             isActive: maxDistanceKm != null,
             onTap: onDistanceTap,
           ),
@@ -3090,19 +3118,19 @@ class _ErrorCard extends StatelessWidget {
               TextButton.icon(
                 onPressed: onLogout,
                 icon: const Icon(Icons.login_rounded),
-                label: const Text('Log opnieuw in'),
+                label: const Text(S.of(context).logOpnieuwIn),
               )
             else
               TextButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Opnieuw proberen'),
+                label: const Text(S.of(context).opnieuwProberen),
               ),
             if (onLogout != null)
               TextButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Opnieuw proberen'),
+                label: const Text(S.of(context).opnieuwProberen),
               ),
           ],
         ),
@@ -3130,7 +3158,7 @@ class _EmptyState extends StatelessWidget {
         Icon(Icons.search_off_rounded, size: 64, color: Colors.grey.shade400),
         const SizedBox(height: 16),
         Text(
-          'Geen trainers gevonden',
+          S.of(context).geenTrainersGevonden,
           style: GoogleFonts.sora(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -3140,8 +3168,8 @@ class _EmptyState extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           hasActiveFilters
-              ? 'Je filters leveren geen resultaten op.\nPas je filters aan of zoek in een andere stad.'
-              : 'Er zijn momenteel geen trainers beschikbaar.\nProbeer het later opnieuw of pas je zoekopdracht aan.',
+              ? S.of(context).jeFiltersLeverenGeenResultatenOpnpas
+              : S.of(context).erZijnMomenteelGeenTrainersBeschikbaarnprobeer,
           style: TextStyle(color: Colors.grey.shade600, height: 1.5),
           textAlign: TextAlign.center,
         ),
@@ -3152,7 +3180,7 @@ class _EmptyState extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: onClearFilters,
               icon: const Icon(Icons.filter_alt_off_rounded, size: 18),
-              label: const Text('Alle filters wissen'),
+              label: const Text(S.of(context).alleFiltersWissen),
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFFB8860B),
                 foregroundColor: Colors.white,
@@ -3162,7 +3190,7 @@ class _EmptyState extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: onSearch,
           icon: const Icon(Icons.refresh_rounded),
-          label: const Text('Opnieuw zoeken'),
+          label: const Text(S.of(context).opnieuwZoeken),
           style: OutlinedButton.styleFrom(
             foregroundColor: GymiesColors.darkBlue,
             side: const BorderSide(color: Color(0xFFB8860B)),
@@ -3256,7 +3284,7 @@ class _ActiveFilterBadges extends StatelessWidget {
         GestureDetector(
           onTap: onClearAll,
           child: Text(
-            'Alles wissen',
+            S.of(context).allesWissen,
             style: TextStyle(
               fontSize: 12,
               color: Colors.grey.shade600,
@@ -3281,7 +3309,7 @@ class _RemovableChip extends StatelessWidget {
       label: Text(label, style: const TextStyle(fontSize: 12)),
       deleteIcon: const Icon(Icons.close, size: 16),
       onDeleted: onRemove,
-      backgroundColor: const Color(0xFFB8860B).withValues(alpha: 0.12),
+      backgroundColor: const Color(0xFFB8860B).withOpacity(0.12),
       side: const BorderSide(color: Color(0xFFB8860B)),
     );
   }
@@ -3358,6 +3386,86 @@ class _PaginationRow extends StatelessWidget {
             onPressed: () => onPageChanged(currentPage + 1),
           ),
       ],
+    );
+  }
+}
+
+/// Rounded-square avatar met gradient story ring als trainer actieve stories heeft.
+class _StoryAvatarSquare extends StatelessWidget {
+  final String? avatarUrl;
+  final String name;
+  final bool hasStory;
+  final double size;
+
+  const _StoryAvatarSquare({
+    required this.avatarUrl,
+    required this.name,
+    this.hasStory = false,
+    this.size = 72,
+  });
+
+  static const _accent = Color(0xFFB8860B);
+  static const _accentLight = Color(0xFFFFF8E1);
+
+  @override
+  Widget build(BuildContext context) {
+    final borderWidth = hasStory ? 2.5 : 0.0;
+    final innerSize = size - (borderWidth * 2) - (hasStory ? 4 : 0);
+
+    final avatarWidget = Container(
+      width: innerSize,
+      height: innerSize,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(hasStory ? 12 : 16),
+        color: _accentLight,
+        image: avatarUrl != null && avatarUrl!.isNotEmpty
+            ? DecorationImage(
+                image: CachedNetworkImageProvider(avatarUrl!, errorListener: (_) {}),
+                fit: BoxFit.cover,
+              )
+            : null,
+      ),
+      child: avatarUrl == null || avatarUrl!.isEmpty
+          ? Center(
+              child: Text(
+                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                style: GoogleFonts.sora(
+                  fontSize: size * 0.33,
+                  color: _accent,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            )
+          : null,
+    );
+
+    if (!hasStory) return avatarWidget;
+
+    // Story ring: gradient border
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFB8860B), // primary gold
+            Color(0xFFE8A317), // lighter gold
+            Color(0xFFFF8C00), // orange accent
+          ],
+        ),
+      ),
+      padding: EdgeInsets.all(borderWidth),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(13),
+          color: Colors.white,
+        ),
+        padding: const EdgeInsets.all(1),
+        child: avatarWidget,
+      ),
     );
   }
 }

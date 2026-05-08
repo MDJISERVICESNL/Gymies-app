@@ -7,14 +7,16 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
+import '../services/auth_service.dart';
 import '../services/gymies_api.dart';
 import '../services/storefront_cms_provider.dart';
 import '../services/subscription_entitlements_service.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
 import '../utils/map_utils.dart';
-import 'widgets/gymies_app_bar.dart';
+import '../utils/trainer_badges.dart';
 import 'widgets/trainer_media_section.dart';
 import 'widgets/trainer_state_views.dart';
 
@@ -33,6 +35,12 @@ class _TrainerStorefrontEditorScreenState
   bool _loading = true;
   bool _saving = false;
   String? _error;
+
+  // ── Stories ──
+  // ignore: unused_field
+  bool _loadingStories = false;
+  // ignore: unused_field
+  int _activeStoryCount = 0;
 
   // ── Branding (voorheen apart scherm) ──
   String _brandColor = '#FEBE23';
@@ -68,6 +76,10 @@ class _TrainerStorefrontEditorScreenState
   int? _cancellationHours;
   int? _cancellationRefundPercent;
   final _cancellationExceptionsController = TextEditingController();
+
+  // ── Badge voorkeuren ──
+  Set<String> _visibleBadgeIds = {};
+  bool _badgesChanged = false;
 
   // ── SEO ──
   final _metaTitleController = TextEditingController();
@@ -130,7 +142,7 @@ class _TrainerStorefrontEditorScreenState
       final branding = results[1] as Map<String, dynamic>;
 
       // ── Trainer info ──
-      _trainerName = mapStr(cms, ['trainer_name', 'trainerName', 'name']);
+      _trainerName = mapStr(cms, [S.of(context).trainername, S.of(context).trainername2, 'name']);
       _trainerCity = mapStr(cms, ['city', 'location', 'stad']);
       final rating = cms['avg_rating'] ?? cms['avgRating'] ?? cms['rating'];
       _avgRating = rating is num ? rating.toDouble() : double.tryParse(rating?.toString() ?? '');
@@ -173,6 +185,13 @@ class _TrainerStorefrontEditorScreenState
       _cancellationRefundPercent = cR is int ? cR : int.tryParse(cR?.toString() ?? '');
       _cancellationExceptionsController.text = mapStr(cms, ['cancellation_exceptions', 'cancellationExceptions']);
 
+      // ── Badge voorkeuren ──
+      final badgesRaw = cms['visible_badges'] ?? cms['visible_badge_ids'] ?? cms['visibleBadgeIds'];
+      if (badgesRaw is List) {
+        _visibleBadgeIds = badgesRaw.map((e) => e.toString()).toSet();
+      }
+      _badgesChanged = false;
+
       // ── SEO ──
       _metaTitleController.text = mapStr(cms, ['seo_title', 'metaTitle', 'meta_title']);
       _metaDescriptionController.text = mapStr(cms, ['seo_description', 'metaDescription', 'meta_description']);
@@ -191,7 +210,7 @@ class _TrainerStorefrontEditorScreenState
       setState(() { _error = e.message; _loading = false; });
     } catch (_) {
       if (!mounted) return;
-      setState(() { _error = 'Kon etalage niet laden.'; _loading = false; });
+      setState(() { _error = S.of(context).konEtalageNietLaden; _loading = false; });
     }
   }
 
@@ -245,7 +264,10 @@ class _TrainerStorefrontEditorScreenState
         'seo_title': _metaTitleController.text.trim(),
         'seo_description': _metaDescriptionController.text.trim(),
         'profile_slug': _seoSlugController.text.trim(),
+        if (_badgesChanged) 'visible_badges': _visibleBadgeIds.toList(),
       });
+      if (!mounted) return;
+      // ignore: use_build_context_synchronously
       context.read<StorefrontCmsProvider>().invalidate();
 
       // Branding opslaan
@@ -255,7 +277,7 @@ class _TrainerStorefrontEditorScreenState
         if (slug.isNotEmpty) 'custom_slug': slug,
         'brand_color': _brandColor,
         'intro_video_url': videoUrl.isEmpty ? null : videoUrl,
-      }).catchError((_) {});
+      }).catchError((_) => <String, dynamic>{});
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -264,7 +286,7 @@ class _TrainerStorefrontEditorScreenState
             children: [
               const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
               const SizedBox(width: 8),
-              Text('Etalage opgeslagen', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+              Text(S.of(context).etalageOpgeslagen, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
             ],
           ),
           backgroundColor: GymiesColors.darkBlue,
@@ -322,6 +344,55 @@ class _TrainerStorefrontEditorScreenState
   // BUILD
   // ═══════════════════════════════════════════════════════════════════
 
+  // ignore: unused_element
+  Future<void> _uploadStory() async {
+    final tier = context.read<SubscriptionEntitlementsService>().tier?.toLowerCase() ?? 'starter';
+    if (!['pro', 'pro_plus'].contains(tier)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(S.of(context).storiesIsEenProFeatureUpgradeJeAbonnement)),
+        );
+      }
+      return;
+    }
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1080);
+    if (picked == null) return;
+    if (!mounted) return;
+    try {
+      Haptics.light();
+      // ignore: use_build_context_synchronously
+      await context.read<GymiesApi>().uploadStory(picked.path);
+      if (mounted) {
+        // ignore: use_build_context_synchronously
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(S.of(context).storyGeplaatstZichtbaarVoor24Uur)),
+        );
+        _loadStoryCount();
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(S.of(context).uploadMisluktMsg(e.message ?? ''))),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadStoryCount() async {
+    setState(() => _loadingStories = true);
+    try {
+      final user = context.read<AuthService>().user;
+      final hasStories = await context.read<GymiesApi>().hasActiveStories(user?['id']?.toString() ?? '');
+      if (!mounted) return;
+      setState(() => _activeStoryCount = hasStories ? 1 : 0);
+    } catch (_) {
+      setState(() => _activeStoryCount = 0);
+    } finally {
+      if (mounted) setState(() => _loadingStories = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // ── Get tier info ──
@@ -332,12 +403,14 @@ class _TrainerStorefrontEditorScreenState
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
-      body: GymiesListBody(
-        loading: _loading,
-        error: _error,
-        onRefresh: _load,
-        child: CustomScrollView(
-          slivers: [
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: GymiesListBody(
+          loading: _loading,
+          error: _error,
+          onRefresh: _load,
+          child: CustomScrollView(
+            slivers: [
             // ── Collapsing header met live preview ──
             _buildSliverHeader(),
 
@@ -350,8 +423,8 @@ class _TrainerStorefrontEditorScreenState
                   if (isProPlus) ...[
                     _buildSection(
                       icon: Icons.palette_outlined,
-                      title: 'Branding',
-                      subtitle: 'Maak je profiel herkenbaar',
+                      title: S.of(context).branding,
+                      subtitle: S.of(context).maakJeProfielHerkenbaar,
                       badge: 'PRO+',
                       children: [
                         _buildBrandingContent(),
@@ -366,7 +439,7 @@ class _TrainerStorefrontEditorScreenState
                   _buildSection(
                     icon: Icons.person_outline,
                     title: 'Over mij',
-                    subtitle: 'Stel jezelf voor aan klanten',
+                    subtitle: S.of(context).stelJezelfVoorAanKlanten,
                     children: [
                       TextField(
                         controller: _bioController,
@@ -374,7 +447,7 @@ class _TrainerStorefrontEditorScreenState
                         maxLength: 5000,
                         style: GoogleFonts.sora(fontSize: 14),
                         decoration: _inputDecoration(
-                          hint: 'Vertel wie je bent, wat je drijft en hoe je klanten helpt...',
+                          hint: S.of(context).vertelWieJeBentWatJe,
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -388,7 +461,7 @@ class _TrainerStorefrontEditorScreenState
                     _buildSection(
                       icon: Icons.videocam_outlined,
                       title: 'Intro video',
-                      subtitle: 'Toon een YouTube of Vimeo video op je profiel',
+                      subtitle: S.of(context).toonEenYoutubeOfVimeoVideo,
                       badge: 'PRO+',
                       children: [
                         TextField(
@@ -412,12 +485,12 @@ class _TrainerStorefrontEditorScreenState
                     _buildSection(
                       icon: Icons.share_outlined,
                       title: 'Social media',
-                      subtitle: 'Toon je socials op je profiel',
+                      subtitle: S.of(context).toonJeSocialsOpJeProfiel,
                       children: [
                         _buildSocialField(
                           controller: _instagramController,
                           label: 'Instagram',
-                          hint: '@jouwhandle of URL',
+                          hint: S.of(context).jouwhandleOfUrl,
                           icon: Icons.camera_alt_rounded,
                           iconColor: const Color(0xFFE1306C),
                         ),
@@ -447,8 +520,8 @@ class _TrainerStorefrontEditorScreenState
                   // 5. TARIEVEN & BETALING
                   _buildSection(
                     icon: Icons.euro_outlined,
-                    title: 'Tarieven & betaling',
-                    subtitle: 'Wat kost een sessie en hoe wordt betaald?',
+                    title: S.of(context).tarievenBetaling,
+                    subtitle: S.of(context).watKostEenSessieEnHoe,
                     children: [
                       TextField(
                         controller: _hourlyRateController,
@@ -456,14 +529,14 @@ class _TrainerStorefrontEditorScreenState
                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                         style: GoogleFonts.sora(fontSize: 14),
                         decoration: _inputDecoration(
-                          label: 'Prijs per sessie',
+                          label: S.of(context).prijsPerSessie,
                           hint: 'bijv. 50',
                           prefixText: '€ ',
                         ),
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Betaalmethode',
+                        S.of(context).betaalmethode,
                         style: GoogleFonts.sora(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -480,25 +553,25 @@ class _TrainerStorefrontEditorScreenState
                   _buildSection(
                     icon: Icons.location_on_outlined,
                     title: 'Logistiek',
-                    subtitle: 'Locatie, duo-training en aanbiedingen',
+                    subtitle: S.of(context).locatieDuotrainingEnAanbiedingen,
                     children: [
                       _buildToggleRow(
                         label: 'Eigen trainingslocatie',
-                        subtitle: 'Je hebt een vaste plek voor klanten',
+                        subtitle: S.of(context).jeHebtEenVastePlekVoor,
                         value: _hasOwnLocation,
                         onChanged: (v) => setState(() => _hasOwnLocation = v),
                       ),
                       const Divider(height: 24),
                       _buildToggleRow(
                         label: 'Duo-training',
-                        subtitle: 'Training voor 2 personen tegelijk',
+                        subtitle: S.of(context).trainingVoor2PersonenTegelijk,
                         value: _offersDuoTraining,
                         onChanged: (v) => setState(() => _offersDuoTraining = v),
                       ),
                       const Divider(height: 24),
                       _buildToggleRow(
                         label: 'Introductiekorting',
-                        subtitle: 'Nieuwe klanten krijgen korting',
+                        subtitle: S.of(context).nieuweKlantenKrijgenKorting,
                         value: _hasIntroOffer,
                         onChanged: (v) => setState(() => _hasIntroOffer = v),
                       ),
@@ -510,7 +583,7 @@ class _TrainerStorefrontEditorScreenState
                           maxLines: 2,
                           style: GoogleFonts.sora(fontSize: 14),
                           decoration: _inputDecoration(
-                            hint: 'bijv. Eerste sessie 50% korting',
+                            hint: S.of(context).bijvEersteSessie50Korting,
                           ),
                         ),
                       ],
@@ -521,8 +594,8 @@ class _TrainerStorefrontEditorScreenState
                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                         style: GoogleFonts.sora(fontSize: 14),
                         decoration: _inputDecoration(
-                          label: 'Boekingstermijn (dagen)',
-                          hint: 'Hoe ver vooruit geboekt kan worden',
+                          label: S.of(context).boekingstermijndagen,
+                          hint: S.of(context).hoeVerVooruitGeboektKanWorden,
                         ),
                       ),
                     ],
@@ -533,19 +606,28 @@ class _TrainerStorefrontEditorScreenState
                   _buildSection(
                     icon: Icons.event_busy_outlined,
                     title: 'Annuleringsbeleid',
-                    subtitle: 'Annulerings- en restitutieregels',
+                    subtitle: S.of(context).annuleringsEnRestitutieregels,
                     children: [
                       _buildCancellationContent(),
                     ],
                   ),
                   const SizedBox(height: 16),
 
-                  // 8. STORIES & GALLERY
+                  // 8. BADGE VOORKEUREN
+                  _buildSection(
+                    icon: Icons.badge_outlined,
+                    title: 'Badge voorkeuren',
+                    subtitle: 'Kies welke badges zichtbaar zijn op je profiel (max $kMaxProfileBadges)',
+                    children: [_buildBadgeContent()],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 9. STORIES & GALLERY
                   if (isPro) ...[
                     _buildSection(
                       icon: Icons.photo_library_outlined,
                       title: 'Stories & Gallery',
-                      subtitle: 'Foto\'s en video\'s op je profiel',
+                      subtitle: S.of(context).fotosEnVideosOpJeProfiel,
                       children: [
                         const TrainerMediaSection(),
                       ],
@@ -560,7 +642,7 @@ class _TrainerStorefrontEditorScreenState
                     _buildSection(
                       icon: Icons.verified_outlined,
                       title: 'Verificatie badge',
-                      subtitle: 'Krijg een blauw vinkje op je profiel',
+                      subtitle: S.of(context).krijgEenBlauwVinkjeOpJe,
                       badge: 'PRO+',
                       children: [
                         _buildVerificationContent(),
@@ -575,14 +657,14 @@ class _TrainerStorefrontEditorScreenState
                   if (isProPlus) ...[
                     _buildSection(
                       icon: Icons.search_outlined,
-                      title: 'SEO-instellingen',
-                      subtitle: 'Verbeter je vindbaarheid',
+                      title: S.of(context).seoinstellingen,
+                      subtitle: S.of(context).verbeterJeVindbaarheid,
                       children: [
                         _buildSeoContent(),
                       ],
                     ),
                   ] else ...[
-                    _buildUpgradeHint('SEO-instellingen', 'Pro+'),
+                    _buildUpgradeHint(S.of(context).seoinstellingen, 'Pro+'),
                   ],
                   const SizedBox(height: 24),
 
@@ -593,6 +675,7 @@ class _TrainerStorefrontEditorScreenState
               ),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -625,7 +708,7 @@ class _TrainerStorefrontEditorScreenState
                 )
               : const Icon(Icons.save_rounded, color: GymiesColors.primary, size: 18),
           label: Text(
-            'Opslaan',
+            S.of(context).opslaan,
             style: GoogleFonts.sora(
               fontWeight: FontWeight.w600,
               color: GymiesColors.primary,
@@ -641,12 +724,14 @@ class _TrainerStorefrontEditorScreenState
             // Banner
             if (_newBannerPath != null)
               Image.file(File(_newBannerPath!), fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(color: brandCol.withValues(alpha: 0.3)))
+                  errorBuilder: (_, _, _) => Container(color: brandCol.withOpacity(0.3)))
             else if (_bannerUrl != null && _bannerUrl!.isNotEmpty)
               CachedNetworkImage(
                 imageUrl: _bannerUrl!,
                 fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => Container(color: brandCol.withValues(alpha: 0.3)),
+                cacheWidth: 800,
+                cacheHeight: 400,
+                errorWidget: (_, _, _) => Container(color: brandCol.withOpacity(0.3)),
               )
             else
               Container(
@@ -654,7 +739,7 @@ class _TrainerStorefrontEditorScreenState
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [GymiesColors.darkBlue, brandCol.withValues(alpha: 0.6)],
+                    colors: [GymiesColors.darkBlue, brandCol.withOpacity(0.6)],
                   ),
                 ),
               ),
@@ -666,8 +751,8 @@ class _TrainerStorefrontEditorScreenState
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: 0.3),
-                    Colors.black.withValues(alpha: 0.7),
+                    Colors.black.withOpacity(0.3),
+                    Colors.black.withOpacity(0.7),
                   ],
                 ),
               ),
@@ -695,12 +780,14 @@ class _TrainerStorefrontEditorScreenState
                         borderRadius: BorderRadius.circular(15),
                         child: _newLogoPath != null
                             ? Image.file(File(_newLogoPath!), fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _logoPlaceholder())
+                                errorBuilder: (_, _, _) => _logoPlaceholder())
                             : _logoUrl != null && _logoUrl!.isNotEmpty
                                 ? CachedNetworkImage(
                                     imageUrl: _logoUrl!,
                                     fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) => _logoPlaceholder(),
+                                    cacheWidth: 144,
+                                    cacheHeight: 144,
+                                    errorWidget: (_, _, _) => _logoPlaceholder(),
                                   )
                                 : _logoPlaceholder(),
                       ),
@@ -789,7 +876,7 @@ class _TrainerStorefrontEditorScreenState
                     children: [
                       const Icon(Icons.camera_alt_outlined, color: Colors.white70, size: 14),
                       const SizedBox(width: 4),
-                      Text('Banner', style: GoogleFonts.sora(fontSize: 11, color: Colors.white70)),
+                      Text(S.of(context).banner, style: GoogleFonts.sora(fontSize: 11, color: Colors.white70)),
                     ],
                   ),
                 ),
@@ -822,7 +909,7 @@ class _TrainerStorefrontEditorScreenState
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -833,7 +920,7 @@ class _TrainerStorefrontEditorScreenState
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                    color: GymiesColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(icon, size: 20, color: GymiesColors.darkBlue),
@@ -896,7 +983,7 @@ class _TrainerStorefrontEditorScreenState
           controller: _seoSlugController,
           style: GoogleFonts.sora(fontSize: 14),
           decoration: _inputDecoration(
-            label: 'Profiel-URL',
+            label: S.of(context).profielurl,
             hint: 'jouwnaam',
             prefixText: 'gymies.nl/t/',
           ),
@@ -908,7 +995,7 @@ class _TrainerStorefrontEditorScreenState
 
         // Brand kleur
         Text(
-          'Brand kleur',
+          S.of(context).brandKleur,
           style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue),
         ),
         const SizedBox(height: 10),
@@ -934,7 +1021,7 @@ class _TrainerStorefrontEditorScreenState
                     width: selected ? 3 : 1,
                   ),
                   boxShadow: selected
-                      ? [BoxShadow(color: _parseHex(hex).withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 2))]
+                      ? [BoxShadow(color: _parseHex(hex).withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 2))]
                       : null,
                 ),
                 child: selected
@@ -957,7 +1044,7 @@ class _TrainerStorefrontEditorScreenState
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Specialisaties',
+          S.of(context).specialisaties,
           style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue),
         ),
         const SizedBox(height: 10),
@@ -968,7 +1055,7 @@ class _TrainerStorefrontEditorScreenState
             children: _specTags.map((tag) => Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.15),
+                color: GymiesColors.primary.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(
@@ -1023,7 +1110,7 @@ class _TrainerStorefrontEditorScreenState
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              'Maximum van 20 specialisaties bereikt.',
+              S.of(context).maximumVan20SpecialisatiesBereikt,
               style: GoogleFonts.sora(fontSize: 12, color: Colors.orange.shade700),
             ),
           ),
@@ -1037,9 +1124,9 @@ class _TrainerStorefrontEditorScreenState
 
   Widget _buildPaymentMethodCards() {
     const methods = [
-      ('transfer_and_cash', 'Overboekingen & cash', Icons.account_balance_wallet_outlined),
-      ('transfer_only', 'Alleen overboekingen', Icons.account_balance_outlined),
-      ('cash_only', 'Alleen cash', Icons.payments_outlined),
+      ('transfer_and_cash', S.of(context).overboekingenCash, Icons.account_balance_wallet_outlined),
+      ('transfer_only', S.of(context).alleenOverboekingen, Icons.account_balance_outlined),
+      ('cash_only', S.of(context).alleenCash, Icons.payments_outlined),
     ];
     return Column(
       children: methods.map((m) {
@@ -1056,7 +1143,7 @@ class _TrainerStorefrontEditorScreenState
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: selected
-                    ? GymiesColors.primary.withValues(alpha: 0.12)
+                    ? GymiesColors.primary.withOpacity(0.12)
                     : Colors.grey.shade50,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
@@ -1097,39 +1184,39 @@ class _TrainerStorefrontEditorScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Annuleringstermijn',
+        Text(S.of(context).annuleringstermijn,
             style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
         const SizedBox(height: 8),
         DropdownButtonFormField<int?>(
-          value: _cancellationHours,
+          initialValue: _cancellationHours,
           decoration: _inputDecoration(hint: 'Selecteer termijn'),
           style: GoogleFonts.sora(fontSize: 14, color: GymiesColors.darkBlue),
           items: const [
-            DropdownMenuItem(value: null, child: Text('Niet ingesteld')),
-            DropdownMenuItem(value: 0, child: Text('Altijd annuleerbaar')),
-            DropdownMenuItem(value: 12, child: Text('12 uur van tevoren')),
-            DropdownMenuItem(value: 24, child: Text('24 uur van tevoren')),
-            DropdownMenuItem(value: 48, child: Text('48 uur (2 dagen)')),
-            DropdownMenuItem(value: 72, child: Text('72 uur (3 dagen)')),
-            DropdownMenuItem(value: 168, child: Text('1 week van tevoren')),
+            DropdownMenuItem(value: null, child: Text(S.of(context).nietIngesteld)),
+            DropdownMenuItem(value: 0, child: Text(S.of(context).altijdAnnuleerbaar)),
+            DropdownMenuItem(value: 12, child: Text(S.of(context).12UurVanTevoren)),
+            DropdownMenuItem(value: 24, child: Text(S.of(context).24UurVanTevoren)),
+            DropdownMenuItem(value: 48, child: Text(S.of(context).48Uur2Dagen)),
+            DropdownMenuItem(value: 72, child: Text(S.of(context).72Uur3Dagen)),
+            DropdownMenuItem(value: 168, child: Text(S.of(context).1WeekVanTevoren)),
           ],
           onChanged: (v) => setState(() => _cancellationHours = v),
         ),
         const SizedBox(height: 16),
-        Text('Restitutiepercentage',
+        Text(S.of(context).restitutiepercentage,
             style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
         const SizedBox(height: 8),
         DropdownButtonFormField<int?>(
-          value: _cancellationRefundPercent,
-          decoration: _inputDecoration(hint: 'Hoeveel krijgt de klant terug?'),
+          initialValue: _cancellationRefundPercent,
+          decoration: _inputDecoration(hint: S.of(context).hoeveelKrijgtDeKlantTerug),
           style: GoogleFonts.sora(fontSize: 14, color: GymiesColors.darkBlue),
           items: const [
-            DropdownMenuItem(value: null, child: Text('Niet ingesteld')),
-            DropdownMenuItem(value: 100, child: Text('100% — Volledige restitutie')),
-            DropdownMenuItem(value: 75, child: Text('75% restitutie')),
-            DropdownMenuItem(value: 50, child: Text('50% restitutie')),
-            DropdownMenuItem(value: 25, child: Text('25% restitutie')),
-            DropdownMenuItem(value: 0, child: Text('0% — Geen restitutie')),
+            DropdownMenuItem(value: null, child: Text(S.of(context).nietIngesteld)),
+            DropdownMenuItem(value: 100, child: Text(S.of(context).100VolledigeRestitutie)),
+            DropdownMenuItem(value: 75, child: Text(S.of(context).75Restitutie)),
+            DropdownMenuItem(value: 50, child: Text(S.of(context).50Restitutie)),
+            DropdownMenuItem(value: 25, child: Text(S.of(context).25Restitutie)),
+            DropdownMenuItem(value: 0, child: Text(S.of(context).0GeenRestitutie)),
           ],
           onChanged: (v) => setState(() => _cancellationRefundPercent = v),
         ),
@@ -1141,7 +1228,7 @@ class _TrainerStorefrontEditorScreenState
           style: GoogleFonts.sora(fontSize: 14),
           decoration: _inputDecoration(
             label: 'Uitzonderingen (optioneel)',
-            hint: 'bijv. Bij ziekte met bewijs is annulering gratis',
+            hint: S.of(context).bijvBijZiekteMetBewijsIs,
           ),
         ),
         if (_cancellationHours != null && _cancellationRefundPercent != null)
@@ -1149,18 +1236,18 @@ class _TrainerStorefrontEditorScreenState
             margin: const EdgeInsets.only(top: 8),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.blue.shade50,
+              color: const Color(0xFFEFF6FF), // Light blue
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue.shade200),
+              border: Border.all(color: const Color(0xFFBFDBFE)), // Light blue border
             ),
             child: Row(
               children: [
-                Icon(Icons.info_outline, size: 18, color: Colors.blue.shade700),
+                const Icon(Icons.info_outline, size: 18, color: Color(0xFF3B82F6)), // Blue
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     _buildCancellationPreview(),
-                    style: GoogleFonts.sora(fontSize: 12, color: Colors.blue.shade800),
+                    style: GoogleFonts.sora(fontSize: 12, color: const Color(0xFF1E40AF)), // Dark blue
                   ),
                 ),
               ],
@@ -1186,9 +1273,9 @@ class _TrainerStorefrontEditorScreenState
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: _seoScoreColor(seoScore).withValues(alpha: 0.1),
+            color: _seoScoreColor(seoScore).withOpacity(0.1),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _seoScoreColor(seoScore).withValues(alpha: 0.3)),
+            border: Border.all(color: _seoScoreColor(seoScore).withOpacity(0.3)),
           ),
           child: Row(
             children: [
@@ -1228,7 +1315,7 @@ class _TrainerStorefrontEditorScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'SEO Score',
+                      S.of(context).seoScore,
                       style: GoogleFonts.sora(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -1254,7 +1341,7 @@ class _TrainerStorefrontEditorScreenState
 
         // Meta Title
         Text(
-          'Meta titel',
+          S.of(context).metaTitel,
           style: GoogleFonts.sora(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -1266,8 +1353,8 @@ class _TrainerStorefrontEditorScreenState
           controller: _metaTitleController,
           style: GoogleFonts.sora(fontSize: 14),
           decoration: _inputDecoration(
-            label: 'Meta titel',
-            hint: 'bijv. Personal trainer Amsterdam',
+            label: S.of(context).metaTitel,
+            hint: S.of(context).bijvPersonalTrainerAmsterdam,
           ),
           onChanged: (_) => setState(() {}),
         ),
@@ -1284,7 +1371,7 @@ class _TrainerStorefrontEditorScreenState
 
         // Meta Description
         Text(
-          'Meta beschrijving',
+          S.of(context).metaBeschrijving,
           style: GoogleFonts.sora(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -1298,8 +1385,8 @@ class _TrainerStorefrontEditorScreenState
           maxLength: 160,
           style: GoogleFonts.sora(fontSize: 14),
           decoration: _inputDecoration(
-            label: 'Meta beschrijving',
-            hint: 'Korte beschrijving voor zoekmachines',
+            label: S.of(context).metaBeschrijving,
+            hint: S.of(context).korteBeschrijvingVoorZoekmachines,
           ),
           onChanged: (_) => setState(() {}),
         ),
@@ -1326,7 +1413,7 @@ class _TrainerStorefrontEditorScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Google Preview',
+                S.of(context).googlePreview,
                 style: GoogleFonts.sora(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -1336,7 +1423,7 @@ class _TrainerStorefrontEditorScreenState
               const SizedBox(height: 12),
               // Title (blue)
               Text(
-                titleLen > 0 ? _metaTitleController.text : 'Personal trainer Amsterdam',
+                titleLen > 0 ? _metaTitleController.text : S.of(context).personalTrainerAmsterdam,
                 style: GoogleFonts.sora(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -1359,7 +1446,7 @@ class _TrainerStorefrontEditorScreenState
               Text(
                 descLen > 0
                     ? _metaDescriptionController.text
-                    : 'Korte beschrijving voor zoekmachines...',
+                    : S.of(context).korteBeschrijvingVoorZoekmachines2,
                 style: GoogleFonts.sora(
                   fontSize: 13,
                   color: const Color(0xFF6B7280),
@@ -1440,12 +1527,12 @@ class _TrainerStorefrontEditorScreenState
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: _verifiedBadge ? Colors.blue.shade50 : Colors.grey.shade100,
+            color: _verifiedBadge ? const Color(0xFFEFF6FF) : Colors.grey.shade100, // Light blue
             borderRadius: BorderRadius.circular(14),
           ),
           child: Icon(
             _verifiedBadge ? Icons.verified : Icons.verified_outlined,
-            color: _verifiedBadge ? Colors.blue.shade800 : Colors.grey.shade400,
+            color: _verifiedBadge ? const Color(0xFF1E40AF) : Colors.grey.shade400, // Dark blue
             size: 26,
           ),
         ),
@@ -1455,18 +1542,18 @@ class _TrainerStorefrontEditorScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _verifiedBadge ? 'Geverifieerd' : 'Nog niet geverifieerd',
+                _verifiedBadge ? 'Geverifieerd' : S.of(context).nogNietGeverifieerd,
                 style: GoogleFonts.sora(
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
-                  color: _verifiedBadge ? Colors.blue.shade800 : GymiesColors.darkBlue,
+                  color: _verifiedBadge ? const Color(0xFF1E40AF) : GymiesColors.darkBlue, // Dark blue
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 _verifiedBadge
-                    ? 'Je profiel heeft een blauw vinkje.'
-                    : 'Vraag verificatie aan voor een blauw vinkje.',
+                    ? S.of(context).jeProfielHeeftEenBlauwVinkje
+                    : S.of(context).vraagVerificatieAanVoorEenBlauw,
                 style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600),
               ),
             ],
@@ -1482,7 +1569,7 @@ class _TrainerStorefrontEditorScreenState
                 if (!mounted) return;
                 setState(() { _verifiedBadge = true; _saving = false; });
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Verificatie aangevraagd!'), backgroundColor: GymiesColors.darkBlue),
+                  const SnackBar(content: Text(S.of(context).verificatieAangevraagd), backgroundColor: GymiesColors.darkBlue),
                 );
               } catch (_) {
                 if (mounted) setState(() => _saving = false);
@@ -1494,7 +1581,7 @@ class _TrainerStorefrontEditorScreenState
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            child: Text('Aanvragen', style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600)),
+            child: Text(S.of(context).aanvragen, style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600)),
           ),
       ],
     );
@@ -1511,7 +1598,7 @@ class _TrainerStorefrontEditorScreenState
       decoration: BoxDecoration(
         color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Row(
         children: [
@@ -1522,14 +1609,14 @@ class _TrainerStorefrontEditorScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(feature, style: GoogleFonts.sora(fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
-                Text('Beschikbaar vanaf $requiredTier', style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade400)),
+                Text(S.of(context).beschikbaarVanaf(requiredTier), style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade400)),
               ],
             ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.2),
+              color: GymiesColors.primary.withOpacity(0.2),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(requiredTier, style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
@@ -1553,7 +1640,7 @@ class _TrainerStorefrontEditorScreenState
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: GymiesColors.primary.withValues(alpha: 0.3),
+              color: GymiesColors.primary.withOpacity(0.3),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -1571,7 +1658,7 @@ class _TrainerStorefrontEditorScreenState
               const Icon(Icons.save_rounded, color: GymiesColors.darkBlue, size: 22),
             const SizedBox(width: 10),
             Text(
-              _saving ? 'Opslaan...' : 'Etalage opslaan',
+              _saving ? S.of(context).opslaan2 : 'Etalage opslaan',
               style: GoogleFonts.sora(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -1633,7 +1720,7 @@ class _TrainerStorefrontEditorScreenState
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: iconColor.withValues(alpha: 0.12),
+            color: iconColor.withOpacity(0.12),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(icon, size: 20, color: iconColor),
@@ -1675,7 +1762,166 @@ class _TrainerStorefrontEditorScreenState
             Haptics.selection();
             onChanged(v);
           },
-          activeColor: GymiesColors.primary,
+          activeThumbColor: GymiesColors.primary,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBadgeContent() {
+    final alwaysVisible = kAlwaysVisibleBadgeIds;
+    final toggleable = TrainerBadges.toggleableOptions();
+
+    // Groepeer toggleable badges per categorie
+    final trustIds = {'top_rated', 'favorite', 'fast_responder', 'returning_clients', 'top_booked', 'free_trial'};
+    final expertiseIds = {'diploma', 'specialist', 'sessions_100', 'sessions_500', 'senioren', 'revalidatie', 'zwangerschap', 'jeugd', 'afvallen', 'krachttraining'};
+    final serviceIds = {'own_location', 'duo_training', 'intro_offer', 'online_sessions', 'flexible_hours', 'same_day', 'free_cancellation'};
+    // Rest = status + activity
+
+    List<({String id, String label})> filterGroup(Set<String> ids) =>
+        toggleable.where((o) => ids.contains(o.id)).toList();
+
+    final statusBadges = toggleable.where((o) =>
+        !trustIds.contains(o.id) &&
+        !expertiseIds.contains(o.id) &&
+        !serviceIds.contains(o.id)).toList();
+    final trustBadges = filterGroup(trustIds);
+    final expertiseBadges = filterGroup(expertiseIds);
+    final serviceBadges = filterGroup(serviceIds);
+
+    final activeCount = alwaysVisible.length + _visibleBadgeIds.length;
+
+    Widget buildGroupHeader(String title, IconData icon) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 16, bottom: 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: GymiesColors.darkBlue),
+            const SizedBox(width: 6),
+            Text(title, style: GoogleFonts.sora(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: GymiesColors.darkBlue,
+            )),
+          ],
+        ),
+      );
+    }
+
+    Widget buildBadgeToggle(String id, String label) {
+      final isAlways = alwaysVisible.contains(id);
+      final isOn = isAlways || _visibleBadgeIds.contains(id);
+      final atLimit = activeCount >= kMaxProfileBadges && !isOn;
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Container(
+              width: 8, height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isOn ? GymiesColors.primary : Colors.grey.shade300,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(label, style: GoogleFonts.sora(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: isAlways ? Colors.grey.shade500 : GymiesColors.darkBlue,
+              )),
+            ),
+            if (isAlways)
+              Text('Altijd aan', style: GoogleFonts.sora(
+                fontSize: 11, color: Colors.grey.shade400, fontStyle: FontStyle.italic,
+              ))
+            else
+              Switch(
+                value: isOn,
+                onChanged: atLimit && !isOn ? null : (v) {
+                  Haptics.selection();
+                  setState(() {
+                    _badgesChanged = true;
+                    if (v) {
+                      _visibleBadgeIds.add(id);
+                    } else {
+                      _visibleBadgeIds.remove(id);
+                    }
+                  });
+                },
+                activeThumbColor: GymiesColors.primary,
+              ),
+          ],
+        ),
+      );
+    }
+
+    Widget buildGroup(String title, IconData icon, List<({String id, String label})> badges) {
+      if (badges.isEmpty) return const SizedBox.shrink();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          buildGroupHeader(title, icon),
+          ...badges.map((b) => buildBadgeToggle(b.id, b.label)),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Counter
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: activeCount >= kMaxProfileBadges
+                ? Colors.orange.shade50
+                : GymiesColors.primary.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                activeCount >= kMaxProfileBadges ? Icons.warning_amber_rounded : Icons.info_outline,
+                size: 16,
+                color: activeCount >= kMaxProfileBadges ? Colors.orange.shade700 : GymiesColors.darkBlue,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '$activeCount / $kMaxProfileBadges badges actief',
+                  style: GoogleFonts.sora(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: activeCount >= kMaxProfileBadges ? Colors.orange.shade700 : GymiesColors.darkBlue,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Altijd zichtbaar
+        buildGroupHeader('Altijd zichtbaar', Icons.lock_outline),
+        ...alwaysVisible.map((id) {
+          final matches = TrainerBadges.availableOptions()
+              .where((o) => o.id == id)
+              .map((o) => o.label);
+          final label = matches.isNotEmpty ? matches.first : id;
+          return buildBadgeToggle(id, label);
+        }),
+
+        // Categorieën
+        buildGroup('Status & Tier', Icons.star_outline, statusBadges),
+        buildGroup('Vertrouwen & Bewijs', Icons.verified_user_outlined, trustBadges),
+        buildGroup('Expertise & Specialisatie', Icons.school_outlined, expertiseBadges),
+        buildGroup('Service & Beschikbaarheid', Icons.schedule_outlined, serviceBadges),
+
+        const SizedBox(height: 8),
+        Text(
+          'Badges worden alleen getoond als je aan de voorwaarden voldoet.',
+          style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500),
         ),
       ],
     );

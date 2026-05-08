@@ -1,3 +1,5 @@
+
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,8 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-
-import '../config/timing_constants.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/booking.dart';
 import '../services/api_client.dart';
 import '../services/calendar_service.dart';
@@ -17,6 +18,7 @@ import '../services/in_app_review_service.dart';
 import '../utils/safe_url_launcher.dart';
 import '../utils/haptics.dart';
 import '../utils/map_utils.dart';
+import '../utils/currency_format.dart';
 import 'client_check_in_qr_screen.dart';
 import 'client_dispute_detail_screen.dart';
 import 'client_group_session_detail_screen.dart';
@@ -27,7 +29,6 @@ import 'widgets/review_bottom_sheet.dart';
 import 'widgets/safe_session_overlay.dart';
 import 'widgets/reschedule_slot_picker.dart';
 import 'widgets/trainer_state_views.dart';
-
 class ClientSessionsScreen extends StatefulWidget {
   const ClientSessionsScreen({super.key, this.paymentReturnBookingId});
 
@@ -95,10 +96,16 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
       List<Map<String, dynamic>> waitlist = [];
       try {
         groupRegs = await api.getMyGroupRegistrations();
-      } catch (_) {}
+      } catch (e) {
+        // Fail-open: Group registrations optional
+        if (kDebugMode) debugPrint('[ClientSessions] Fetch group registrations failed: $e');
+      }
       try {
         waitlist = await api.getMyWaitlistEntries();
-      } catch (_) {}
+      } catch (e) {
+        // Fail-open: Waitlist optional
+        if (kDebugMode) debugPrint('[ClientSessions] Fetch waitlist failed: $e');
+      }
       if (!mounted) return;
       setState(() {
         _bookings = list;
@@ -117,7 +124,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
       if (kDebugMode) debugPrint('[ClientSessions] Sessies laden fout: $e');
       if (!mounted) return;
       setState(() {
-        _error = 'Kon sessies niet laden.';
+        _error = S.of(context).couldNotLoadSessions;
         _loading = false;
       });
     }
@@ -157,27 +164,33 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
           Map<String, dynamic> bookingDetails = status;
           try {
             final bookings = await api.getBookings();
-            final match = bookings.cast<Booking?>().firstWhere(
-              (b) => b?.id.toString() == bookingId,
-              orElse: () => null,
-            );
+            Booking? match;
+            for (final b in bookings) {
+              if (b.id.toString() == bookingId) {
+                match = b;
+                break;
+              }
+            }
             if (match != null) {
               bookingDetails = {
                 ...status,
-                'trainer_name': match.trainerName,
+                S.of(context).trainername: match.trainerName,
                 'scheduled_at': match.scheduledAt.toIso8601String(),
                 'duration_minutes': match.durationMinutes,
                 'amount_cents': match.amountCents ?? 0,
               };
             }
-          } catch (_) {}
+          } catch (e) {
+            // Fail-open: Booking details fetch optional, show minimal overlay
+            if (kDebugMode) debugPrint('[ClientSessions] Fetch booking details failed: $e');
+          }
           if (!mounted) return;
           _showPaymentSuccessOverlay(bookingId, bookingDetails);
           InAppReviewService.instance.trackPositiveAction();
           _load();
           return;
         } else if (paymentStatus == 'failed' || paymentStatus == 'cancelled' || paymentStatus == 'expired') {
-          _showError('Betaling niet gelukt. Je kunt het opnieuw proberen via de acties bij je boeking.');
+          _showError(S.of(context).paymentFailedRetry);
           _load();
           return;
         }
@@ -189,7 +202,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
 
     // Na alle pogingen nog steeds pending — geef neutrale melding
     if (mounted) {
-      _showSuccess('Betaling wordt verwerkt. De status wordt zo bijgewerkt.');
+      _showSuccess(S.of(context).betalingWordtVerwerktDeStatusWordt);
       _load();
     }
   }
@@ -198,10 +211,10 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
     if (!mounted) return;
     Haptics.success();
 
-    final trainerName = (status['trainer_name'] ?? status['trainer'] ?? '').toString();
+    final trainerName = (status[S.of(context).trainername] ?? status[S.of(context).trainer2] ?? '').toString();
     final scheduledAt = (status['scheduled_at'] ?? status['date'] ?? '').toString();
     final amountCents = int.tryParse((status['amount_cents'] ?? '0').toString()) ?? 0;
-    final amountEur = amountCents > 0 ? '€${(amountCents / 100).toStringAsFixed(2)}' : '';
+    final amountEur = formatEuro(amountCents, fallback: '');
     final durationMin = int.tryParse((status['duration_minutes'] ?? '0').toString()) ?? 0;
 
     // Datum en tijd formatteren
@@ -235,7 +248,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
           ),
         );
       },
-      pageBuilder: (context, _, __) {
+      pageBuilder: (context, _, _) {
         return Center(
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 32),
@@ -245,7 +258,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
+                  color: Colors.black.withOpacity(0.15),
                   blurRadius: 30,
                   offset: const Offset(0, 10),
                 ),
@@ -267,7 +280,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                         height: 80,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: const Color(0xFF27AE60).withValues(alpha: 0.12),
+                          color: const Color(0xFF27AE60).withOpacity(0.12),
                         ),
                         child: const Icon(
                           Icons.check_circle_rounded,
@@ -280,7 +293,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'Betaling gelukt!',
+                  S.of(context).betalingGelukt,
                   style: GoogleFonts.sora(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
@@ -289,7 +302,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Je sessie is bevestigd',
+                  S.of(context).jeSessieIsBevestigd,
                   style: GoogleFonts.sora(
                     fontSize: 15,
                     color: Colors.grey[600],
@@ -300,7 +313,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.08),
+                    color: GymiesColors.primary.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Column(
@@ -309,7 +322,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                       if (trainerName.isNotEmpty) ...[
                         Row(
                           children: [
-                            Icon(Icons.person_rounded, size: 18, color: GymiesColors.darkBlue.withValues(alpha: 0.6)),
+                            Icon(Icons.person_rounded, size: 18, color: GymiesColors.darkBlue.withOpacity(0.6)),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -324,7 +337,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                       if (dateTimeStr.isNotEmpty) ...[
                         Row(
                           children: [
-                            Icon(Icons.calendar_today_rounded, size: 18, color: GymiesColors.darkBlue.withValues(alpha: 0.6)),
+                            Icon(Icons.calendar_today_rounded, size: 18, color: GymiesColors.darkBlue.withOpacity(0.6)),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -339,7 +352,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                       if (amountEur.isNotEmpty)
                         Row(
                           children: [
-                            Icon(Icons.payment_rounded, size: 18, color: GymiesColors.darkBlue.withValues(alpha: 0.6)),
+                            Icon(Icons.payment_rounded, size: 18, color: GymiesColors.darkBlue.withOpacity(0.6)),
                             const SizedBox(width: 8),
                             Text(
                               amountEur,
@@ -363,7 +376,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                       elevation: 0,
                     ),
                     child: Text(
-                      'Bekijk mijn sessies',
+                      S.of(context).bekijkMijnSessies,
                       style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700),
                     ),
                   ),
@@ -433,28 +446,28 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
   Future<void> _openInvoiceForBooking(Booking booking) async {
     final invoice = _sentInvoiceForBooking(booking.id);
     if (invoice == null) {
-      _showError('Factuur nog niet beschikbaar.');
+      _showError(S.of(context).factuurNogNietBeschikbaar);
       return;
     }
     final link = _invoiceLink(invoice);
     if (link.isEmpty) {
-      _showError('Factuurlink ontbreekt.');
+      _showError(S.of(context).factuurlinkOntbreekt);
       return;
     }
     final uri = Uri.tryParse(link);
     if (uri == null) {
-      _showError('Factuurlink is ongeldig.');
+      _showError(S.of(context).factuurlinkIsOngeldig);
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Download de PDF direct na openen.'),
+        content: Text(S.of(context).downloadDePdfDirectNaOpenen),
         backgroundColor: GymiesColors.darkBlue,
       ),
     );
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened) {
-      _showError('Kon factuur niet openen.');
+      _showError(S.of(context).konFactuurNietOpenen);
     }
   }
 
@@ -463,7 +476,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
     Future<void> Function() action,
   ) async {
     if (booking.id.isEmpty) {
-      _showError('Boeking-ID ontbreekt. Vernieuw de lijst en probeer opnieuw.');
+      _showError(S.of(context).boekingidOntbreektVernieuwDeLijstEn);
       return;
     }
     if (_busyBookingIds.contains(booking.id)) return;
@@ -475,7 +488,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
       _showError(e.message);
     } catch (e) {
       if (kDebugMode) debugPrint('[ClientSessions] Booking actie fout: $e');
-      _showError('Actie mislukt. Probeer opnieuw.');
+      _showError(S.of(context).actieMisluktProbeerOpnieuw);
     } finally {
       if (mounted) {
         setState(() => _busyBookingIds.remove(booking.id));
@@ -485,7 +498,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
 
   Future<void> _showCancellationPreview(Booking booking) async {
     if (booking.id.isEmpty) {
-      _showError('Boeking-ID ontbreekt.');
+      _showError(S.of(context).boekingidOntbreekt);
       return;
     }
     try {
@@ -498,7 +511,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
           data['refundable_cents'] ?? data['refund_cents'] ?? '-';
       await GymiesDialog.info(
         context,
-        title: 'Annuleringsoverzicht',
+        title: S.of(context).annuleringsoverzicht,
         message: 'Kosten: $fee cents\nTerugbetaling: $refundable cents',
         icon: Icons.report_gmailerrorred_outlined,
         buttonLabel: 'Sluiten',
@@ -514,6 +527,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
     final formKey = GlobalKey<FormState>();
     bool submitting = false;
 
+    // ignore: unused_local_variable
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -542,7 +556,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Geschil indienen',
+                            S.of(context).geschilIndienen,
                             style: GoogleFonts.sora(fontSize: 20, fontWeight: FontWeight.bold, color: GymiesColors.darkBlue),
                           ),
                         ),
@@ -568,7 +582,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Beschrijf het probleem zo duidelijk mogelijk. We nemen het zo snel mogelijk in behandeling.',
+                              S.of(context).beschrijfHetProbleemZoDuidelijkMogelijkWeNemenHetZoSnelMogelijkInBehandeling,
                               style: GoogleFonts.sora(fontSize: 12, color: Colors.orange.shade900, fontWeight: FontWeight.w500),
                             ),
                           ),
@@ -579,12 +593,12 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                     TextFormField(
                       controller: reasonCtrl,
                       decoration: InputDecoration(
-                        labelText: 'Reden',
-                        hintText: 'Bijv. No-show, kwaliteitsprobleem...',
+                        labelText: S.of(context).reden,
+                        hintText: S.of(context).bijvNoshowKwaliteitsprobleem,
                         prefixIcon: const Icon(Icons.report_problem_outlined, size: 20),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Vul een reden in' : null,
+                      validator: (v) => (v == null || v.trim().isEmpty) ? S.of(context).fillInReason : null,
                       maxLength: 255,
                       style: GoogleFonts.sora(fontSize: 14),
                     ),
@@ -592,8 +606,8 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                     TextFormField(
                       controller: detailsCtrl,
                       decoration: InputDecoration(
-                        labelText: 'Toelichting (optioneel)',
-                        hintText: 'Beschrijf de situatie in detail...',
+                        labelText: S.of(context).toelichtingoptioneel,
+                        hintText: S.of(context).beschrijfDeSituatieInDetail,
                         prefixIcon: const Icon(Icons.description_outlined, size: 20),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         alignLabelWithHint: true,
@@ -624,6 +638,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                                   // Navigeer naar detail
                                   final disputeId = res['data']?['id']?.toString() ?? res['id']?.toString();
                                   if (disputeId != null && disputeId.isNotEmpty && context.mounted) {
+                                    // ignore: use_build_context_synchronously
                                     Navigator.of(context).push(
                                       MaterialPageRoute(
                                         builder: (_) => ClientDisputeDetailScreen(disputeId: disputeId),
@@ -640,7 +655,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                                   setDlg(() => submitting = false);
                                   if (!ctx.mounted) return;
                                   ScaffoldMessenger.of(ctx).showSnackBar(
-                                    SnackBar(content: const Text('Kon geschil niet indienen.'), backgroundColor: Colors.red.shade600),
+                                    SnackBar(content: const Text(S.of(context).konGeschilNietIndienen), backgroundColor: Colors.red.shade600),
                                   );
                                 }
                               },
@@ -655,7 +670,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                             ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                             : const Icon(Icons.send_rounded, size: 18),
                         label: Text(
-                          submitting ? 'Bezig...' : 'Geschil indienen',
+                          submitting ? S.of(context).bezig2 : S.of(context).geschilIndienen,
                           style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w600),
                         ),
                       ),
@@ -689,7 +704,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
 
     final ok = await GymiesDialog.custom<bool>(
       context,
-      title: 'Sessie annuleren',
+      title: S.of(context).cancelSession,
       icon: Icons.cancel_outlined,
       iconColor: Colors.red.shade600,
       content: Column(
@@ -751,7 +766,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
             ),
           if (refundPercent is num && refundPercent > 0)
             const SizedBox(height: 8),
-          const Text('Weet je zeker dat je deze sessie wilt annuleren?'),
+          const Text(S.of(context).weetJeZekerDatJeDezeSessieWiltAnnuleren),
         ],
       ),
       actions: [
@@ -760,7 +775,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
           returnValue: false,
         ),
         GymiesDialogAction(
-          label: 'Ja, annuleren',
+          label: S.of(context).jaAnnuleren,
           isPrimary: true,
           isDestructive: true,
           returnValue: true,
@@ -773,7 +788,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
         bookingId: booking.id,
         reason: 'client_cancelled',
       );
-      _showSuccess('Sessie geannuleerd');
+      _showSuccess(S.of(context).sessionCancelled);
     });
   }
 
@@ -792,7 +807,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
       builder: (_) => RescheduleSlotPicker(
         api: api,
         trainerId: trainerId,
-        trainerName: booking.trainerName ?? 'Trainer',
+        trainerName: booking.trainerName,
         currentScheduledAt: booking.scheduledAt,
       ),
     );
@@ -804,7 +819,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
         bookingId: booking.id,
         requestedAt: selectedDateTime,
       );
-      _showSuccess('Verplaatsingsverzoek verstuurd');
+      _showSuccess(S.of(context).rescheduleRequestSent);
     });
   }
 
@@ -830,7 +845,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
     if (!mounted) return;
     final usePromo = await GymiesDialog.custom<bool>(
       context,
-      title: 'Betaling starten',
+      title: S.of(context).betalingStarten,
       icon: Icons.payments_outlined,
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -848,12 +863,12 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Referral voordeel beschikbaar',
+                    S.of(context).referralVoordeelBeschikbaar,
                     style: GoogleFonts.sora(fontWeight: FontWeight.w700),
                   ),
                   Text('Code: $suggestedCode'),
                   if (suggestedCredit.isNotEmpty)
-                    Text('Tegoed: $suggestedCredit'),
+                    Text(S.of(context).tegoedSuggested(suggestedCredit.toString())),
                   const SizedBox(height: 6),
                   Align(
                     alignment: Alignment.centerLeft,
@@ -861,7 +876,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                       onPressed: () {
                         promoController.text = suggestedCode;
                       },
-                      child: const Text('Gebruik code'),
+                      child: const Text(S.of(context).gebruikCode),
                     ),
                   ),
                 ],
@@ -871,21 +886,21 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
             controller: promoController,
             textCapitalization: TextCapitalization.characters,
             decoration: const InputDecoration(
-              labelText: 'Promocode (optioneel)',
+              labelText: S.of(context).promocodeoptioneel,
             ),
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
-            value: paymentMethod,
-            decoration: const InputDecoration(labelText: 'Betaalmethode'),
+            initialValue: paymentMethod,
+            decoration: const InputDecoration(labelText: S.of(context).betaalmethode),
             items: const [
               DropdownMenuItem(
                 value: 'mollie',
-                child: Text('Online (Mollie)'),
+                child: Text(S.of(context).onlinemollie),
               ),
               DropdownMenuItem(
                 value: 'cash',
-                child: Text('Cash bij trainer'),
+                child: Text(S.of(context).cashBijTrainer),
               ),
             ],
             onChanged: (v) {
@@ -896,11 +911,11 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
       ),
       actions: [
         GymiesDialogAction(
-          label: 'Annuleren',
+          label: S.of(context).annuleren,
           returnValue: false,
         ),
         GymiesDialogAction(
-          label: 'Start betaling',
+          label: S.of(context).startBetaling,
           isPrimary: true,
           returnValue: true,
         ),
@@ -915,7 +930,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
       );
       if (paymentMethod == 'cash') {
         _showSuccess(
-          'Cash betaling gemarkeerd. Bevestig betaling bij trainer.',
+          S.of(context).cashBetalingGemarkeerdBevestigBetalingBij,
         );
       } else {
         final url = (data['payment_url'] ?? data['url'] ?? '').toString();
@@ -923,12 +938,12 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
           _showSuccess('Betaling gestart');
         } else {
           _showSuccess(
-            'Je wordt nu doorgestuurd naar de betaalpagina. Na betaling keer je terug naar de app.',
+            S.of(context).jeWordtNuDoorgestuurdNaarDe,
           );
           if (mounted) {
             final opened = await SafeUrlLauncher.launchPaymentUrl(context, url);
             if (!opened && mounted) {
-              _showError('Kon betaalpagina niet openen.');
+              _showError(S.of(context).konBetaalpaginaNietOpenen);
             }
           }
         }
@@ -938,7 +953,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
 
   Future<void> _checkPaymentStatus(Booking booking) async {
     if (booking.id.isEmpty) {
-      _showError('Boeking-ID ontbreekt.');
+      _showError(S.of(context).boekingidOntbreekt);
       return;
     }
     try {
@@ -959,12 +974,12 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
       final ok = await CalendarService.instance.addBookingToCalendar(booking);
       if (!mounted) return;
       if (ok) {
-        _showSuccess('Sessie toegevoegd aan je agenda');
+        _showSuccess(S.of(context).sessieToegevoegdAanJeAgenda);
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[ClientSessions] Calendar sync fout: $e');
       if (mounted) {
-        _showError('Kon sessie niet toevoegen aan agenda');
+        _showError(S.of(context).konSessieNietToevoegenAanAgenda);
       }
     }
   }
@@ -981,12 +996,14 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
         '${booking.scheduledAt.hour.toString().padLeft(2, '0')}:${booking.scheduledAt.minute.toString().padLeft(2, '0')}. '
         'Open de link om meer te weten: $url';
     try {
-      await Share.share(text, subject: 'Train met mij mee!');
+      await SharePlus.instance.share(
+        ShareParams(text: text, title: S.of(context).trainMetMijMee),
+      );
     } catch (e) {
       if (kDebugMode) debugPrint('[ClientSessions] Buddy invite delen fout: $e');
       await Clipboard.setData(ClipboardData(text: url));
       if (mounted) {
-        _showSuccess('Link gekopieerd naar klembord');
+        _showSuccess(S.of(context).linkGekopieerdNaarKlembord);
       }
     }
   }
@@ -994,7 +1011,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
   Future<void> _showReviewDialog(Booking booking) async {
     final trainerName = booking.trainerName.trim().isNotEmpty
         ? booking.trainerName.trim()
-        : 'Trainer';
+        : S.of(context).trainer;
     final result = await showReviewBottomSheet(
       context,
       trainerName: trainerName,
@@ -1011,7 +1028,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
             photoPath: result.photoPath,
           );
       if (!mounted) return;
-      _showSuccess('Bedankt voor je beoordeling!');
+      _showSuccess(S.of(context).bedanktVoorJeBeoordeling);
       // Positieve actie: gebruiker geeft review → perfect moment voor in-app review
       InAppReviewService.instance.trackPositiveAction();
       await _load();
@@ -1021,7 +1038,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
     } catch (e) {
       if (kDebugMode) debugPrint('[ClientSessions] Review versturen fout: $e');
       if (!mounted) return;
-      _showError('Beoordeling versturen mislukt. Probeer later opnieuw.');
+      _showError(S.of(context).beoordelingVersturenMisluktProbeerLaterOpnieuw);
     } finally {
       if (mounted) setState(() => _busyBookingIds.remove(booking.id));
     }
@@ -1066,7 +1083,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Meer acties',
+                        S.of(context).meerActies,
                         style: GoogleFonts.sora(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -1091,7 +1108,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                       _ActionButton(
                         icon: Icons.info_outline,
                         iconColor: Colors.blue.shade600,
-                        title: 'Betaalstatus controleren',
+                        title: S.of(context).betaalstatusControleren,
                         onTap: isBusy
                             ? null
                             : () {
@@ -1103,7 +1120,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                         _ActionButton(
                           icon: Icons.payments_outlined,
                           iconColor: Colors.green.shade600,
-                          title: 'Betaling starten',
+                          title: S.of(context).betalingStarten,
                           onTap: isBusy
                               ? null
                               : () {
@@ -1115,7 +1132,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                         _ActionButton(
                           icon: Icons.calendar_month_outlined,
                           iconColor: Colors.teal.shade600,
-                          title: 'Sessie verplaatsen',
+                          title: S.of(context).rescheduleSession,
                           onTap: isBusy
                               ? null
                               : () {
@@ -1127,7 +1144,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                         _ActionButton(
                           icon: Icons.report_gmailerrorred_outlined,
                           iconColor: Colors.orange.shade800,
-                          title: 'Annuleringsoverzicht',
+                          title: S.of(context).annuleringsoverzicht,
                           onTap: isBusy
                               ? null
                               : () {
@@ -1139,7 +1156,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                         _ActionButton(
                           icon: Icons.cancel_outlined,
                           iconColor: Colors.red.shade700,
-                          title: 'Sessie annuleren',
+                          title: S.of(context).cancelSession,
                           onTap: isBusy
                               ? null
                               : () {
@@ -1150,7 +1167,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                       _ActionButton(
                         icon: Icons.gavel_rounded,
                         iconColor: Colors.deepOrange.shade700,
-                        title: 'Geschil indienen',
+                        title: S.of(context).geschilIndienen,
                         onTap: isBusy
                             ? null
                             : () {
@@ -1171,13 +1188,13 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
 
   Future<void> _requestInvoiceForBooking(Booking booking) async {
     final trainerName = booking.trainerName.isEmpty
-        ? 'trainer'
+        ? S.of(context).trainer2
         : booking.trainerName;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ClientSupportScreen(
           initialType: 'invoice',
-          initialSubject: 'Factuurverzoek voor sessie',
+          initialSubject: S.of(context).factuurverzoekVoorSessie,
           initialMessage:
               'Hoi, ik wil graag een factuur ontvangen voor mijn sessie bij $trainerName op ${booking.scheduledAt.day.toString().padLeft(2, '0')}-${booking.scheduledAt.month.toString().padLeft(2, '0')}-${booking.scheduledAt.year}.',
           initialBookingId: booking.id,
@@ -1202,12 +1219,12 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
             color: isActive
-                ? GymiesColors.primary.withValues(alpha: 0.15)
+                ? GymiesColors.primary.withOpacity(0.15)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             border: isActive
                 ? Border.all(
-                    color: GymiesColors.primary.withValues(alpha: 0.3),
+                    color: GymiesColors.primary.withOpacity(0.3),
                     width: 1,
                   )
                 : null,
@@ -1226,7 +1243,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                     fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                     color: isActive
                         ? GymiesColors.primary
-                        : Colors.white.withValues(alpha: 0.5),
+                        : Colors.white.withOpacity(0.5),
                   ),
                 ),
               ),
@@ -1236,8 +1253,8 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   decoration: BoxDecoration(
                     color: isActive
-                        ? GymiesColors.primary.withValues(alpha: 0.25)
-                        : Colors.white.withValues(alpha: 0.12),
+                        ? GymiesColors.primary.withOpacity(0.25)
+                        : Colors.white.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -1247,7 +1264,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                       fontWeight: FontWeight.w600,
                       color: isActive
                           ? GymiesColors.primary
-                          : Colors.white.withValues(alpha: 0.5),
+                          : Colors.white.withOpacity(0.5),
                     ),
                   ),
                 ),
@@ -1269,16 +1286,16 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
             child: Container(
               width: 72, height: 72,
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.15),
+                color: GymiesColors.primary.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: const Icon(Icons.event_available_outlined, size: 34, color: GymiesColors.darkBlue),
             ),
           ),
           const SizedBox(height: 20),
-          Text('Geen inschrijvingen', style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue), textAlign: TextAlign.center),
+          Text(S.of(context).geenInschrijvingen, style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue), textAlign: TextAlign.center),
           const SizedBox(height: 8),
-          Text('Je hebt je nog niet ingeschreven voor een groepsles.', style: GoogleFonts.sora(fontSize: 14, color: Colors.grey.shade600, height: 1.4), textAlign: TextAlign.center),
+          Text(S.of(context).jeHebtJeNogNietIngeschrevenVoorEenGroepsles, style: GoogleFonts.sora(fontSize: 14, color: Colors.grey.shade600, height: 1.4), textAlign: TextAlign.center),
         ],
       );
     }
@@ -1289,7 +1306,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
         final r = _groupRegistrations[i];
         final id = (r['group_session_id'] ?? r['groupSessionId'] ?? '').toString();
         final rawTitle = (r['group_session_title'] ?? r['title'] ?? r['name'] ?? '').toString();
-        final displayTitle = rawTitle.isEmpty ? 'Groepsles' : rawTitle;
+        final displayTitle = rawTitle.isEmpty ? S.of(context).groepsles : rawTitle;
         final startsAt = DateTime.tryParse((r['starts_at'] ?? r['startsAt'] ?? r['start_at'] ?? '').toString());
         final status = (r['status'] ?? r['payment_status'] ?? '').toString().toLowerCase();
         final isConfirmed = status == 'paid' || status == 'confirmed';
@@ -1309,7 +1326,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
               ),
               child: Padding(
                 padding: const EdgeInsets.all(14),
@@ -1380,16 +1397,16 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
             child: Container(
               width: 72, height: 72,
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.15),
+                color: GymiesColors.primary.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: const Icon(Icons.hourglass_empty_rounded, size: 34, color: GymiesColors.darkBlue),
             ),
           ),
           const SizedBox(height: 20),
-          Text('Geen wachtlijsten', style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue), textAlign: TextAlign.center),
+          Text(S.of(context).geenWachtlijsten, style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue), textAlign: TextAlign.center),
           const SizedBox(height: 8),
-          Text('Als een trainer volgeboekt is, kun je je op de wachtlijst plaatsen.', style: GoogleFonts.sora(fontSize: 14, color: Colors.grey.shade600, height: 1.4), textAlign: TextAlign.center),
+          Text(S.of(context).alsEenTrainerVolgeboektIsKunJeJeOpDeWachtlijstPlaatsen, style: GoogleFonts.sora(fontSize: 14, color: Colors.grey.shade600, height: 1.4), textAlign: TextAlign.center),
         ],
       );
     }
@@ -1398,7 +1415,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
       itemCount: _waitlistEntries.length,
       itemBuilder: (_, i) {
         final item = _waitlistEntries[i];
-        final trainerName = (item['trainer_name'] ?? item['trainerName'] ?? 'Trainer').toString();
+        final trainerName = (item[S.of(context).trainername] ?? item[S.of(context).trainername2] ?? S.of(context).trainer).toString();
         final requestedDate = (item['requested_date'] ?? item['requestedDate'] ?? item['preferred_date'] ?? '').toString();
         final status = (item['status'] ?? 'waiting').toString().toLowerCase();
         final position = item['position'] ?? item['queue_position'];
@@ -1409,7 +1426,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
             ),
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -1418,7 +1435,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                   Container(
                     width: 42, height: 42,
                     decoration: BoxDecoration(
-                      color: GymiesColors.darkBlue.withValues(alpha: 0.1),
+                      color: GymiesColors.darkBlue.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Center(child: Text(trainerName.isNotEmpty ? trainerName[0].toUpperCase() : '?', style: GoogleFonts.sora(fontWeight: FontWeight.w700, color: GymiesColors.darkBlue, fontSize: 16))),
@@ -1488,7 +1505,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
             toolbarHeight: 56,
             automaticallyImplyLeading: false,
             title: Text(
-              'Training',
+              S.of(context).training,
               style: GoogleFonts.sora(fontSize: 22, fontWeight: FontWeight.w700),
             ),
             centerTitle: true,
@@ -1498,7 +1515,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                 margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                 padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
+                  color: Colors.white.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(13),
                 ),
                 child: Row(
@@ -1536,11 +1553,11 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
                             if (list.isEmpty) {
                               return _EmptyView(
                                 title: _activeTab == 1
-                                    ? 'Nog geen afgeronde sessies'
-                                    : 'Nog geen komende sessies',
+                                    ? S.of(context).nogGeenAfgerondeSessies
+                                    : S.of(context).nogGeenKomendeSessies,
                                 subtitle: _activeTab == 1
-                                    ? 'Je voltooide trainingen en beoordelingen zullen hier verschijnen na je eerste sessie.'
-                                    : 'Boek nu een training en begin je fitnessreis. Je trainer zal contact opnemen om alles in te plannen.',
+                                    ? S.of(context).jeVoltooideTrainingenEnBeoordelingenZullen
+                                    : S.of(context).boekNuEenTrainingEnBegin,
                               );
                             }
                             final b = list[i];
@@ -1581,7 +1598,7 @@ class _ClientSessionsScreenState extends State<ClientSessionsScreen> {
 String _statusLabel(String raw) {
   switch (raw.toLowerCase()) {
     case 'reserved':
-      return 'Wacht op betaling';
+      return S.of(context).wachtOpBetaling;
     case 'pending':
     case 'pending_payment':
       return 'In afwachting';
@@ -1589,7 +1606,7 @@ String _statusLabel(String raw) {
       return 'Bevestigd';
     case 'cancelled':
     case 'canceled':
-      return 'Geannuleerd';
+      return S.of(context).geannuleerd;
     case 'expired':
       return 'Verlopen';
     case 'completed':
@@ -1602,7 +1619,7 @@ String _statusLabel(String raw) {
     case 'noshow':
       return 'Niet verschenen';
     case 'failed':
-      return 'Betaling mislukt';
+      return S.of(context).betalingMislukt;
     case 'refunded':
       return 'Terugbetaald';
     default:
@@ -1688,7 +1705,6 @@ class _SessionCard extends StatelessWidget {
 
   bool get _isWithinCheckInWindow {
     final scheduled = booking.scheduledAt;
-    if (scheduled == null) return false;
     final diff = scheduled.difference(DateTime.now());
     return diff.inMinutes <= 15 && !diff.isNegative;
   }
@@ -1700,7 +1716,7 @@ class _SessionCard extends StatelessWidget {
     if (diff.inHours < 24) {
       final h = diff.inHours;
       final m = diff.inMinutes % 60;
-      return m > 0 ? 'Over ${h}u ${m}m' : 'Over ${h} uur';
+      return m > 0 ? 'Over ${h}u ${m}m' : 'Over $h uur';
     }
     if (diff.inDays == 1) return 'Morgen';
     return 'Over ${diff.inDays} dagen';
@@ -1737,7 +1753,7 @@ class _SessionCard extends StatelessWidget {
         '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}';
     final amount = b.amountCents == null
         ? null
-        : '€${(b.amountCents! / 100).toStringAsFixed(2)}';
+        : formatEuro(b.amountCents);
     final sessionType = b.sessionType?.isNotEmpty == true ? b.sessionType! : null;
 
     // Inline datum: "Za 3 mei"
@@ -1750,7 +1766,7 @@ class _SessionCard extends StatelessWidget {
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: _needsPayment
-              ? Border.all(color: Colors.orange.withValues(alpha: 0.35), width: 1)
+              ? Border.all(color: Colors.orange.withOpacity(0.35), width: 1)
               : Border.all(color: Colors.grey.shade100, width: 0.5),
         ),
         child: Opacity(
@@ -1785,7 +1801,7 @@ class _SessionCard extends StatelessWidget {
                               height: 34,
                               decoration: BoxDecoration(
                                 color: isPast
-                                    ? GymiesColors.darkBlue.withValues(alpha: 0.3)
+                                    ? GymiesColors.darkBlue.withOpacity(0.3)
                                     : GymiesColors.darkBlue,
                                 shape: BoxShape.circle,
                               ),
@@ -1808,7 +1824,7 @@ class _SessionCard extends StatelessWidget {
                                 children: [
                                   // Trainer name
                                   Text(
-                                    b.trainerName.isEmpty ? 'Trainer' : b.trainerName,
+                                    b.trainerName.isEmpty ? S.of(context).trainer : b.trainerName,
                                     style: GoogleFonts.sora(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
@@ -1851,7 +1867,7 @@ class _SessionCard extends StatelessWidget {
                                   width: 30,
                                   height: 30,
                                   decoration: BoxDecoration(
-                                    color: GymiesColors.darkBlue.withValues(alpha: 0.06),
+                                    color: GymiesColors.darkBlue.withOpacity(0.06),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: isBusy
@@ -1882,12 +1898,12 @@ class _SessionCard extends StatelessWidget {
                               ),
                               decoration: BoxDecoration(
                                 color: _statusColor(b.status)
-                                    .withValues(alpha: 0.12),
+                                    .withOpacity(0.12),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 _needsPayment
-                                    ? 'Wacht op betaling'
+                                    ? S.of(context).wachtOpBetaling
                                     : _statusLabel(b.status),
                                 style: GoogleFonts.sora(
                                   fontSize: 10,
@@ -1904,7 +1920,7 @@ class _SessionCard extends StatelessWidget {
                                   vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: GymiesColors.primary.withValues(alpha: 0.12),
+                                  color: GymiesColors.primary.withOpacity(0.12),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
@@ -1951,7 +1967,7 @@ class _SessionCard extends StatelessWidget {
                                   const SizedBox(width: 6),
                                 ],
                                 _QuickActionChip(
-                                  label: 'Agenda',
+                                  label: S.of(context).agenda,
                                   icon: Icons.event_available_rounded,
                                   onTap: onAddToCalendar,
                                 ),
@@ -1997,7 +2013,7 @@ class _SessionCard extends StatelessWidget {
                                         borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: Text(
-                                        'Betaal nu',
+                                        S.of(context).betaalNu,
                                         textAlign: TextAlign.center,
                                         style: GoogleFonts.sora(
                                           fontSize: 13,
@@ -2039,13 +2055,13 @@ class _SessionCard extends StatelessWidget {
                                   const SizedBox(width: 6),
                                 if (hasInvoice)
                                   _QuickActionChip(
-                                    label: 'Factuur',
+                                    label: S.of(context).factuur2,
                                     icon: Icons.receipt_long_rounded,
                                     onTap: onOpenInvoice,
                                   )
                                 else
                                   _QuickActionChip(
-                                    label: 'Factuur',
+                                    label: S.of(context).factuur2,
                                     icon: Icons.receipt_long_rounded,
                                     onTap: onRequestInvoice,
                                   ),
@@ -2088,7 +2104,7 @@ class _QuickActionChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 7),
           decoration: BoxDecoration(
             color: isPrimary
-                ? GymiesColors.primary.withValues(alpha: 0.12)
+                ? GymiesColors.primary.withOpacity(0.12)
                 : Colors.grey.shade50,
             borderRadius: BorderRadius.circular(8),
           ),
@@ -2138,7 +2154,7 @@ class _EmptyView extends StatelessWidget {
             width: 80,
             height: 80,
             decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.12),
+              color: GymiesColors.primary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(20),
             ),
             child: const Center(
@@ -2187,7 +2203,7 @@ class _EmptyView extends StatelessWidget {
               context.clientShell?.jumpToTab(1); // Navigate to Ontdekken tab
             },
             child: Text(
-              'Zoek een trainer',
+              S.of(context).zoekEenTrainer,
               style: GoogleFonts.sora(
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
@@ -2205,6 +2221,7 @@ class _ActionButton extends StatelessWidget {
     required this.icon,
     required this.iconColor,
     required this.title,
+    // ignore: unused_element_parameter
     this.subtitle,
     required this.onTap,
   });
@@ -2235,7 +2252,7 @@ class _ActionButton extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.12),
+                  color: iconColor.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, color: iconColor, size: 20),

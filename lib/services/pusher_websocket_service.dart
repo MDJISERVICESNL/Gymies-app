@@ -6,7 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/timing_constants.dart';
 
-/// Connection states voor de Pusher WebSocket.
+/// Connection states voor de Pusher-protocol WebSocket (gebruikt door Laravel Reverb).
 enum PusherConnectionState {
   disconnected,
   connecting,
@@ -166,7 +166,10 @@ class PusherWebSocketService extends ChangeNotifier {
   @override
   void dispose() {
     disconnect();
-    _eventController.close();
+    // BUG FIX: Ensure event controller is properly closed
+    if (!_eventController.isClosed) {
+      _eventController.close();
+    }
     super.dispose();
   }
 
@@ -195,6 +198,9 @@ class PusherWebSocketService extends ChangeNotifier {
 
     try {
       final uri = Uri.parse(url);
+      // BUG FIX: Cancel old subscription before creating new one to prevent memory leak
+      _subscription?.cancel();
+
       _channel = WebSocketChannel.connect(uri);
 
       _subscription = _channel!.stream.listen(
@@ -457,7 +463,10 @@ class PusherWebSocketService extends ChangeNotifier {
     _subscription?.cancel();
     try {
       _channel?.sink.close();
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: WebSocket close can fail if already closed
+      if (kDebugMode) debugPrint('[PusherWebSocketService] Cleanup error: $e');
+    }
     _channel = null;
     _subscription = null;
     _socketId = null;

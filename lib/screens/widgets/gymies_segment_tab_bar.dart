@@ -118,11 +118,11 @@ class _SegmentTab extends StatelessWidget {
         height: 32,
         decoration: BoxDecoration(
           color: active
-              ? GymiesColors.primary.withValues(alpha: 0.15)
+              ? GymiesColors.primary.withOpacity(0.15)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: active
-              ? Border.all(color: GymiesColors.primary.withValues(alpha: 0.3))
+              ? Border.all(color: GymiesColors.primary.withOpacity(0.3))
               : null,
         ),
         child: Row(
@@ -142,7 +142,7 @@ class _SegmentTab extends StatelessWidget {
                       fontWeight: active ? FontWeight.w600 : FontWeight.w500,
                       color: active
                           ? GymiesColors.primary
-                          : Colors.white.withValues(alpha: 0.55),
+                          : Colors.white.withOpacity(0.55),
                     ),
                   ),
                 ),
@@ -180,7 +180,7 @@ class _SegmentTab extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
+                  color: Colors.white.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -188,7 +188,7 @@ class _SegmentTab extends StatelessWidget {
                   style: GoogleFonts.sora(
                     fontSize: 9,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white.withValues(alpha: 0.5),
+                    color: Colors.white.withOpacity(0.5),
                   ),
                 ),
               ),

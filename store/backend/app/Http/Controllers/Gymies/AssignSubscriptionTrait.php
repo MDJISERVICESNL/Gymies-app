@@ -76,16 +76,20 @@ trait AssignSubscriptionTrait
             $updateData['subscription_downgrade_to'] = $downgradeTo;
         }
 
-        if ($profile) {
-            DB::table('gymies_trainer_profiles')
-                ->where('user_id', (int) $userId)
-                ->update($updateData);
-        } else {
-            $updateData['user_id'] = (int) $userId;
-            $updateData['created_at'] = now();
-            $updateData['updated_at'] = now();
-            DB::table('gymies_trainer_profiles')->insert($updateData);
-        }
+        // Wrap profile update/insert in transaction
+        DB::transaction(function() use ($profile, $userId, $updateData) {
+            if ($profile) {
+                DB::table('gymies_trainer_profiles')
+                    ->where('user_id', (int) $userId)
+                    ->update($updateData);
+            } else {
+                $insertData = $updateData;
+                $insertData['user_id'] = (int) $userId;
+                $insertData['created_at'] = now();
+                $insertData['updated_at'] = now();
+                DB::table('gymies_trainer_profiles')->insert($insertData);
+            }
+        });
 
         return response()->json([
             'message' => 'Abonnement toegewezen',

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/gymies_api.dart';
@@ -162,7 +163,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
     try {
       final api = context.read<GymiesApi>();
       await api.updateWidgetSettings({
-        'accent_color': _accentColor.value.toRadixString(16),
+        'accent_color': _accentColor.toARGB32().toRadixString(16),
         'widget_height': _widgetHeight,
         'border_radius': _borderRadius,
         'show_price': _showPrice,
@@ -172,7 +173,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Widget instellingen opgeslagen!'),
+          content: Text(S.of(context).widgetInstellingenOpgeslagen),
           backgroundColor: Colors.green,
           duration: Duration(seconds: 2),
         ),
@@ -181,7 +182,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Fout bij opslaan: $e'),
+          content: Text(S.of(context).foutBijOpslaanMsg(e.toString())),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 2),
         ),
@@ -193,7 +194,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
     if (_slug.isEmpty) return;
     final h = _widgetHeight.toString();
     final r = _borderRadius.toString();
-    final hex = _accentColor.value.toRadixString(16).padLeft(8, '0').substring(2);
+    final hex = _accentColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2);
     // Widget URL met customization parameters
     final customUrl = '$_widgetUrl?color=$hex&h=$h&r=$r'
         '&price=${_showPrice ? 1 : 0}'
@@ -225,7 +226,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
           icon: Icons.widgets_outlined,
           feature: 'Booking Widget & QR',
           tier: 'Pro+',
-          description: 'Pas je booking widget aan en deel je profiel met een QR-code.',
+          description: S.of(context).pasJeBookingWidgetAanEn,
         ),
       );
     }
@@ -249,13 +250,13 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                             width: 28,
                             height: 28,
                             decoration: BoxDecoration(
-                              color: GymiesColors.primary.withValues(alpha: 0.12),
+                              color: GymiesColors.primary.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(7),
                             ),
                             child: Icon(Icons.code_rounded, size: 14, color: GymiesColors.darkBlue),
                           ),
                           const SizedBox(width: 8),
-                          Text('Booking Widget', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
+                          Text(S.of(context).bookingWidget, style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
                         ],
                       ),
                     ),
@@ -266,7 +267,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 10,
                             offset: const Offset(0, 2),
                           ),
@@ -281,7 +282,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                                     color: GymiesColors.darkBlue, size: 22),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Embed code',
+                                  S.of(context).embedCode,
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
@@ -292,8 +293,8 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              'Plak deze code op je website om klanten '
-                              'direct vanuit jouw site te laten boeken.',
+                              S.of(context).plakDezeCodeOpJeWebsite
+                              S.of(context).directVanuitJouwSiteTeLaten,
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.grey.shade600,
@@ -312,7 +313,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                               child: SelectableText(
                                 _embedCode.isNotEmpty
                                     ? _embedCode
-                                    : 'Embed code niet beschikbaar',
+                                    : S.of(context).embedCodeNietBeschikbaar,
                                 style: TextStyle(
                                   fontFamily: 'monospace',
                                   fontSize: 12,
@@ -329,10 +330,10 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                               child: OutlinedButton.icon(
                                 onPressed: _embedCode.isNotEmpty
                                     ? () => _copyToClipboard(
-                                        _embedCode, 'Embed code')
+                                        _embedCode, S.of(context).embedCode)
                                     : null,
                                 icon: const Icon(Icons.copy_rounded, size: 18),
-                                label: const Text('Kopieer embed code'),
+                                label: const Text(S.of(context).kopieerEmbedCode),
                               ),
                             ),
                             if (_widgetUrl.isNotEmpty) ...[
@@ -344,7 +345,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                                       _widgetUrl, 'Widget URL'),
                                   icon: const Icon(Icons.link_rounded,
                                       size: 18),
-                                  label: const Text('Kopieer widget URL'),
+                                  label: const Text(S.of(context).kopieerWidgetUrl),
                                 ),
                               ),
                             ],
@@ -362,13 +363,13 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                             width: 28,
                             height: 28,
                             decoration: BoxDecoration(
-                              color: GymiesColors.primary.withValues(alpha: 0.12),
+                              color: GymiesColors.primary.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(7),
                             ),
                             child: Icon(Icons.tune_rounded, size: 14, color: GymiesColors.darkBlue),
                           ),
                           const SizedBox(width: 8),
-                          Text('Widget aanpassen', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
+                          Text(S.of(context).widgetAanpassen, style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
                         ],
                       ),
                     ),
@@ -379,7 +380,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 10,
                             offset: const Offset(0, 2),
                           ),
@@ -390,7 +391,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                         children: [
                           // Color picker
                           Text(
-                            'Accentkleur',
+                            S.of(context).accentkleur,
                               style: GoogleFonts.sora(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -438,7 +439,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
 
                             // Height selector
                             Text(
-                              'Widget hoogte',
+                              S.of(context).widgetHoogte,
                               style: GoogleFonts.sora(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -471,7 +472,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
 
                             // Border radius
                             Text(
-                              'Hoekafronding',
+                              S.of(context).hoekafronding,
                               style: GoogleFonts.sora(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -504,7 +505,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
 
                             // Toggles
                             Text(
-                              'Zichtbaarheid elementen',
+                              S.of(context).zichtbaarheidElementen,
                               style: GoogleFonts.sora(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -514,7 +515,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                             const SizedBox(height: 12),
                             CheckboxListTile(
                               title: Text(
-                                'Toon prijs',
+                                S.of(context).toonPrijs,
                                 style: GoogleFonts.sora(fontSize: 13),
                               ),
                               value: _showPrice,
@@ -529,7 +530,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                             ),
                             CheckboxListTile(
                               title: Text(
-                                'Toon reviews',
+                                S.of(context).toonReviews,
                                 style: GoogleFonts.sora(fontSize: 13),
                               ),
                               value: _showReviews,
@@ -544,7 +545,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                             ),
                             CheckboxListTile(
                               title: Text(
-                                'Toon beschikbaarheid',
+                                S.of(context).toonBeschikbaarheid,
                                 style: GoogleFonts.sora(fontSize: 13),
                               ),
                               value: _showAvailability,
@@ -563,7 +564,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                               child: ElevatedButton.icon(
                                 onPressed: _saveWidgetSettings,
                                 icon: const Icon(Icons.save_rounded, size: 18),
-                                label: Text('Instellingen opslaan',
+                                label: Text(S.of(context).instellingenOpslaan,
                                     style: GoogleFonts.sora()),
                               ),
                             ),
@@ -581,13 +582,13 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                             width: 28,
                             height: 28,
                             decoration: BoxDecoration(
-                              color: GymiesColors.primary.withValues(alpha: 0.12),
+                              color: GymiesColors.primary.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(7),
                             ),
                             child: Icon(Icons.preview_outlined, size: 14, color: GymiesColors.darkBlue),
                           ),
                           const SizedBox(width: 8),
-                          Text('Voorbeeld', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
+                          Text(S.of(context).voorbeeld, style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
                         ],
                       ),
                     ),
@@ -598,7 +599,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 10,
                             offset: const Offset(0, 2),
                           ),
@@ -608,7 +609,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Text(
-                            'Widget preview',
+                            S.of(context).widgetPreview,
                             style: GoogleFonts.sora(
                               fontSize: 13,
                               color: Colors.grey.shade600,
@@ -659,13 +660,13 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                             width: 28,
                             height: 28,
                             decoration: BoxDecoration(
-                              color: GymiesColors.primary.withValues(alpha: 0.12),
+                              color: GymiesColors.primary.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(7),
                             ),
                             child: Icon(Icons.qr_code_rounded, size: 14, color: GymiesColors.darkBlue),
                           ),
                           const SizedBox(width: 8),
-                          Text('QR Code', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
+                          Text(S.of(context).qrCode, style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
                         ],
                       ),
                     ),
@@ -676,7 +677,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 10,
                             offset: const Offset(0, 2),
                           ),
@@ -685,8 +686,8 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                       child: Column(
                         children: [
                           Text(
-                            'Deel deze QR-code op flyers, visitekaartjes '
-                            'of in je sportschool.',
+                            S.of(context).deelDezeQrcodeOpFlyersVisitekaartjes
+                            S.of(context).ofInJeSportschool,
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.grey.shade600,
@@ -702,7 +703,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                                   borderRadius: BorderRadius.circular(16),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.08),
+                                      color: Colors.black.withOpacity(0.08),
                                       blurRadius: 12,
                                       offset: const Offset(0, 4),
                                     ),
@@ -733,7 +734,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                                 ),
                                 child: Center(
                                   child: Text(
-                                    'QR code niet beschikbaar',
+                                    S.of(context).qrCodeNietBeschikbaar,
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                       color: Colors.grey.shade500,
@@ -758,10 +759,10 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                                 width: double.infinity,
                                 child: OutlinedButton.icon(
                                   onPressed: () => _copyToClipboard(
-                                      _profileUrl, 'Profiel URL'),
+                                      _profileUrl, S.of(context).profielUrl),
                                   icon: const Icon(Icons.copy_rounded,
                                       size: 18),
-                                  label: const Text('Kopieer profiel URL'),
+                                  label: const Text(S.of(context).kopieerProfielUrl),
                                 ),
                               ),
                             ],
@@ -779,13 +780,13 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                             width: 28,
                             height: 28,
                             decoration: BoxDecoration(
-                              color: GymiesColors.primary.withValues(alpha: 0.12),
+                              color: GymiesColors.primary.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(7),
                             ),
                             child: Icon(Icons.analytics_outlined, size: 14, color: GymiesColors.darkBlue),
                           ),
                           const SizedBox(width: 8),
-                          Text('Widget statistieken', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
+                          Text(S.of(context).widgetStatistieken, style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
                         ],
                       ),
                     ),
@@ -796,7 +797,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 10,
                             offset: const Offset(0, 2),
                           ),
@@ -811,7 +812,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                             icon: Icons.visibility_outlined,
                           ),
                           _buildStatCard(
-                            label: 'Boekingen via widget',
+                            label: S.of(context).boekingenViaWidget,
                             value: _totalBookings.toString(),
                             icon: Icons.calendar_today_outlined,
                           ),
@@ -834,13 +835,13 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                             width: 28,
                             height: 28,
                             decoration: BoxDecoration(
-                              color: GymiesColors.primary.withValues(alpha: 0.12),
+                              color: GymiesColors.primary.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(7),
                             ),
                             child: Icon(Icons.share_outlined, size: 14, color: GymiesColors.darkBlue),
                           ),
                           const SizedBox(width: 8),
-                          Text('Delen', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
+                          Text(S.of(context).delen, style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
                         ],
                       ),
                     ),
@@ -851,7 +852,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 10,
                             offset: const Offset(0, 2),
                           ),
@@ -868,7 +869,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                                 ),
                                 icon:
                                     const Icon(Icons.copy_rounded, size: 18),
-                                label: Text('Kopieer link',
+                                label: Text(S.of(context).kopieerLink,
                                     style: GoogleFonts.sora()),
                               ),
                             ),
@@ -877,11 +878,11 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                               child: OutlinedButton.icon(
                                 onPressed: () => _copyToClipboard(
                                   _embedCode,
-                                  'Embed code',
+                                  S.of(context).embedCode,
                                 ),
                                 icon:
                                     const Icon(Icons.copy_rounded, size: 18),
-                                label: Text('Kopieer embed',
+                                label: Text(S.of(context).kopieerEmbed,
                                     style: GoogleFonts.sora()),
                               ),
                             ),
@@ -896,7 +897,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                                             .showSnackBar(
                                           const SnackBar(
                                             content: Text(
-                                              'QR-code download komende versie',
+                                              S.of(context).qrcodeDownloadKomendeVersie,
                                             ),
                                             duration:
                                                 Duration(seconds: 2),
@@ -906,7 +907,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
                                     : null,
                                 icon: const Icon(Icons.download_rounded,
                                     size: 18),
-                                label: Text('Download QR',
+                                label: Text(S.of(context).downloadQr,
                                     style: GoogleFonts.sora()),
                               ),
                             ),
@@ -933,7 +934,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.1) : Colors.transparent,
+          color: isSelected ? color.withOpacity(0.1) : Colors.transparent,
           border: Border.all(
             color: isSelected ? color : Colors.grey.shade300,
             width: isSelected ? 2 : 1,
@@ -977,7 +978,7 @@ class _TrainerWidgetQrScreenState extends State<TrainerWidgetQrScreen> {
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: GymiesColors.primary.withValues(alpha: 0.12),
+            color: GymiesColors.primary.withOpacity(0.12),
             borderRadius: BorderRadius.circular(7),
           ),
           child: Icon(icon, size: 14, color: GymiesColors.darkBlue),

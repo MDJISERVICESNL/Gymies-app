@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
@@ -54,26 +55,27 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
 
   Future<void> _load() async {
     Haptics.selection();
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final data = await context.read<GymiesApi>().getTrainerDocuments();
+      final data = await api.getTrainerDocuments();
       if (!mounted) return;
       setState(() {
         _companyCtrl.text = mapStr(data, ['company_name', 'companyName']);
         _kvkCtrl.text = mapStr(data, ['kvk_number', 'kvk']);
         _vatCtrl.text = mapStr(data, ['vat_number', 'vat']);
         _addressCtrl.text = mapStr(data, [
-          'trainer_address_line1',
+          S.of(context).traineraddressline1,
           'address_line1',
           'address',
         ]);
-        _postcodeCtrl.text = mapStr(data, ['trainer_postcode', 'postcode']);
-        _cityCtrl.text = mapStr(data, ['trainer_city', 'city']);
+        _postcodeCtrl.text = mapStr(data, [S.of(context).trainerpostcode, 'postcode']);
+        _cityCtrl.text = mapStr(data, [S.of(context).trainercity, 'city']);
         _countryCtrl.text = mapStr(data, [
-          'trainer_country',
+          S.of(context).trainercountry,
           'country',
           'country_code',
         ]);
@@ -96,7 +98,7 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon documenten niet laden.';
+        _error = S.of(context).konDocumentenNietLaden;
         _loading = false;
       });
     }
@@ -106,26 +108,28 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
     Haptics.light();
     if (_saving) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    final api = context.read<GymiesApi>();
     setState(() => _saving = true);
     final diplomaLines = _diplomasCtrl.text
         .split('\n')
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .toList();
-    final api = context.read<GymiesApi>();
     try {
       await api.updateTrainerDocuments({
         'company_name': _companyCtrl.text.trim(),
         'kvk_number': _kvkCtrl.text.trim(),
         'vat_number': _vatCtrl.text.trim(),
-        'trainer_address_line1': _addressCtrl.text.trim(),
-        'trainer_postcode': _postcodeCtrl.text.trim(),
-        'trainer_city': _cityCtrl.text.trim(),
-        'trainer_country': _countryCtrl.text.trim(),
+        S.of(context).traineraddressline1: _addressCtrl.text.trim(),
+        S.of(context).trainerpostcode: _postcodeCtrl.text.trim(),
+        S.of(context).trainercity: _cityCtrl.text.trim(),
+        S.of(context).trainercountry: _countryCtrl.text.trim(),
         'vog_url': _vogCtrl.text.trim(),
         'diploma_urls': diplomaLines,
       });
+      if (!mounted) return;
       final refreshed = await api.getTrainerDocuments();
+      if (!mounted) return;
       bool hasAny(List<String> keys) {
         for (final key in keys) {
           final value = refreshed[key];
@@ -137,17 +141,17 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
       final verified =
           hasAny(const ['company_name', 'companyName']) &&
           hasAny(const ['kvk_number', 'kvk']) &&
-          hasAny(const ['trainer_address_line1', 'address_line1', 'address']) &&
-          hasAny(const ['trainer_postcode', 'postcode']) &&
-          hasAny(const ['trainer_city', 'city']) &&
-          hasAny(const ['trainer_country', 'country', 'country_code']);
+          hasAny(const [S.of(context).traineraddressline1, 'address_line1', 'address']) &&
+          hasAny(const [S.of(context).trainerpostcode, 'postcode']) &&
+          hasAny(const [S.of(context).trainercity, 'city']) &&
+          hasAny(const [S.of(context).trainercountry, 'country', 'country_code']);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             verified
-                ? 'Documenten opgeslagen'
-                : 'Opslaan gelukt, maar controleer verplichte velden opnieuw.',
+                ? S.of(context).documentenOpgeslagen
+                : S.of(context).opslaanGeluktMaarControleerVerplichteVelden,
           ),
           backgroundColor: verified ? GymiesColors.darkBlue : Colors.orange,
         ),
@@ -172,7 +176,7 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.12),
+              color: GymiesColors.primary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(7),
             ),
             child: Icon(icon, size: 14, color: GymiesColors.darkBlue),
@@ -212,44 +216,44 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                       ),
                       child: Column(
                           children: [
                             TextFormField(
                               controller: _companyCtrl,
                               decoration: const InputDecoration(
-                                labelText: 'Bedrijfsnaam (voor factuur)',
+                                labelText: S.of(context).bedrijfsnaamvoorFactuur,
                               ),
                               validator: (v) => (v == null || v.trim().isEmpty)
-                                  ? 'Bedrijfsnaam is verplicht'
+                                  ? S.of(context).bedrijfsnaamIsVerplicht
                                   : null,
                             ),
                             const SizedBox(height: 10),
                             TextFormField(
                               controller: _kvkCtrl,
                               decoration: const InputDecoration(
-                                labelText: 'KVK-nummer',
+                                labelText: S.of(context).kvknummer,
                               ),
                               validator: (v) => (v == null || v.trim().isEmpty)
-                                  ? 'KVK is verplicht'
+                                  ? S.of(context).kvkIsVerplicht
                                   : null,
                             ),
                             const SizedBox(height: 10),
                             TextFormField(
                               controller: _vatCtrl,
                               decoration: const InputDecoration(
-                                labelText: 'BTW-nummer',
+                                labelText: S.of(context).btwnummer,
                               ),
                             ),
                             const SizedBox(height: 10),
                             TextFormField(
                               controller: _addressCtrl,
                               decoration: const InputDecoration(
-                                labelText: 'Adresregel 1',
+                                labelText: S.of(context).adresregel1,
                               ),
                               validator: (v) => (v == null || v.trim().isEmpty)
-                                  ? 'Adres is verplicht'
+                                  ? S.of(context).adresIsVerplicht
                                   : null,
                             ),
                             const SizedBox(height: 10),
@@ -259,11 +263,11 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
                                   child: TextFormField(
                                     controller: _postcodeCtrl,
                                     decoration: const InputDecoration(
-                                      labelText: 'Postcode',
+                                      labelText: S.of(context).postcode,
                                     ),
                                     validator: (v) =>
                                         (v == null || v.trim().isEmpty)
-                                        ? 'Postcode is verplicht'
+                                        ? S.of(context).postcodeIsVerplicht
                                         : null,
                                   ),
                                 ),
@@ -272,11 +276,11 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
                                   child: TextFormField(
                                     controller: _cityCtrl,
                                     decoration: const InputDecoration(
-                                      labelText: 'Stad',
+                                      labelText: S.of(context).stad,
                                     ),
                                     validator: (v) =>
                                         (v == null || v.trim().isEmpty)
-                                        ? 'Stad is verplicht'
+                                        ? S.of(context).stadIsVerplicht
                                         : null,
                                   ),
                                 ),
@@ -286,10 +290,10 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
                             TextFormField(
                               controller: _countryCtrl,
                               decoration: const InputDecoration(
-                                labelText: 'Land',
+                                labelText: S.of(context).land,
                               ),
                               validator: (v) => (v == null || v.trim().isEmpty)
-                                  ? 'Land is verplicht'
+                                  ? S.of(context).landIsVerplicht
                                   : null,
                             ),
                           ],
@@ -302,7 +306,7 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                       ),
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -311,8 +315,8 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
                             TextFormField(
                               controller: _vogCtrl,
                               decoration: const InputDecoration(
-                                labelText: 'VOG link (optioneel)',
-                                hintText: 'https://...',
+                                labelText: S.of(context).vogLinkoptioneel,
+                                hintText: S.of(context).https,
                               ),
                             ),
                             const SizedBox(height: 10),
@@ -321,8 +325,8 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
                               minLines: 2,
                               maxLines: 5,
                               decoration: const InputDecoration(
-                                labelText: 'Diploma links (optioneel)',
-                                hintText: '1 link per regel',
+                                labelText: S.of(context).diplomaLinksoptioneel,
+                                hintText: S.of(context).1LinkPerRegel,
                               ),
                             ),
                           ],
@@ -337,7 +341,7 @@ class _TrainerDocumentsScreenState extends State<TrainerDocumentsScreen> {
                           backgroundColor: GymiesColors.primary,
                           foregroundColor: GymiesColors.darkBlue,
                         ),
-                        child: Text(_saving ? 'Bezig...' : 'Opslaan'),
+                        child: Text(_saving ? S.of(context).bezig2 : S.of(context).opslaan),
                       ),
                     ),
                   ],

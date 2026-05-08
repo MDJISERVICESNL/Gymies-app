@@ -200,6 +200,39 @@ trait MollieConnectOAuthTrait
         }
 
         // Redirect naar app via deep link – WebView onderschept dit en sluit.
+        // Also save to gym organisation if user is an owner
+        if (Schema::hasTable('gymies_organisations') && Schema::hasTable('gymies_organisation_members')) {
+            $orgMembership = DB::table('gymies_organisation_members')
+                ->where('user_id', $userId)
+                ->where('role', 'owner')
+                ->where('status', 'active')
+                ->first(['organisation_id']);
+            
+            if ($orgMembership) {
+                $orgColumns = Schema::getColumnListing('gymies_organisations');
+                $orgUpdate = ['updated_at' => now()];
+                if (in_array('mollie_access_token', $orgColumns)) {
+                    $orgUpdate['mollie_access_token'] = encrypt($accessToken);
+                }
+                if (in_array('mollie_refresh_token', $orgColumns)) {
+                    $refreshToken = $data['refresh_token'] ?? null;
+                    $orgUpdate['mollie_refresh_token'] = $refreshToken ? encrypt($refreshToken) : null;
+                }
+                if (in_array('mollie_organization_id', $orgColumns)) {
+                    $orgUpdate['mollie_organization_id'] = $orgId;
+                }
+                if (in_array('mollie_token_expires_at', $orgColumns)) {
+                    $expiresIn = (int) ($data['expires_in'] ?? 3600);
+                    $orgUpdate['mollie_token_expires_at'] = now()->addSeconds($expiresIn);
+                }
+                if (count($orgUpdate) > 1) {
+                    DB::table('gymies_organisations')
+                        ->where('id', (int) $orgMembership->organisation_id)
+                        ->update($orgUpdate);
+                }
+            }
+        }
+
         return redirect()->away('gymies://mollie-connect/success');
     }
 }

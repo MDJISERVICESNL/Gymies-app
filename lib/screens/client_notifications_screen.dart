@@ -1,9 +1,10 @@
-import 'dart:async';
+
+
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../utils/haptics.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
@@ -12,13 +13,12 @@ import '../theme/gymies_theme.dart';
 import '../utils/map_utils.dart';
 import '../utils/notification_display_helper.dart';
 import '../utils/url_launcher_utils.dart';
+import 'dart:async';
 import 'client_invoices_screen.dart';
 import 'client_messages_screen.dart' show ClientMessagesScreen, ClientChatScreen;
 import 'client_sessions_screen.dart';
-import 'widgets/gymies_app_bar.dart';
 import 'widgets/trainer_state_views.dart';
 import 'widgets/gymies_dialog.dart';
-
 class ClientNotificationsScreen extends StatefulWidget {
   const ClientNotificationsScreen({super.key});
 
@@ -96,7 +96,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon meldingen niet laden.';
+        _error = S.of(context).konMeldingenNietLaden;
         _loading = false;
       });
     }
@@ -135,16 +135,16 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
       return (icon: Icons.event_busy_rounded, color: const Color(0xFFD32F2F), bgColor: const Color(0xFFFCEBEB), label: 'Annulering');
     }
     if (fullText.contains('bevestig') || fullText.contains('confirmed') || fullText.contains('goedgekeurd')) {
-      return (icon: Icons.check_circle_outlined, color: const Color(0xFF2E7D32), bgColor: const Color(0xFFE8F5E9), label: 'Bevestigd');
+      return (icon: Icons.check_circle_outlined, color: const Color(0xFF2E7D32), bgColor: const Color(0xFFE8F5E9), label: S.of(context).bevestigd);
     }
     if (fullText.contains('message') || fullText.contains('chat') || fullText.contains('bericht')) {
-      return (icon: Icons.chat_bubble_outline_rounded, color: const Color(0xFF1565C0), bgColor: const Color(0xFFE3F2FD), label: 'Bericht');
+      return (icon: Icons.chat_bubble_outline_rounded, color: const Color(0xFF1565C0), bgColor: const Color(0xFFE3F2FD), label: S.of(context).bericht);
     }
-    if (fullText.contains('booking') || fullText.contains('session') || fullText.contains('sessie') || fullText.contains('boeking')) {
-      return (icon: Icons.calendar_today_rounded, color: GymiesColors.darkBlue, bgColor: const Color(0xFFFFF3D6), label: 'Boeking');
+    if (fullText.contains('booking') || fullText.contains('session') || fullText.contains(S.of(context).sessie3) || fullText.contains(S.of(context).boeking)) {
+      return (icon: Icons.calendar_today_rounded, color: GymiesColors.darkBlue, bgColor: const Color(0xFFFFF3D6), label: S.of(context).booking);
     }
-    if (fullText.contains('invoice') || fullText.contains('payment') || fullText.contains('factuur') || fullText.contains('betaling')) {
-      return (icon: Icons.receipt_long_rounded, color: const Color(0xFF6A1B9A), bgColor: const Color(0xFFF3E5F5), label: 'Betaling');
+    if (fullText.contains('invoice') || fullText.contains('payment') || fullText.contains(S.of(context).factuur) || fullText.contains(S.of(context).betaling)) {
+      return (icon: Icons.receipt_long_rounded, color: const Color(0xFF6A1B9A), bgColor: const Color(0xFFF3E5F5), label: S.of(context).typeBetaling);
     }
     if (fullText.contains('waitlist') || fullText.contains('standby') || fullText.contains('wachtlijst')) {
       return (icon: Icons.event_available_rounded, color: const Color(0xFF00695C), bgColor: const Color(0xFFE0F2F1), label: 'Wachtlijst');
@@ -168,7 +168,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
       return (icon: Icons.support_agent_rounded, color: const Color(0xFF37474F), bgColor: const Color(0xFFECEFF1), label: 'Support');
     }
     if (fullText.contains('promo') || fullText.contains('aanbieding') || fullText.contains('korting')) {
-      return (icon: Icons.local_offer_rounded, color: const Color(0xFFC62828), bgColor: const Color(0xFFFCE4EC), label: 'Actie');
+      return (icon: Icons.local_offer_rounded, color: const Color(0xFFC62828), bgColor: const Color(0xFFFCE4EC), label: S.of(context).actie);
     }
 
     return (icon: Icons.notifications_outlined, color: GymiesColors.darkBlue, bgColor: const Color(0xFFE8EAF0), label: 'Systeem');
@@ -185,7 +185,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
     final diff = now.difference(dt);
     if (diff.inMinutes < 60) return '${diff.inMinutes} min';
     if (diff.inHours < 24) return '${diff.inHours} uur';
-    if (diff.inDays == 1) return 'Gisteren';
+    if (diff.inDays == 1) return S.of(context).gisteren;
     if (diff.inDays < 7) return '${diff.inDays} dagen';
     if (dt.year == now.year) return '${dt.day} ${months[dt.month - 1]}';
     return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
@@ -201,10 +201,10 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
     final today = DateTime(now.year, now.month, now.day);
     final notifDay = DateTime(dt.year, dt.month, dt.day);
     final diff = today.difference(notifDay).inDays;
-    if (diff == 0) return 'Vandaag';
-    if (diff == 1) return 'Gisteren';
-    if (diff <= 7) return 'Deze week';
-    if (diff <= 14) return 'Vorige week';
+    if (diff == 0) return S.of(context).vandaag;
+    if (diff == 1) return S.of(context).gisteren;
+    if (diff <= 7) return S.of(context).dezeWeek;
+    if (diff <= 14) return S.of(context).vorigeWeek;
     return 'Eerder';
   }
 
@@ -217,8 +217,8 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
 
   String _labelFromKey(String key) {
     final normalized = key.toLowerCase();
-    if (normalized == 'reminder_t24h_push') return 'Reminder 24 uur vooraf';
-    if (normalized == 'reminder_t2h_push') return 'Reminder 2 uur vooraf';
+    if (normalized == 'reminder_t24h_push') return S.of(context).reminder24UurVooraf;
+    if (normalized == 'reminder_t2h_push') return S.of(context).reminder2UurVooraf;
     if (normalized == 'reminder_check_in_window_push') {
       return 'Reminder check-in venster open';
     }
@@ -267,7 +267,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
         }
         _filter = 'all';
       });
-      _showSuccess('Meldingen gemarkeerd als gelezen');
+      _showSuccess(S.of(context).meldingenGemarkeerdAlsGelezen);
     } on ApiException catch (e) {
       _showError(e.message);
     } finally {
@@ -345,12 +345,12 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
   String _trainerUserIdFromNotification(Map<String, dynamic> item) {
     final data = _map(item, ['data', 'meta', 'payload']) ?? <String, dynamic>{};
     return mapStr(item, [
-          'trainer_user_id',
-          'trainerUserId',
-          'trainer_id',
+          S.of(context).traineruserid,
+          S.of(context).traineruserid2,
+          S.of(context).trainerid,
         ]).isNotEmpty
-        ? mapStr(item, ['trainer_user_id', 'trainerUserId', 'trainer_id'])
-        : mapStr(data, ['trainer_user_id', 'trainerUserId', 'trainer_id']);
+        ? mapStr(item, [S.of(context).traineruserid, S.of(context).traineruserid2, S.of(context).trainerid])
+        : mapStr(data, [S.of(context).traineruserid, S.of(context).traineruserid2, S.of(context).trainerid]);
   }
 
   DateTime? _standbyScheduledAtFromNotification(Map<String, dynamic> item) {
@@ -442,7 +442,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
       return;
     }
     if (expiresAt != null && DateTime.now().isAfter(expiresAt)) {
-      _showError('Deze standby-aanbieding is verlopen.');
+      _showError(S.of(context).dezeStandbyaanbiedingIsVerlopen);
       return;
     }
     String timerLabel() {
@@ -471,14 +471,14 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
           });
           final expired = expiresAt != null && countdown == '00:00';
           return GymiesDialog(
-            title: 'Standby plek beschikbaar',
+            title: S.of(context).standbyPlekBeschikbaar,
             headerIcon: Icons.event_available_rounded,
             content: Text(
               'Er is een plek vrijgekomen op ${slot.day.toString().padLeft(2, '0')}-${slot.month.toString().padLeft(2, '0')} om ${slot.hour.toString().padLeft(2, '0')}:${slot.minute.toString().padLeft(2, '0')}.\n\nNu 1-tap boeken?${expiresAt == null ? '' : '\n\nVerloopt over: $countdown'}',
             ),
             actions: [
               GymiesDialogAction(
-                label: 'Later',
+                label: S.of(context).laterLabel,
                 returnValue: false,
               ),
               GymiesDialogAction(
@@ -505,14 +505,14 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
         );
       }
       if (!mounted) return;
-      _showSuccess('Standby sessie geboekt');
+      _showSuccess(S.of(context).standbySessieGeboekt);
       await Navigator.of(
         context,
       ).push(MaterialPageRoute(builder: (_) => const ClientSessionsScreen()));
     } on ApiException catch (e) {
       _showError(e.message);
     } catch (_) {
-      _showError('Boeken via standby mislukt.');
+      _showError(S.of(context).boekenViaStandbyMislukt);
     }
   }
 
@@ -523,8 +523,8 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
     final invoiceId = _invoiceIdFromNotification(item);
     final url = _actionUrl(item);
     final title =
-        mapStr(item, ['trainer_name', 'trainerName', 'title']).isNotEmpty
-        ? mapStr(item, ['trainer_name', 'trainerName', 'title'])
+        mapStr(item, [S.of(context).trainername, S.of(context).trainername2, 'title']).isNotEmpty
+        ? mapStr(item, [S.of(context).trainername, S.of(context).trainername2, 'title'])
         : 'Chat';
 
     if (conversationId.isNotEmpty) {
@@ -556,8 +556,8 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
     final fullText = '$type ${mapStr(item, ['title', 'subject'])} ${mapStr(item, ['body', 'message', 'text'])} ${mapStr(data, ['title', 'subject'])} ${mapStr(data, ['body', 'message', 'text'])}'.toLowerCase();
 
     if (bookingId.isNotEmpty ||
-        fullText.contains('booking') || fullText.contains('boeking') ||
-        fullText.contains('session') || fullText.contains('sessie') ||
+        fullText.contains('booking') || fullText.contains(S.of(context).boeking) ||
+        fullText.contains('session') || fullText.contains(S.of(context).sessie3) ||
         fullText.contains('annulering') || fullText.contains('bevestig') ||
         fullText.contains('herinnering') || fullText.contains('reminder') ||
         fullText.contains('check-in') || fullText.contains('checkin')) {
@@ -569,8 +569,8 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
     }
 
     if (invoiceId.isNotEmpty ||
-        fullText.contains('invoice') || fullText.contains('factuur') ||
-        fullText.contains('payment') || fullText.contains('betaling')) {
+        fullText.contains('invoice') || fullText.contains(S.of(context).factuur) ||
+        fullText.contains('payment') || fullText.contains(S.of(context).betaling)) {
       if (!mounted) return;
       await Navigator.of(
         context,
@@ -582,12 +582,12 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
       if (await _openByActionUrl(url)) return;
       final uri = Uri.tryParse(url);
       if (uri == null) {
-        _showError('Link in melding is ongeldig.');
+        _showError(S.of(context).linkInMeldingIsOngeldig);
         return;
       }
       // Valideer domein en schema vóór openen (voorkomt open-redirect via server-gecontroleerde URLs).
       final opened = await safeLaunchUrl(url);
-      if (!opened) _showError('Meldingslink kan niet worden geopend (onbekend domein of ongeldige URL).');
+      if (!opened) _showError(S.of(context).meldingslinkKanNietWordenGeopendOnbekend);
       return;
     }
 
@@ -638,8 +638,9 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                         onPressed: () => Navigator.of(ctx).pop(),
                         icon: const Icon(Icons.close_rounded),
                         iconSize: 20,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(8),
+                        constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+                        tooltip: 'Sluiten',
                       ),
                     ],
                   ),
@@ -688,7 +689,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                           await _openNotificationTarget(item);
                         },
                         icon: const Icon(Icons.open_in_new_rounded),
-                        label: const Text('Open gerelateerde pagina'),
+                        label: const Text(S.of(context).openGerelateerdePagina),
                         style: FilledButton.styleFrom(
                           backgroundColor: GymiesColors.darkBlue,
                           foregroundColor: GymiesColors.primary,
@@ -741,7 +742,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
           ..sort();
     if (boolKeys.isEmpty) {
       _showError(
-        'Geen wijzigbare voorkeurvelden gevonden in notifications/preferences.',
+        S.of(context).geenWijzigbareVoorkeurveldenGevondenInNotificationspreferences,
       );
       return;
     }
@@ -771,7 +772,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Melding voorkeuren',
+                        S.of(context).meldingVoorkeuren,
                         style: GoogleFonts.sora(fontSize: 20, fontWeight: FontWeight.bold, color: GymiesColors.darkBlue),
                       ),
                     ),
@@ -779,8 +780,9 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                       onPressed: () => Navigator.of(ctx).pop(),
                       icon: const Icon(Icons.close_rounded),
                       iconSize: 20,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+                      tooltip: 'Sluiten',
                     ),
                   ],
                 ),
@@ -801,8 +803,8 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                             border: Border.all(color: Colors.blue.shade100),
                           ),
                           child: Text(
-                            'Slimme reminders: T-24u, T-2u, check-in venster open en gemiste check-in.',
-                            style: GoogleFonts.sora(color: Colors.blue.shade900, fontSize: 13),
+                            S.of(context).slimmeRemindersT24uT2uCheckinVensterOpenEnGemisteCheckin,
+                            style: GoogleFonts.sora(color: Colors.blue.shade700, fontSize: 13, fontWeight: FontWeight.w500),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -845,7 +847,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                               });
                               if (!mounted) return;
                               navigator.pop();
-                              _showSuccess('Voorkeuren opgeslagen');
+                              _showSuccess(S.of(context).voorkeurenOpgeslagen);
                             } on ApiException catch (e) {
                               _showError(e.message);
                             } finally {
@@ -858,7 +860,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                       backgroundColor: GymiesColors.primary,
                       foregroundColor: GymiesColors.darkBlue,
                     ),
-                    child: const Text('Opslaan'),
+                    child: const Text(S.of(context).opslaan),
                   ),
                 ),
               ],
@@ -933,7 +935,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
+                      color: Colors.black.withOpacity(0.04),
                       blurRadius: 10,
                       offset: const Offset(0, 2),
                     ),
@@ -980,7 +982,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                                               fontWeight: unread ? FontWeight.w700 : FontWeight.w600,
                                               color: GymiesColors.darkBlue,
                                             ),
-                                            maxLines: 1,
+                                            maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
@@ -994,11 +996,15 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                                               shape: BoxShape.circle,
                                             ),
                                           ),
-                                        Text(
-                                          shortDate,
-                                          style: GoogleFonts.sora(
-                                            fontSize: 11,
-                                            color: Colors.grey.shade500,
+                                        Flexible(
+                                          child: Text(
+                                            shortDate,
+                                            style: GoogleFonts.sora(
+                                              fontSize: 11,
+                                              color: Colors.grey.shade500,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                       ],
@@ -1039,7 +1045,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                                           Icon(
                                             Icons.arrow_forward_ios_rounded,
                                             size: 12,
-                                            color: GymiesColors.darkBlue.withValues(alpha: 0.35),
+                                            color: GymiesColors.darkBlue.withOpacity(0.35),
                                           ),
                                         ],
                                       ],
@@ -1085,10 +1091,10 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                 Navigator.of(context).pop();
               },
             ),
-            title: Text('Meldingen', style: GoogleFonts.sora(fontSize: 20, fontWeight: FontWeight.w700)),
+            title: Text(S.of(context).meldingen, style: GoogleFonts.sora(fontSize: 20, fontWeight: FontWeight.w700)),
             actions: [
               IconButton(
-                tooltip: 'Voorkeuren',
+                tooltip: S.of(context).meldingVoorkeuren,
                 onPressed: _savingPreferences ? null : () {
                   Haptics.selection();
                   _openPreferencesSheet();
@@ -1101,11 +1107,11 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                   _markAllRead();
                 },
                 child: Text(
-                  unreadCount > 0 ? 'Alles gelezen' : 'Gelezen',
+                  unreadCount > 0 ? 'Alles gelezen' : S.of(context).readLabel,
                   style: GoogleFonts.sora(
                     color: unreadCount > 0
                         ? GymiesColors.primary
-                        : Colors.white.withValues(alpha: 0.35),
+                        : Colors.white.withOpacity(0.35),
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1117,7 +1123,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
               child: Container(
                 margin: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: Colors.white.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
@@ -1138,8 +1144,8 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
               ? ListView(
                   children: const [
                     _EmptyView(
-                      title: 'Geen meldingen',
-                      subtitle: 'Nieuwe updates verschijnen hier.',
+                      title: S.of(context).noNotifications,
+                      subtitle: S.of(context).nieuweUpdatesVerschijnenHier,
                     ),
                   ],
                 )
@@ -1147,8 +1153,8 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
                   ? ListView(
                       children: const [
                         _EmptyView(
-                          title: 'Geen ongelezen meldingen',
-                          subtitle: 'Alle meldingen zijn gelezen.',
+                          title: S.of(context).geenOngelezenMeldingen,
+                          subtitle: S.of(context).alleMeldingenZijnGelezen,
                         ),
                       ],
                     )
@@ -1181,7 +1187,7 @@ class _ClientNotificationsScreenState extends State<ClientNotificationsScreen> {
             style: GoogleFonts.sora(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: isActive ? GymiesColors.darkBlue : Colors.white.withValues(alpha: 0.6),
+              color: isActive ? GymiesColors.darkBlue : Colors.white.withOpacity(0.6),
             ),
           ),
         ),
@@ -1201,38 +1207,45 @@ class _EmptyView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          const SizedBox(height: 72),
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(16),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: GymiesColors.primary.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(
+                Icons.notifications_none_rounded,
+                size: 32,
+                color: GymiesColors.primary,
+              ),
             ),
-            child: const Icon(
-              Icons.notifications_none_rounded,
-              size: 32,
-              color: GymiesColors.primary,
+            const SizedBox(height: 16),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.sora(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: GymiesColors.darkBlue,
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.sora(
-              fontSize: 20,
-              color: GymiesColors.darkBlue,
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.sora(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+                height: 1.5,
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.sora(color: Colors.grey.shade600),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

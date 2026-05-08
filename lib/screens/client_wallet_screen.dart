@@ -1,13 +1,14 @@
+
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
 import 'widgets/trainer_state_views.dart';
-
 /// Wallet/Tegoed scherm: puntenbalans, geschiedenis, inwisselen.
 class ClientWalletScreen extends StatefulWidget {
   const ClientWalletScreen({super.key});
@@ -34,12 +35,12 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
 
   Future<void> _load() async {
     if (!mounted) return;
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
       final data = await api.getPointsBalance();
       if (!mounted) return;
       setState(() {
@@ -61,7 +62,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon tegoed niet laden.';
+        _error = S.of(context).konTegoedNietLaden;
         _loading = false;
       });
     }
@@ -74,13 +75,14 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
       final api = context.read<GymiesApi>();
       final data = await api.getPointsHistory(page: page);
       if (!mounted) return;
-      final items = data['data'] as List<Map<String, dynamic>>? ?? [];
+      final items = data['data'] as List? ?? [];
       final pag = data['pagination'] as Map<String, dynamic>? ?? {};
+      if (!mounted) return;
       setState(() {
         if (page == 1) {
-          _history = items;
+          _history = items.cast<Map<String, dynamic>>();
         } else {
-          _history.addAll(items);
+          _history.addAll(items.cast<Map<String, dynamic>>());
         }
         _historyPage = page;
         _totalPages = (pag['total_pages'] ?? 1) as int;
@@ -107,7 +109,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Punten ingewisseld!', style: GoogleFonts.sora()),
+            content: Text(S.of(context).puntenIngewisseld, style: GoogleFonts.sora()),
             backgroundColor: Colors.green.shade600,
           ),
         );
@@ -151,7 +153,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Mijn Tegoed',
+                        S.of(context).mijnTegoed,
                         style: GoogleFonts.sora(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -194,7 +196,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                                 width: 48,
                                 height: 48,
                                 decoration: BoxDecoration(
-                                  color: GymiesColors.primary.withValues(alpha: 0.2),
+                                  color: GymiesColors.primary.withOpacity(0.2),
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                                 child: const Icon(Icons.account_balance_wallet_rounded,
@@ -205,10 +207,10 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Huidig saldo',
+                                    S.of(context).huidigSaldo,
                                     style: GoogleFonts.sora(
                                       fontSize: 13,
-                                      color: Colors.white.withValues(alpha: 0.6),
+                                      color: Colors.white.withOpacity(0.6),
                                     ),
                                   ),
                                   Text(
@@ -233,9 +235,9 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                                 backgroundColor: GymiesColors.primary,
                                 foregroundColor: GymiesColors.darkBlue,
                                 disabledBackgroundColor:
-                                    Colors.white.withValues(alpha: 0.1),
+                                    Colors.white.withOpacity(0.1),
                                 disabledForegroundColor:
-                                    Colors.white.withValues(alpha: 0.3),
+                                    Colors.white.withOpacity(0.3),
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
@@ -245,7 +247,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              child: const Text('Punten inwisselen'),
+                              child: const Text(S.of(context).puntenInwisselen),
                             ),
                           ),
                         ],
@@ -256,7 +258,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
 
                   // ── Hoe punten verdienen ──
                   Text(
-                    'HOE VERDIEN JE PUNTEN?',
+                    S.of(context).hoeVerdienJePunten,
                     style: GoogleFonts.sora(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -267,7 +269,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                   const SizedBox(height: 8),
                   _InfoRow(
                       icon: Icons.fitness_center_rounded,
-                      label: 'Sessie voltooid',
+                      label: S.of(context).sessieVoltooid,
                       points: '+10'),
                   _InfoRow(
                       icon: Icons.star_rounded,
@@ -281,7 +283,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
 
                   // ── Geschiedenis ──
                   Text(
-                    'GESCHIEDENIS',
+                    S.of(context).geschiedenis,
                     style: GoogleFonts.sora(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -295,7 +297,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 32),
                       child: Center(
                         child: Text(
-                          'Nog geen transacties',
+                          S.of(context).nogGeenTransacties,
                           style: GoogleFonts.sora(
                               fontSize: 13, color: Colors.grey.shade400),
                         ),
@@ -318,7 +320,7 @@ class _ClientWalletScreenState extends State<ClientWalletScreen> {
                                   onPressed: () =>
                                       _loadHistory(page: _historyPage + 1),
                                   child: Text(
-                                    'Meer laden',
+                                    S.of(context).meerLaden,
                                     style: GoogleFonts.sora(
                                       color: GymiesColors.darkBlue,
                                       fontWeight: FontWeight.w600,
@@ -359,7 +361,7 @@ class _InfoRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
+              color: Colors.black.withOpacity(0.03),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -476,7 +478,7 @@ class _TransactionTile extends StatelessWidget {
     if (desc.isNotEmpty && desc != type) return desc;
     switch (type) {
       case 'session_completed':
-        return 'Sessie voltooid';
+        return S.of(context).sessieVoltooid;
       case 'review_placed':
         return 'Review geplaatst';
       case 'referral_completed':
@@ -535,7 +537,7 @@ class _RedeemSheetState extends State<_RedeemSheet> {
             ),
             const SizedBox(height: 20),
             Text(
-              'Punten inwisselen',
+              S.of(context).puntenInwisselen,
               style: GoogleFonts.sora(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -551,7 +553,7 @@ class _RedeemSheetState extends State<_RedeemSheet> {
 
             // Opties
             _RewardOption(
-              title: 'Sessie tegoed',
+              title: S.of(context).sessieTegoed,
               subtitle: '50 punten → €5 korting',
               cost: 50,
               isSelected: _rewardType == 'session_credit',
@@ -560,8 +562,8 @@ class _RedeemSheetState extends State<_RedeemSheet> {
             ),
             const SizedBox(height: 8),
             _RewardOption(
-              title: 'Gratis sessie',
-              subtitle: '100 punten → 1 gratis sessie',
+              title: S.of(context).gratisSessie,
+              subtitle: S.of(context).n100Punten1GratisSessie,
               cost: 100,
               isSelected: _rewardType == 'free_session',
               canAfford: widget.balance >= 100,
@@ -634,7 +636,7 @@ class _RewardOption extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isSelected
-              ? GymiesColors.darkBlue.withValues(alpha: 0.05)
+              ? GymiesColors.darkBlue.withOpacity(0.05)
               : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(

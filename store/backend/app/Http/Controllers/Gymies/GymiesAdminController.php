@@ -99,7 +99,8 @@ final class GymiesAdminController extends Controller
         $role = trim((string) $request->query('role', ''));
         $status = trim((string) $request->query('status', ''));
         $isAdminFilter = filter_var($request->query('is_admin'), FILTER_VALIDATE_BOOLEAN);
-        $limit = min(max((int) $request->query('limit', 100), 1), 500);
+        $page = max(1, (int) $request->query('page', 1));
+        $perPage = min(200, max(10, (int) $request->query('per_page', 50)));
 
         $hasIsAdmin = Schema::hasColumn('gymies_users', 'is_admin');
         $hasIsSuspended = Schema::hasColumn('gymies_users', 'is_suspended');
@@ -184,11 +185,20 @@ final class GymiesAdminController extends Controller
             }
         }
 
-        $rows = $query->limit($limit)->get();
+        $total = $query->count();
+        $rows = $query->offset(($page - 1) * $perPage)->limit($perPage)->get();
 
-        return response()->json(['data' => $rows]);
+        return response()->json([
+            'data' => $rows,
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+        ]);
     }
 
+    /**
+     * Rate limited via middleware: admin.throttle
+     */
     public function updateUserStatus(Request $request, string $userId): JsonResponse
     {
         $admin = $this->requireAdmin($request, 'admin.users.manage');
@@ -269,6 +279,9 @@ final class GymiesAdminController extends Controller
     /**
      * Shadow login / impersonation: admin krijgt een tijdelijke sessie als de doelgebruiker.
      * Verplichte reden; wordt gelogd in audit.
+     */
+    /**
+     * Rate limited via middleware: admin.throttle
      */
     public function impersonate(Request $request, string $userId): JsonResponse
     {
@@ -511,6 +524,7 @@ final class GymiesAdminController extends Controller
         }
         $data['recent_bookings'] = [];
         if (Schema::hasTable('gymies_bookings')) {
+            // Admin-only endpoint: retrieve recent bookings for a user (limited to 5 results for performance)
             $data['recent_bookings'] = DB::table('gymies_bookings as b')
                 ->leftJoin('gymies_users as c', 'c.id', '=', 'b.client_user_id')
                 ->leftJoin('gymies_users as t', 't.id', '=', 'b.trainer_user_id')
@@ -677,10 +691,10 @@ final class GymiesAdminController extends Controller
             $lines[] = sprintf(
                 "%s;%s;%s;%s;%s",
                 $r->id,
-                str_replace([';', "\r", "\n"], [' ', ' ', ' '], (string) $r->email),
-                str_replace([';', "\r", "\n"], [' ', ' ', ' '], (string) ($r->display_name ?? '')),
-                $r->role ?? '',
-                $r->created_at ?? ''
+                '"' . str_replace(['"', "\n", "\r"], ['""', ' ', ''], (string) $r->email) . '"',
+                '"' . str_replace(['"', "\n", "\r"], ['""', ' ', ''], (string) ($r->display_name ?? '')) . '"',
+                '"' . str_replace(['"', "\n", "\r"], ['""', ' ', ''], (string) ($r->role ?? '')) . '"',
+                '"' . str_replace(['"', "\n", "\r"], ['""', ' ', ''], (string) ($r->created_at ?? '')) . '"'
             );
         }
         return response()->json(['data' => ['csv' => implode("\n", $lines)]]);
@@ -696,12 +710,14 @@ final class GymiesAdminController extends Controller
         $rows = [];
 
         if (Schema::hasTable('gymies_payment_transactions')) {
+            // FIX 2: Add limit to prevent unbounded query
             $rows = DB::table('gymies_payment_transactions')
                 ->orderByDesc('id')
                 ->limit($limit)
                 ->get()
                 ->all();
         } else {
+            // FIX 2: Add limit to prevent unbounded query
             $rows = DB::table('gymies_bookings')
                 ->orderByDesc('id')
                 ->limit($limit)
@@ -742,7 +758,7 @@ final class GymiesAdminController extends Controller
         if (!Schema::hasTable('gymies_promo_codes')) {
             return response()->json(['data' => []]);
         }
-        // B50: Limiet toegevoegd – onbegrensde ->get() kan geheugen uitputten bij veel promo-codes.
+        // FIX 3: B50 already in place - Limiet toegevoegd – onbegrensde ->get() kan geheugen uitputten bij veel promo-codes.
         $promoLimit = min(1000, max(1, (int) ($request->query('limit', 500))));
         $rows = DB::table('gymies_promo_codes')
             ->orderByDesc('id')

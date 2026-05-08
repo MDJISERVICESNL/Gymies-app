@@ -160,7 +160,12 @@ CREATE TABLE IF NOT EXISTS gymies_document_uploads (
         foreach ($columns as $col => $def) {
             if (!Schema::hasColumn('gymies_bookings', $col)) {
                 try {
-                    DB::statement("ALTER TABLE gymies_bookings ADD COLUMN {$col} {$def}");
+                    // Validate column name to prevent SQL injection
+                    if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $col)) {
+                        return false;
+                    }
+                    // Use backticks for identifiers and allow only safe column definitions
+                    DB::statement("ALTER TABLE `gymies_bookings` ADD COLUMN `{$col}` {$def}");
                 } catch (\Throwable) {
                     return false;
                 }
@@ -210,7 +215,12 @@ CREATE TABLE IF NOT EXISTS gymies_sos_alerts (
         ] as $col => $def) {
             if (!Schema::hasColumn('gymies_bookings', $col)) {
                 try {
-                    DB::statement("ALTER TABLE gymies_bookings ADD COLUMN {$col} {$def}");
+                    // Validate column name to prevent SQL injection
+                    if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $col)) {
+                        return false;
+                    }
+                    // Use backticks for identifiers and allow only safe column definitions
+                    DB::statement("ALTER TABLE `gymies_bookings` ADD COLUMN `{$col}` {$def}");
                 } catch (\Throwable) {
                     return false;
                 }
@@ -263,7 +273,12 @@ CREATE TABLE IF NOT EXISTS gymies_client_dossier (
         ] as $col => $def) {
             if (!Schema::hasColumn('gymies_client_dossier', $col)) {
                 try {
-                    DB::statement("ALTER TABLE gymies_client_dossier ADD COLUMN {$col} {$def}");
+                    // Validate column name to prevent SQL injection
+                    if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $col)) {
+                        continue;
+                    }
+                    // Use backticks for identifiers and allow only safe column definitions
+                    DB::statement("ALTER TABLE `gymies_client_dossier` ADD COLUMN `{$col}` {$def}");
                 } catch (\Throwable) {
                 }
             }

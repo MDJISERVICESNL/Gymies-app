@@ -1,13 +1,15 @@
-import 'package:flutter/foundation.dart';
-import 'dart:async';
 
+
+
+import 'package:flutter/foundation.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-
+import 'package:video_player/video_player.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/booking.dart';
 import '../models/trainer.dart';
 import '../services/api_client.dart';
@@ -19,11 +21,12 @@ import '../config/timing_constants.dart';
 import '../utils/haptics.dart';
 import '../utils/map_utils.dart';
 import '../utils/safe_url_launcher.dart';
-import '../utils/trainer_badges.dart';
+import '../utils/currency_format.dart';
+import 'dart:async';
 import 'client_messages_screen.dart';
 import 'client_trainer_reviews_screen.dart';
 import 'widgets/gymies_dialog.dart';
-
+import 'widgets/launch_gate_bottom_sheet.dart';
 class _AvailabilityDayView {
   const _AvailabilityDayView({required this.date, required this.windows});
 
@@ -70,7 +73,7 @@ class _GymiesAvatar extends StatelessWidget {
       fit: BoxFit.cover,
       headers: const {'User-Agent': 'Gymies/1.0'},
       loadingBuilder: (_, child, progress) => progress == null ? child : initialsWidget,
-      errorBuilder: (_, __, ___) => initialsWidget,
+      errorBuilder: (_, _, _) => initialsWidget,
     );
   }
 }
@@ -164,7 +167,7 @@ class ClientTrainerProfileScreen extends StatefulWidget {
              trainer != null ||
                  (trainerSlug != null && trainerSlug.trim().isNotEmpty) ||
                  (trainerId != null && trainerId.trim().isNotEmpty),
-             'trainer, trainerSlug of trainerId vereist');
+             S.of(context).trainerTrainerslugOfTraineridVereist);
 
   final Trainer? trainer;
   final String? trainerSlug;
@@ -260,7 +263,7 @@ class _ClientTrainerProfileScreenState
         if (baseTrainer == null || !mounted) {
           if (mounted) {
             setState(() {
-              _error = 'Trainer niet gevonden';
+              _error = S.of(context).trainerNietGevonden;
               _loading = false;
             });
           }
@@ -282,12 +285,15 @@ class _ClientTrainerProfileScreenState
         // 2: availability
         api.getTrainerPublicAvailability(baseTrainer.userId)
             .catchError((_) => <Map<String, dynamic>>[]),
-        // 3: media
+        // 3: media (gallery + stories gemengd)
         api.getTrainerPublicMedia(baseTrainer.userId)
             .catchError((_) => <String, dynamic>{}),
         // 4: reviews
         api.getTrainerReviews(baseTrainer.userId)
             .catchError((_) => <String, dynamic>{}),
+        // 5: dedicated stories endpoint (fallback)
+        api.getTrainerStories(baseTrainer.userId)
+            .catchError((_) => <Map<String, dynamic>>[]),
       ]);
 
       final detail = results[0] as Trainer?;
@@ -295,6 +301,7 @@ class _ClientTrainerProfileScreenState
       final availability = results[2] as List<Map<String, dynamic>>;
       final mediaRes = results[3] as Map<String, dynamic>;
       final revRes = results[4] as Map<String, dynamic>;
+      final dedicatedStories = results[5] as List<Map<String, dynamic>>;
 
       // Parse media
       List<Map<String, dynamic>> mediaGallery = [];
@@ -318,6 +325,10 @@ class _ClientTrainerProfileScreenState
             mediaGallery.add(m);
           }
         }
+      }
+      // Fallback: als media endpoint geen stories vond, gebruik dedicated stories endpoint
+      if (storyMedia.isEmpty && dedicatedStories.isNotEmpty) {
+        storyMedia = dedicatedStories;
       }
 
       // Parse reviews
@@ -353,10 +364,20 @@ class _ClientTrainerProfileScreenState
       if (!mounted) return;
       setState(() {
         _trainer = baseTrainer;
-        _error = 'Kon trainerprofiel niet laden.';
+        _error = S.of(context).konTrainerprofielNietLaden;
         _loading = false;
       });
     }
+  }
+
+  // ── Media helpers (story viewer support) ──
+  String _mediaUrl(Map<String, dynamic> m) =>
+      (m['url'] ?? m['media_url'] ?? m['file_url'] ?? m['path'] ?? '').toString();
+
+  bool _isVideo(Map<String, dynamic> m) {
+    final type = (m['type'] ?? m['media_type'] ?? m['mime_type'] ?? '').toString().toLowerCase();
+    final url = (_mediaUrl(m)).toLowerCase();
+    return type.contains('video') || url.endsWith('.mp4') || url.endsWith('.mov') || url.endsWith('.webm');
   }
 
   int? _toInt(dynamic value) {
@@ -390,8 +411,7 @@ class _ClientTrainerProfileScreenState
   }
 
   String _formatPrice(int? cents) {
-    if (cents == null) return 'Prijs op aanvraag';
-    return '€${(cents / 100).toStringAsFixed(2)}';
+    return formatEuro(cents);
   }
 
   Map<String, dynamic>? _selectedPackageMap() {
@@ -595,13 +615,37 @@ class _ClientTrainerProfileScreenState
     if (_booking) return;
     final trainer = _trainer;
     if (trainer == null || trainer.userId.isEmpty) {
-      _showError('Trainer-ID ontbreekt.');
+      _showError(S.of(context).traineridOntbreekt2);
       return;
     }
     final slot = _selectedSlot;
     if (slot == null) {
-      _showError('Kies eerst een beschikbaar tijdslot.');
+      _showError(S.of(context).kiesEerstEenBeschikbaarTijdslot);
       return;
+    }
+
+    // ── Launch Gate Check: mag deze klant boeken bij deze trainer? ──
+    try {
+      final api = context.read<GymiesApi>();
+      final gateResult = await api.launchGateCheck(trainer.userId);
+      if (!mounted) return;
+
+      if (gateResult['can_book'] != true) {
+        // Regio is niet open — toon bottom sheet
+        final activated = await LaunchGateBottomSheet.show(
+          context,
+          gateData: gateResult,
+          trainerUserId: trainer.userId,
+        );
+        if (activated == true) {
+          // Code is geactiveerd → herstart booking
+          if (mounted) _bookSession();
+        }
+        return; // Stop hier — niet doorgaan naar betaling
+      }
+    } catch (e) {
+      // Gate check gefaald → fail-open, ga door met boeken
+      if (kDebugMode) debugPrint('[LaunchGate] Check failed (fail-open): $e');
     }
 
     // ── Stap 1: Bereken prijs voor bevestigingsscherm ──
@@ -626,7 +670,7 @@ class _ClientTrainerProfileScreenState
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => GymiesDialog(
-          title: 'Boeking bevestigen',
+          title: S.of(context).boekingBevestigen,
           headerIcon: Icons.event_available_rounded,
           maxContentHeight: 500,
           content: Column(
@@ -638,7 +682,7 @@ class _ClientTrainerProfileScreenState
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: GymiesColors.primary.withValues(alpha: 0.08),
+                  color: GymiesColors.primary.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Column(
@@ -674,7 +718,7 @@ class _ClientTrainerProfileScreenState
                             child: Text(
                               mapStr(pkg, ['name', 'title']).isNotEmpty
                                   ? mapStr(pkg, ['name', 'title'])
-                                  : 'Pakket',
+                                  : S.of(context).pakket,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -690,14 +734,14 @@ class _ClientTrainerProfileScreenState
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
                 decoration: BoxDecoration(
-                  color: GymiesColors.darkBlue.withValues(alpha: 0.06),
+                  color: GymiesColors.darkBlue.withOpacity(0.06),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: GymiesColors.darkBlue.withValues(alpha: 0.12)),
+                  border: Border.all(color: GymiesColors.darkBlue.withOpacity(0.12)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Totaal', style: GoogleFonts.sora(fontSize: 15)),
+                    Text(S.of(context).totaal, style: GoogleFonts.sora(fontSize: 15)),
                     Text(
                       priceLabel,
                       style: GoogleFonts.sora(
@@ -712,7 +756,7 @@ class _ClientTrainerProfileScreenState
               const SizedBox(height: 16),
               // Betaalmethode keuze — gestylede kaarten
               Text(
-                'Betaalmethode',
+                S.of(context).betaalmethode,
                 style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 13),
               ),
               const SizedBox(height: 8),
@@ -725,7 +769,7 @@ class _ClientTrainerProfileScreenState
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: selectedPaymentMethod == 'mollie'
-                        ? GymiesColors.primary.withValues(alpha: 0.12)
+                        ? GymiesColors.primary.withOpacity(0.12)
                         : Colors.grey.shade50,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
@@ -777,11 +821,11 @@ class _ClientTrainerProfileScreenState
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Online betalen',
+                                  S.of(context).onlineBetalen,
                                   style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 14, color: GymiesColors.darkBlue),
                                 ),
                                 Text(
-                                  'iDEAL, creditcard, Apple Pay',
+                                  S.of(context).idealCreditcardApplePay,
                                   style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500),
                                 ),
                               ],
@@ -795,15 +839,15 @@ class _ClientTrainerProfileScreenState
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
                           decoration: BoxDecoration(
-                            color: GymiesColors.darkBlue.withValues(alpha: 0.06),
+                            color: GymiesColors.darkBlue.withOpacity(0.06),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.lock_rounded, size: 12, color: GymiesColors.darkBlue.withValues(alpha: 0.7)),
+                              Icon(Icons.lock_rounded, size: 12, color: GymiesColors.darkBlue.withOpacity(0.7)),
                               const SizedBox(width: 4),
                               Text(
-                                'Beveiligd via Mollie — directe bevestiging',
+                                S.of(context).beveiligdViaMollieDirecteBevestiging,
                                 style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue),
                               ),
                             ],
@@ -824,7 +868,7 @@ class _ClientTrainerProfileScreenState
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: selectedPaymentMethod == 'cash'
-                        ? GymiesColors.primary.withValues(alpha: 0.12)
+                        ? GymiesColors.primary.withOpacity(0.12)
                         : Colors.grey.shade50,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
@@ -873,11 +917,11 @@ class _ClientTrainerProfileScreenState
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Cash bij trainer',
+                              S.of(context).cashBijTrainer,
                               style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 14, color: GymiesColors.darkBlue),
                             ),
                             Text(
-                              'Betaal contant op de dag zelf',
+                              S.of(context).betaalContantOpDeDagZelf,
                               style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500),
                             ),
                           ],
@@ -891,13 +935,13 @@ class _ClientTrainerProfileScreenState
           ),
           actions: [
             GymiesDialogAction(
-              label: 'Annuleren',
+              label: S.of(context).annuleren,
               returnValue: false,
             ),
             GymiesDialogAction(
               label: selectedPaymentMethod == 'cash'
-                  ? 'Bevestig boeking'
-                  : 'Ga naar betaling',
+                  ? S.of(context).bevestigBoeking
+                  : S.of(context).gaNaarBetaling,
               isPrimary: true,
               returnValue: true,
               icon: selectedPaymentMethod == 'cash'
@@ -919,7 +963,7 @@ class _ClientTrainerProfileScreenState
         return sDate.isAtSameMomentAs(dt);
       });
       if (!slotStillExists) {
-        _showError('Dit tijdslot is helaas niet meer beschikbaar. Kies een ander moment.');
+        _showError(S.of(context).ditTijdslotIsHelaasNietMeer);
         // Refresh de slots in de UI
         _load();
         return;
@@ -954,7 +998,7 @@ class _ClientTrainerProfileScreenState
 
       final bookingId = (bookingData['id'] ?? bookingData['booking_id'] ?? '').toString();
       if (bookingId.isEmpty) {
-        _showError('Boeking aangemaakt maar geen ID ontvangen.');
+        _showError(S.of(context).boekingAangemaaktMaarGeenIdOntvangen);
         return;
       }
 
@@ -976,7 +1020,7 @@ class _ClientTrainerProfileScreenState
           _autoSyncToCalendar(bookingData, trainer, dt);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Boeking bevestigd! Betaal cash bij je trainer.'),
+              content: Text(S.of(context).boekingBevestigdBetaalCashBijJeTrainer),
               backgroundColor: GymiesColors.darkBlue,
             ),
           );
@@ -995,7 +1039,7 @@ class _ClientTrainerProfileScreenState
           // Boeking is aangemaakt maar betaallink ophalen mislukt
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Boeking aangemaakt! Open "Mijn Sessies" om te betalen.'),
+              content: Text(S.of(context).boekingAangemaaktOpenMijnSessiesOm),
               backgroundColor: GymiesColors.darkBlue,
               duration: Duration(seconds: 4),
             ),
@@ -1009,7 +1053,7 @@ class _ClientTrainerProfileScreenState
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Je wordt doorgestuurd naar de betaalpagina...'),
+            content: Text(S.of(context).jeWordtDoorgestuurdNaarDeBetaalpagina),
             backgroundColor: GymiesColors.darkBlue,
             duration: Duration(seconds: 2),
           ),
@@ -1026,13 +1070,12 @@ class _ClientTrainerProfileScreenState
         if (mounted) {
           Haptics.medium();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                'Boeking aangemaakt maar betaling kon niet worden gestart. '
-                'Ga naar "Mijn Sessies" om alsnog te betalen.',
+                '${S.of(context).boekingAangemaaktMaarBetalingKonNiet}\n${S.of(context).gaNaarMijnSessiesOmAlsnog}',
               ),
               backgroundColor: GymiesColors.darkBlue,
-              duration: Duration(seconds: 5),
+              duration: const Duration(seconds: 5),
             ),
           );
           Navigator.of(context).pop(true);
@@ -1041,7 +1084,7 @@ class _ClientTrainerProfileScreenState
     } on ApiException catch (e) {
       _showError(e.message);
     } catch (_) {
-      _showError('Boeking mislukt. Probeer opnieuw.');
+      _showError(S.of(context).boekingMisluktProbeerOpnieuw);
     } finally {
       if (mounted) setState(() => _booking = false);
     }
@@ -1083,7 +1126,7 @@ class _ClientTrainerProfileScreenState
     if (_booking) return;
     final trainer = _trainer;
     if (trainer == null || trainer.userId.isEmpty) {
-      _showError('Trainer-ID ontbreekt.');
+      _showError(S.of(context).traineridOntbreekt2);
       return;
     }
     setState(() => _booking = true);
@@ -1105,14 +1148,14 @@ class _ClientTrainerProfileScreenState
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Je staat nu op de standby-lijst voor deze trainer'),
+          content: Text(S.of(context).jeStaatNuOpDeStandbylijstVoorDezeTrainer),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
     } on ApiException catch (e) {
       _showError(e.message);
     } catch (_) {
-      _showError('Standby-aanmelding mislukt. Probeer opnieuw.');
+      _showError(S.of(context).standbyaanmeldingMisluktProbeerOpnieuw);
     } finally {
       if (mounted) setState(() => _booking = false);
     }
@@ -1122,7 +1165,7 @@ class _ClientTrainerProfileScreenState
     if (_openingChat) return;
     final trainer = _trainer;
     if (trainer == null || trainer.userId.isEmpty) {
-      _showError('Trainer-ID ontbreekt.');
+      _showError(S.of(context).traineridOntbreekt2);
       return;
     }
     setState(() => _openingChat = true);
@@ -1137,7 +1180,7 @@ class _ClientTrainerProfileScreenState
         'conversationId',
       ]);
       if (conversationId.isEmpty) {
-        _showError('Kon geen gesprek openen.');
+        _showError(S.of(context).konGeenGesprekOpenen);
         return;
       }
       await Navigator.of(context).push(
@@ -1217,7 +1260,7 @@ class _ClientTrainerProfileScreenState
                       child: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: 20),
                     ),
                     const SizedBox(width: 12),
-                    Text('Trainer', style: GoogleFonts.sora(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                    Text(S.of(context).trainer, style: GoogleFonts.sora(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                   ],
                 ),
               ),
@@ -1245,7 +1288,7 @@ class _ClientTrainerProfileScreenState
                       child: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: 20),
                     ),
                     const SizedBox(width: 12),
-                    Text('Trainer', style: GoogleFonts.sora(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                    Text(S.of(context).trainer, style: GoogleFonts.sora(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
                   ],
                 ),
               ),
@@ -1261,7 +1304,7 @@ class _ClientTrainerProfileScreenState
                 Icon(Icons.person_off_rounded, size: 48, color: Colors.grey.shade600),
                 const SizedBox(height: 16),
                 Text(
-                  _error ?? 'Trainer niet gevonden',
+                  _error ?? S.of(context).trainerNietGevonden,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.sora(color: Colors.grey.shade800),
                 ),
@@ -1269,7 +1312,7 @@ class _ClientTrainerProfileScreenState
                 FilledButton.icon(
                   onPressed: () => Navigator.of(context).pop(),
                   icon: const Icon(Icons.arrow_back_rounded),
-                  label: const Text('Terug'),
+                  label: const Text(S.of(context).terug),
                   style: FilledButton.styleFrom(
                     backgroundColor: GymiesColors.primary,
                     foregroundColor: GymiesColors.darkBlue,
@@ -1307,7 +1350,7 @@ class _ClientTrainerProfileScreenState
               child: Container(
                 margin: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
+                  color: Colors.white.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: 18),
@@ -1334,30 +1377,57 @@ class _ClientTrainerProfileScreenState
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // ── Avatar met gouden ring ──
-                        Container(
-                          width: 88,
-                          height: 88,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(22),
-                            border: Border.all(color: GymiesColors.primary, width: 3),
-                            boxShadow: [
-                              BoxShadow(
-                                color: GymiesColors.primary.withValues(alpha: 0.3),
-                                blurRadius: 16,
-                                spreadRadius: 2,
+                        // ── Avatar met story ring ──
+                        GestureDetector(
+                          onTap: _storyMedia.isNotEmpty ? () {
+                            Navigator.of(context).push(MaterialPageRoute(
+                              builder: (_) => _StoryViewerScreen(
+                                trainer: trainer,
+                                items: _storyMedia,
+                                urlOf: _mediaUrl,
+                                isVideo: _isVideo,
+                                initialIndex: 0,
                               ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(19),
-                            child: _GymiesAvatar(
-                                      url: trainer.avatarUrl,
-                                      fallbackName: trainer.nameOrEmail,
-                                      size: 88,
-                                      fontSize: 32,
-                                      bgColor: GymiesColors.primary.withValues(alpha: 0.2),
-                                    ),
+                            ));
+                          } : null,
+                          child: Container(
+                            width: 92,
+                            height: 92,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: _storyMedia.isNotEmpty
+                                  ? const SweepGradient(
+                                      colors: [Color(0xFFF58529), Color(0xFFDD2A7B), Color(0xFF8134AF), Color(0xFF515BD4), Color(0xFFF58529)],
+                                    )
+                                  : null,
+                              border: _storyMedia.isEmpty
+                                  ? Border.all(color: GymiesColors.primary, width: 3)
+                                  : null,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (_storyMedia.isNotEmpty ? const Color(0xFFDD2A7B) : GymiesColors.primary).withOpacity(0.3),
+                                  blurRadius: 16,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            padding: const EdgeInsets.all(3),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: GymiesColors.primary.withOpacity(0.2),
+                              ),
+                              padding: const EdgeInsets.all(2),
+                              child: ClipOval(
+                                child: _GymiesAvatar(
+                                  url: trainer.avatarUrl,
+                                  fallbackName: trainer.nameOrEmail,
+                                  size: 78,
+                                  fontSize: 32,
+                                  bgColor: GymiesColors.primary.withOpacity(0.2),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -1385,7 +1455,7 @@ class _ClientTrainerProfileScreenState
                                       .map((tag) => Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                             decoration: BoxDecoration(
-                                              color: GymiesColors.primary.withValues(alpha: 0.2),
+                                              color: GymiesColors.primary.withOpacity(0.2),
                                               borderRadius: BorderRadius.circular(6),
                                             ),
                                             child: Text(
@@ -1409,17 +1479,17 @@ class _ClientTrainerProfileScreenState
                                     if (trainer.reviewCount != null && trainer.reviewCount! > 0)
                                       Text(
                                         ' (${trainer.reviewCount})',
-                                        style: GoogleFonts.sora(fontSize: 12, color: Colors.white.withValues(alpha: 0.5)),
+                                        style: GoogleFonts.sora(fontSize: 12, color: Colors.white.withOpacity(0.5)),
                                       ),
                                     const SizedBox(width: 12),
                                   ],
                                   if (trainer.region != null && trainer.region!.isNotEmpty) ...[
-                                    Icon(Icons.location_on_rounded, size: 14, color: Colors.white.withValues(alpha: 0.5)),
+                                    Icon(Icons.location_on_rounded, size: 14, color: Colors.white.withOpacity(0.5)),
                                     const SizedBox(width: 2),
                                     Flexible(
                                       child: Text(
                                         trainer.region!,
-                                        style: GoogleFonts.sora(fontSize: 12, color: Colors.white.withValues(alpha: 0.7)),
+                                        style: GoogleFonts.sora(fontSize: 12, color: Colors.white.withOpacity(0.7)),
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
@@ -1435,9 +1505,9 @@ class _ClientTrainerProfileScreenState
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Text(
-                                  trainer.hourlyRateCents != null
-                                      ? '€${(trainer.hourlyRateCents! / 100).toStringAsFixed(0)} / sessie'
-                                      : 'Prijs op aanvraag',
+                                  trainer.hourlyRateCents != null && trainer.hourlyRateCents! > 0
+                                      ? '${formatEuroShort(trainer.hourlyRateCents)} / sessie'
+                                      : S.of(context).prijsOpAanvraag,
                                   style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w800, color: GymiesColors.darkBlue),
                                 ),
                               ),
@@ -1450,7 +1520,7 @@ class _ClientTrainerProfileScreenState
                             child: Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.12),
+                                color: Colors.white.withOpacity(0.12),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Icon(Icons.open_in_new_rounded, size: 20, color: Colors.white),
@@ -1499,7 +1569,7 @@ class _ClientTrainerProfileScreenState
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         icon: const Icon(Icons.person_remove_outlined, size: 18),
-                        label: Text('Verwijder uit mijn trainers', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+                        label: Text(S.of(context).verwijderUitMijnTrainers, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -1513,12 +1583,12 @@ class _ClientTrainerProfileScreenState
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              GymiesColors.darkBlue.withValues(alpha: 0.06),
-                              GymiesColors.primary.withValues(alpha: 0.06),
+                              GymiesColors.darkBlue.withOpacity(0.06),
+                              GymiesColors.primary.withOpacity(0.06),
                             ],
                           ),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: GymiesColors.primary.withValues(alpha: 0.2)),
+                          border: Border.all(color: GymiesColors.primary.withOpacity(0.2)),
                         ),
                         child: Row(
                           children: [
@@ -1526,7 +1596,7 @@ class _ClientTrainerProfileScreenState
                               width: 40,
                               height: 40,
                               decoration: BoxDecoration(
-                                color: GymiesColors.primary.withValues(alpha: 0.15),
+                                color: GymiesColors.primary.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Icon(Icons.person_search_rounded, size: 20, color: GymiesColors.darkBlue),
@@ -1536,8 +1606,8 @@ class _ClientTrainerProfileScreenState
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Bekijk volledig profiel', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
-                                  Text('Reviews, galerij, pakketten en meer', style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade500)),
+                                  Text(S.of(context).bekijkVolledigProfiel, style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+                                  Text(S.of(context).reviewsGalerijPakkettenEnMeer, style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade500)),
                                 ],
                               ),
                             ),
@@ -1554,10 +1624,10 @@ class _ClientTrainerProfileScreenState
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: GymiesColors.primary.withValues(alpha: 0.3)),
+                      border: Border.all(color: GymiesColors.primary.withOpacity(0.3)),
                       boxShadow: [
                         BoxShadow(
-                          color: GymiesColors.primary.withValues(alpha: 0.08),
+                          color: GymiesColors.primary.withOpacity(0.08),
                           blurRadius: 20,
                           offset: const Offset(0, 4),
                         ),
@@ -1595,13 +1665,13 @@ class _ClientTrainerProfileScreenState
                                           color: !_usePackage ? Colors.white : Colors.transparent,
                                           borderRadius: BorderRadius.circular(8),
                                           boxShadow: !_usePackage
-                                              ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4, offset: const Offset(0, 1))]
+                                              ? [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 4, offset: const Offset(0, 1))]
                                               : null,
                                         ),
                                         child: Column(
                                           children: [
                                             Text(
-                                              'Losse sessie',
+                                              S.of(context).losseSessie,
                                               style: GoogleFonts.sora(
                                                 fontSize: 12,
                                                 fontWeight: !_usePackage ? FontWeight.w600 : FontWeight.w400,
@@ -1636,13 +1706,13 @@ class _ClientTrainerProfileScreenState
                                           color: _usePackage ? Colors.white : Colors.transparent,
                                           borderRadius: BorderRadius.circular(8),
                                           boxShadow: _usePackage
-                                              ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4, offset: const Offset(0, 1))]
+                                              ? [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 4, offset: const Offset(0, 1))]
                                               : null,
                                         ),
                                         child: Column(
                                           children: [
                                             Text(
-                                              'Pakket',
+                                              S.of(context).pakket,
                                               style: GoogleFonts.sora(
                                                 fontSize: 12,
                                                 fontWeight: _usePackage ? FontWeight.w600 : FontWeight.w400,
@@ -1689,17 +1759,17 @@ class _ClientTrainerProfileScreenState
                                         children: [
                                           Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
                                           const SizedBox(height: 16),
-                                          Text('Kies een pakket', style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+                                          Text(S.of(context).kiesEenPakket, style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
                                           const SizedBox(height: 12),
                                           ..._packages.map((p) {
                                             final id = mapStr(p, ['id', 'package_id', 'packageId']);
-                                            final name = mapStr(p, ['name', 'title']).isNotEmpty ? mapStr(p, ['name', 'title']) : 'Pakket';
+                                            final name = mapStr(p, ['name', 'title']).isNotEmpty ? mapStr(p, ['name', 'title']) : S.of(context).pakket;
                                             final selected = _selectedPackageId == id;
                                             return ListTile(
                                               title: Text(name, style: GoogleFonts.sora(fontWeight: selected ? FontWeight.w600 : FontWeight.w400, color: GymiesColors.darkBlue)),
                                               trailing: Text(_formatPrice(_priceCents(p)), style: GoogleFonts.sora(fontWeight: FontWeight.w600, color: GymiesColors.primary)),
                                               selected: selected,
-                                              selectedTileColor: GymiesColors.primary.withValues(alpha: 0.08),
+                                              selectedTileColor: GymiesColors.primary.withOpacity(0.08),
                                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                               onTap: () {
                                                 setState(() => _selectedPackageId = id);
@@ -1725,12 +1795,12 @@ class _ClientTrainerProfileScreenState
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text('GEKOZEN PAKKET', style: GoogleFonts.sora(fontSize: 9, color: Colors.grey.shade500, letterSpacing: 0.5, fontWeight: FontWeight.w500)),
+                                          Text(S.of(context).gekozenPakket, style: GoogleFonts.sora(fontSize: 9, color: Colors.grey.shade500, letterSpacing: 0.5, fontWeight: FontWeight.w500)),
                                           const SizedBox(height: 2),
                                           Text(
                                             mapStr(_selectedPackageMap() ?? _packages.first, ['name', 'title']).isNotEmpty
                                                 ? mapStr(_selectedPackageMap() ?? _packages.first, ['name', 'title'])
-                                                : 'Pakket',
+                                                : S.of(context).pakket,
                                             style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue),
                                           ),
                                         ],
@@ -1761,7 +1831,7 @@ class _ClientTrainerProfileScreenState
                                       Icon(Icons.info_outline_rounded, size: 13, color: Colors.blue.shade400),
                                       const SizedBox(width: 4),
                                       Text(
-                                        '$sessions ${sessions == 1 ? 'sessie' : 'sessies'} in dit pakket',
+                                        '$sessions ${sessions == 1 ? 'sessie' : S.of(context).sessies} in dit pakket',
                                         style: GoogleFonts.sora(fontSize: 11, color: Colors.blue.shade400),
                                       ),
                                     ],
@@ -1773,7 +1843,7 @@ class _ClientTrainerProfileScreenState
                           ],
 
                           // ── Datum: horizontale weekstrip ──
-                          Text('KIES EEN DATUM', style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue, letterSpacing: 0.5)),
+                          Text(S.of(context).kiesEenDatum, style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue, letterSpacing: 0.5)),
                           const SizedBox(height: 8),
                           Builder(
                             builder: (_) {
@@ -1819,7 +1889,7 @@ class _ClientTrainerProfileScreenState
                                                   dayNames[(day.weekday - 1) % 7],
                                                   style: GoogleFonts.sora(
                                                     fontSize: 9,
-                                                    color: isSelected ? Colors.white.withValues(alpha: 0.6) : Colors.grey.shade500,
+                                                    color: isSelected ? Colors.white.withOpacity(0.6) : Colors.grey.shade500,
                                                   ),
                                                 ),
                                                 const SizedBox(height: 2),
@@ -1865,7 +1935,7 @@ class _ClientTrainerProfileScreenState
                                             children: [
                                               Icon(Icons.calendar_month_rounded, size: 14, color: GymiesColors.primary),
                                               const SizedBox(width: 3),
-                                              Text('Meer data', style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w600, color: GymiesColors.primary)),
+                                              Text(S.of(context).meerData, style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w600, color: GymiesColors.primary)),
                                             ],
                                           ),
                                         ),
@@ -1903,8 +1973,8 @@ class _ClientTrainerProfileScreenState
                                           Expanded(
                                             child: Text(
                                               _availability.isEmpty
-                                                  ? 'Nog geen beschikbaarheid ingesteld'
-                                                  : 'Geen slots beschikbaar op deze dag',
+                                                  ? S.of(context).nogGeenBeschikbaarheidIngesteld
+                                                  : S.of(context).geenSlotsBeschikbaarOpDezeDag,
                                               style: GoogleFonts.sora(fontSize: 12, color: Colors.orange.shade900, fontWeight: FontWeight.w600),
                                             ),
                                           ),
@@ -1923,7 +1993,7 @@ class _ClientTrainerProfileScreenState
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                         ),
                                         icon: const Icon(Icons.notifications_active_outlined, size: 16),
-                                        label: Text('Op standby-lijst', style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600)),
+                                        label: Text(S.of(context).opStandbylijst, style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600)),
                                       ),
                                     ),
                                   ],
@@ -1955,7 +2025,7 @@ class _ClientTrainerProfileScreenState
                                         duration: const Duration(milliseconds: 150),
                                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                         decoration: BoxDecoration(
-                                          color: selected ? GymiesColors.darkBlue.withValues(alpha: 0.08) : Colors.white,
+                                          color: selected ? GymiesColors.darkBlue.withOpacity(0.08) : Colors.white,
                                           borderRadius: BorderRadius.circular(8),
                                           border: Border.all(
                                             color: selected ? GymiesColors.darkBlue : Colors.grey.shade200,
@@ -1979,16 +2049,16 @@ class _ClientTrainerProfileScreenState
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('KIES EEN TIJDSTIP', style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue, letterSpacing: 0.5)),
+                                  Text(S.of(context).kiesEenTijdstip, style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue, letterSpacing: 0.5)),
                                   const SizedBox(height: 8),
                                   if (morning.isNotEmpty) ...[
-                                    Text('Ochtend', style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500)),
+                                    Text(S.of(context).ochtend, style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500)),
                                     const SizedBox(height: 6),
                                     buildSlotGrid(morning),
                                     const SizedBox(height: 10),
                                   ],
                                   if (afternoon.isNotEmpty) ...[
-                                    Text('Middag', style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500)),
+                                    Text(S.of(context).middag, style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500)),
                                     const SizedBox(height: 6),
                                     buildSlotGrid(afternoon),
                                   ],
@@ -2021,7 +2091,7 @@ class _ClientTrainerProfileScreenState
                             maxLines: 3,
                             style: GoogleFonts.sora(fontSize: 13),
                             decoration: InputDecoration(
-                              hintText: 'Notitie voor trainer toevoegen...',
+                              hintText: S.of(context).notitieVoorTrainerToevoegen,
                               hintStyle: GoogleFonts.sora(color: Colors.grey.shade400, fontSize: 12),
                               prefixIcon: Icon(Icons.edit_note_rounded, size: 18, color: Colors.grey.shade400),
                               border: OutlineInputBorder(
@@ -2065,12 +2135,12 @@ class _ClientTrainerProfileScreenState
                                       children: [
                                         SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: GymiesColors.darkBlue)),
                                         const SizedBox(width: 8),
-                                        Text('Bezig met boeken...', style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 15)),
+                                        Text(S.of(context).bezigMetBoeken, style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 15)),
                                       ],
                                     )
                                   : Column(
                                       children: [
-                                        Text('Bevestig boeking', style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 15)),
+                                        Text(S.of(context).bevestigBoeking, style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 15)),
                                         if (_selectedSlot != null)
                                           Builder(
                                             builder: (_) {
@@ -2082,7 +2152,7 @@ class _ClientTrainerProfileScreenState
                                               final priceCents = _usePackage && pkg != null ? _priceCents(pkg) : trainer.hourlyRateCents;
                                               return Text(
                                                 '$dn ${_selectedDate.day} $mn \u2022 ${_slotStart(_selectedSlot!)} - ${_slotEnd(_selectedSlot!)} \u2022 ${_formatPrice(priceCents)}',
-                                                style: GoogleFonts.sora(fontSize: 10, color: GymiesColors.darkBlue.withValues(alpha: 0.5)),
+                                                style: GoogleFonts.sora(fontSize: 10, color: GymiesColors.darkBlue.withOpacity(0.5)),
                                               );
                                             },
                                           ),
@@ -2116,14 +2186,14 @@ class _ClientTrainerProfileScreenState
                                   width: 36,
                                   height: 36,
                                   decoration: BoxDecoration(
-                                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                                    color: GymiesColors.primary.withOpacity(0.15),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Icon(Icons.calendar_month_rounded, size: 20, color: GymiesColors.primary),
                                 ),
                                 const SizedBox(width: 10),
                                 Text(
-                                  'Beschikbaarheid',
+                                  S.of(context).beschikbaarheid,
                                   style: GoogleFonts.sora(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w700,
@@ -2134,7 +2204,7 @@ class _ClientTrainerProfileScreenState
                             ),
                             const SizedBox(height: 14),
                             Text(
-                              'Deze week',
+                              S.of(context).dezeWeek,
                               style: GoogleFonts.sora(
                                 fontSize: 13,
                                 color: Colors.grey.shade600,
@@ -2154,7 +2224,7 @@ class _ClientTrainerProfileScreenState
                                           width: 44,
                                           padding: const EdgeInsets.symmetric(vertical: 6),
                                           decoration: BoxDecoration(
-                                            color: GymiesColors.primary.withValues(alpha: 0.12),
+                                            color: GymiesColors.primary.withOpacity(0.12),
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Center(
@@ -2177,7 +2247,7 @@ class _ClientTrainerProfileScreenState
                                 ),
                             const SizedBox(height: 10),
                             Text(
-                              'Volgende week',
+                              S.of(context).volgendeWeek,
                               style: GoogleFonts.sora(
                                 fontSize: 13,
                                 color: Colors.grey.shade600,
@@ -2197,7 +2267,7 @@ class _ClientTrainerProfileScreenState
                                           width: 44,
                                           padding: const EdgeInsets.symmetric(vertical: 6),
                                           decoration: BoxDecoration(
-                                            color: GymiesColors.darkBlue.withValues(alpha: 0.06),
+                                            color: GymiesColors.darkBlue.withOpacity(0.06),
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Center(
@@ -2235,7 +2305,7 @@ class _ClientTrainerProfileScreenState
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: GymiesColors.darkBlue.withValues(alpha: 0.1),
+                    color: GymiesColors.darkBlue.withOpacity(0.1),
                     blurRadius: 16,
                     offset: const Offset(0, -4),
                   ),
@@ -2254,7 +2324,7 @@ class _ClientTrainerProfileScreenState
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
                       icon: Icon(_openingChat ? Icons.hourglass_top_rounded : Icons.chat_bubble_outline_rounded, size: 18),
-                      label: Text(_openingChat ? 'Bezig...' : 'Bericht', style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14)),
+                      label: Text(_openingChat ? S.of(context).bezig2 : S.of(context).bericht, style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14)),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -2265,13 +2335,13 @@ class _ClientTrainerProfileScreenState
                       style: FilledButton.styleFrom(
                         backgroundColor: GymiesColors.primary,
                         foregroundColor: GymiesColors.darkBlue,
-                        disabledBackgroundColor: GymiesColors.primary.withValues(alpha: 0.4),
-                        disabledForegroundColor: GymiesColors.darkBlue.withValues(alpha: 0.4),
+                        disabledBackgroundColor: GymiesColors.primary.withOpacity(0.4),
+                        disabledForegroundColor: GymiesColors.darkBlue.withOpacity(0.4),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
                       icon: const Icon(Icons.event_available_rounded, size: 18),
-                      label: Text('Boek sessie', style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 14)),
+                      label: Text(S.of(context).boekSessie, style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 14)),
                     ),
                   ),
                 ],
@@ -2392,6 +2462,13 @@ class _ClientPublicTrainerProfileScreenState
                 }
               }
             }
+            // Fallback: als media endpoint geen stories vond, probeer dedicated stories endpoint
+            if (story.isEmpty) {
+              try {
+                final dedicated = await api.getTrainerStories(id);
+                if (dedicated.isNotEmpty) story = dedicated;
+              } catch (_) { /* fail-open */ }
+            }
             return {'gallery': gallery, 'story': story};
           } catch (_) {
             return {'gallery': <Map<String, dynamic>>[], 'story': <Map<String, dynamic>>[]};
@@ -2405,7 +2482,11 @@ class _ClientPublicTrainerProfileScreenState
               return raw.map((e) => e is Map<String, dynamic> ? e : <String, dynamic>{}).toList();
             }
             return <Map<String, dynamic>>[];
-          } catch (_) { return <Map<String, dynamic>>[]; }
+          } catch (e) {
+            // Fail-open: Parse reviews optional
+            if (kDebugMode) debugPrint('[TrainerProfile] Parse reviews failed: $e');
+            return <Map<String, dynamic>>[];
+          }
         }),
       ]);
 
@@ -2497,7 +2578,7 @@ class _ClientPublicTrainerProfileScreenState
           border: Border.all(color: Colors.grey.shade200),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: Colors.black.withOpacity(0.04),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -2605,11 +2686,12 @@ class _ClientPublicTrainerProfileScreenState
     );
     if (!openedApple && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Kon kaarten-app niet openen.')),
+        const SnackBar(content: Text(S.of(context).konKaartenappNietOpenen)),
       );
     }
   }
 
+  // ignore: unused_element
   bool _hasTrustSignals(Trainer t) {
     return t.avgResponseMinutes != null ||
         (t.clientsWith5PlusSessions != null && t.clientsWith5PlusSessions! > 0) ||
@@ -2664,12 +2746,12 @@ class _ClientPublicTrainerProfileScreenState
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
         // ── Over mij ──
-        Text('Over mij', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+        Text(S.of(context).overMij, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
         const SizedBox(height: 6),
         if ((trainer.bio ?? '').trim().isNotEmpty)
           Text(trainer.bio!.trim(), style: GoogleFonts.sora(color: Colors.grey.shade700, height: 1.5, fontSize: 13))
         else
-          Text('Nog geen bio toegevoegd.', style: GoogleFonts.sora(color: Colors.grey.shade500, fontSize: 13)),
+          Text(S.of(context).nogGeenBioToegevoegd, style: GoogleFonts.sora(color: Colors.grey.shade500, fontSize: 13)),
 
         // ── Intro-aanbieding ──
         if (trainer.hasIntroOffer && (trainer.introOfferDescription ?? '').trim().isNotEmpty) ...[
@@ -2694,7 +2776,7 @@ class _ClientPublicTrainerProfileScreenState
         // ── Specialisaties ──
         if (trainer.specializationsTags.isNotEmpty) ...[
           const SizedBox(height: 18),
-          Text('Specialisaties', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+          Text(S.of(context).specialisaties, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -2702,7 +2784,7 @@ class _ClientPublicTrainerProfileScreenState
             children: trainer.specializationsTags.map((tag) => Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.12),
+                color: GymiesColors.primary.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(tag, style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w500, color: GymiesColors.darkBlue)),
@@ -2713,10 +2795,10 @@ class _ClientPublicTrainerProfileScreenState
         // ── Beschikbaarheid ──
         if (!_dataLoading) ...[
           const SizedBox(height: 18),
-          Text('Beschikbaarheid', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+          Text(S.of(context).beschikbaarheid, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
           const SizedBox(height: 8),
           if (availability.isEmpty)
-            Text('Nog geen publieke beschikbaarheid.', style: GoogleFonts.sora(color: Colors.grey.shade500, fontSize: 13))
+            Text(S.of(context).nogGeenPubliekeBeschikbaarheid, style: GoogleFonts.sora(color: Colors.grey.shade500, fontSize: 13))
           else ...[
             // Compact day blocks with times for Pro+
             _buildAvailabilityDayBlocks(),
@@ -2748,10 +2830,10 @@ class _ClientPublicTrainerProfileScreenState
               Icon(Icons.payment_rounded, size: 15, color: GymiesColors.primary),
               const SizedBox(width: 5),
               Expanded(
-                child: Text(
-                  trainer.paymentMethodLabel.replaceAll('Accepteert ', ''),
-                  style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade700),
-                ),
+                  child: Text(
+                    (trainer.paymentMethodLabel ?? '').replaceAll('Accepteert ', ''),
+                    style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade700),
+                  ),
               ),
             ],
           ),
@@ -2762,14 +2844,14 @@ class _ClientPublicTrainerProfileScreenState
           const SizedBox(height: 18),
           Row(
             children: [
-              Text('Laatste review', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+              Text(S.of(context).laatsteReview, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
               const Spacer(),
               GestureDetector(
                 onTap: () {
                   Haptics.selection();
                   Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientTrainerReviewsScreen(trainer: trainer)));
                 },
-                child: Text('Bekijk alle', style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600, color: GymiesColors.primary)),
+                child: Text(S.of(context).bekijkAlle, style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600, color: GymiesColors.primary)),
               ),
             ],
           ),
@@ -2809,17 +2891,17 @@ class _ClientPublicTrainerProfileScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Vanaf', style: GoogleFonts.sora(fontSize: 11, color: trainer.isProPlus ? Colors.white54 : Colors.grey.shade600)),
+                    Text(S.of(context).vanaf, style: GoogleFonts.sora(fontSize: 11, color: trainer.isProPlus ? Colors.white54 : Colors.grey.shade600)),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.baseline,
                       textBaseline: TextBaseline.alphabetic,
                       children: [
                         Text(
-                          trainer.hourlyRateCents != null ? '€${(trainer.hourlyRateCents! / 100).toStringAsFixed(0)}' : 'N.t.b.',
+                          formatEuroShort(trainer.hourlyRateCents, fallback: 'N.t.b.'),
                           style: GoogleFonts.sora(fontSize: 24, fontWeight: FontWeight.w700, color: trainer.isProPlus ? accentColor : GymiesColors.darkBlue),
                         ),
                         if (trainer.hourlyRateCents != null)
-                          Text('/sessie', style: GoogleFonts.sora(fontSize: 12, color: trainer.isProPlus ? Colors.white54 : Colors.grey.shade600)),
+                          Text(S.of(context).sessie, style: GoogleFonts.sora(fontSize: 12, color: trainer.isProPlus ? Colors.white54 : Colors.grey.shade600)),
                       ],
                     ),
                   ],
@@ -2834,7 +2916,7 @@ class _ClientPublicTrainerProfileScreenState
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    'Bekijk pakketten',
+                    S.of(context).bekijkPakketten,
                     style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600, color: trainer.isProPlus && brandColor != null ? Colors.white : GymiesColors.darkBlue),
                   ),
                 ),
@@ -2846,19 +2928,19 @@ class _ClientPublicTrainerProfileScreenState
         // ── Locatie ──
         if (trainer.region != null && trainer.region!.trim().isNotEmpty) ...[
           const SizedBox(height: 18),
-          Text('Locatie', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+          Text(S.of(context).locatie, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
           const SizedBox(height: 6),
           Text(trainer.region!.trim(), style: GoogleFonts.sora(color: Colors.grey.shade800, fontSize: 13)),
           const SizedBox(height: 4),
-          Text('Online / thuis / gym afhankelijk van afspraak', style: GoogleFonts.sora(color: Colors.grey.shade600, fontSize: 12)),
+          Text(S.of(context).onlineThuisGymAfhankelijkVanAfspraak, style: GoogleFonts.sora(color: Colors.grey.shade600, fontSize: 12)),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: () => _openInMaps(trainer.region),
             icon: const Icon(Icons.directions_outlined, size: 16),
-            label: Text('Plan route', style: GoogleFonts.sora(fontSize: 13)),
+            label: Text(S.of(context).planRoute, style: GoogleFonts.sora(fontSize: 13)),
             style: OutlinedButton.styleFrom(
               foregroundColor: GymiesColors.darkBlue,
-              side: BorderSide(color: GymiesColors.darkBlue.withValues(alpha: 0.3)),
+              side: BorderSide(color: GymiesColors.darkBlue.withOpacity(0.3)),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           ),
@@ -2909,7 +2991,7 @@ class _ClientPublicTrainerProfileScreenState
         ],
 
         const SizedBox(height: 16),
-        Text('Je ziet hier alleen openbare profielinformatie.', style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500), textAlign: TextAlign.center),
+        Text(S.of(context).jeZietHierAlleenOpenbareProfielinformatie, style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500), textAlign: TextAlign.center),
       ],
     );
   }
@@ -2932,7 +3014,7 @@ class _ClientPublicTrainerProfileScreenState
                   height: 36,
                   decoration: BoxDecoration(
                     color: hasSlots
-                        ? (isWeekend ? GymiesColors.primary.withValues(alpha: 0.15) : GymiesColors.darkBlue)
+                        ? (isWeekend ? GymiesColors.primary.withOpacity(0.15) : GymiesColors.darkBlue)
                         : Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -2952,7 +3034,7 @@ class _ClientPublicTrainerProfileScreenState
                 if (trainer.isProPlus) ...[
                   const SizedBox(height: 3),
                   Text(
-                    hasSlots ? dayData!.windows.first.split(' ').first : '-',
+                    hasSlots ? dayData.windows.first.split(' ').first : '-',
                     style: GoogleFonts.sora(fontSize: 8, color: Colors.grey.shade600),
                   ),
                 ],
@@ -2973,38 +3055,38 @@ class _ClientPublicTrainerProfileScreenState
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
         // ── Tarieven ──
-        Text('Tarieven (indicatie)', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+        Text(S.of(context).tarievenindicatie, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
         const SizedBox(height: 4),
         Row(
           children: [
-            const Expanded(child: Text('Losse sessie')),
+            const Expanded(child: Text(S.of(context).losseSessie)),
             Text(trainer.priceLabel, style: GoogleFonts.sora(fontWeight: FontWeight.w700)),
           ],
         ),
         const SizedBox(height: 4),
-        Text('Definitieve prijs bij het boeken.', style: GoogleFonts.sora(color: Colors.grey.shade600, fontSize: 12)),
+        Text(S.of(context).definitievePrijsBijHetBoeken, style: GoogleFonts.sora(color: Colors.grey.shade600, fontSize: 12)),
         const SizedBox(height: 18),
 
         // ── Pakketten lijst ──
-        Text('Abonnementen & pakketten', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+        Text(S.of(context).abonnementenPakketten, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
         const SizedBox(height: 8),
         if (packages.isEmpty)
-          Text('Nog geen publieke pakketten.', style: GoogleFonts.sora(color: Colors.grey.shade500, fontSize: 13))
+          Text(S.of(context).nogGeenPubliekePakketten, style: GoogleFonts.sora(color: Colors.grey.shade500, fontSize: 13))
         else
           ...packages.map((p) {
-            final name = mapStr(p, ['name', 'title']).isNotEmpty ? mapStr(p, ['name', 'title']) : 'Pakket';
+            final name = mapStr(p, ['name', 'title']).isNotEmpty ? mapStr(p, ['name', 'title']) : S.of(context).pakket;
             final sessions = mapStr(p, ['sessions_count', 'sessions', 'count']);
             final weeks = mapStr(p, ['weeks_count', 'weeks']);
             final cents = _priceCents(p);
-            final price = cents != null ? '€${(cents / 100).toStringAsFixed(2)}' : 'Prijs op aanvraag';
+            final price = formatEuro(cents);
             final details = [if (sessions.isNotEmpty) '$sessions lessen', if (weeks.isNotEmpty) '$weeks weken'].join(' · ');
             return Container(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.08),
+                color: GymiesColors.primary.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: GymiesColors.primary.withValues(alpha: 0.15)),
+                border: Border.all(color: GymiesColors.primary.withOpacity(0.15)),
               ),
               child: Row(
                 children: [
@@ -3038,7 +3120,7 @@ class _ClientPublicTrainerProfileScreenState
       children: [
         Row(
           children: [
-            Text('Reviews', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+            Text(S.of(context).reviews, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
             const Spacer(),
             if (trainer.rating != null)
               Row(
@@ -3052,7 +3134,7 @@ class _ClientPublicTrainerProfileScreenState
         ),
         const SizedBox(height: 10),
         if (reviews.isEmpty)
-          Text('Nog geen reviews beschikbaar.', style: GoogleFonts.sora(color: Colors.grey.shade500, fontSize: 13))
+          Text(S.of(context).nogGeenReviewsBeschikbaar, style: GoogleFonts.sora(color: Colors.grey.shade500, fontSize: 13))
         else ...[
           ...reviews.map((r) => Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -3071,7 +3153,7 @@ class _ClientPublicTrainerProfileScreenState
               await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientTrainerReviewsScreen(trainer: trainer)));
             },
             icon: const Icon(Icons.rate_review_outlined, size: 16),
-            label: Text('Alle reviews bekijken', style: GoogleFonts.sora(fontSize: 13)),
+            label: Text(S.of(context).alleReviewsBekijken, style: GoogleFonts.sora(fontSize: 13)),
             style: TextButton.styleFrom(foregroundColor: GymiesColors.primary),
           ),
         ),
@@ -3089,7 +3171,7 @@ class _ClientPublicTrainerProfileScreenState
       children: [
         // ── Stories ──
         if (storyMedia.isNotEmpty) ...[
-          Text('Stories', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+          Text(S.of(context).stories, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
           const SizedBox(height: 8),
           SizedBox(
             height: 80,
@@ -3124,10 +3206,10 @@ class _ClientPublicTrainerProfileScreenState
           const SizedBox(height: 18),
         ],
         // ── Galerij ──
-        Text('Galerij', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+        Text(S.of(context).galerij, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
         const SizedBox(height: 8),
         if (mediaGallery.isEmpty)
-          Text('Nog geen media toegevoegd.', style: GoogleFonts.sora(color: Colors.grey.shade500, fontSize: 13))
+          Text(S.of(context).nogGeenMediaToegevoegd, style: GoogleFonts.sora(color: Colors.grey.shade500, fontSize: 13))
         else
           GridView.builder(
             shrinkWrap: true,
@@ -3168,8 +3250,8 @@ class _ClientPublicTrainerProfileScreenState
     String? selectedReason;
     final reasons = [
       'Ongepast gedrag',
-      'Nep profiel',
-      'Spam of misleiding',
+      S.of(context).nepProfiel,
+      S.of(context).spamOfMisleiding,
       'Onveilige trainingspraktijken',
       'Anders',
     ];
@@ -3180,29 +3262,34 @@ class _ClientPublicTrainerProfileScreenState
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text('Profiel melden', style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700)),
+          title: Text(S.of(context).profielMelden, style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Waarom wil je $trainerName melden?', style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                Text(S.of(context).waaromWilJeMelden(trainerName), style: const TextStyle(fontSize: 13, color: Colors.black54)),
                 const SizedBox(height: 12),
-                ...reasons.map((r) => RadioListTile<String>(
-                  title: Text(r, style: const TextStyle(fontSize: 13)),
-                  value: r,
-                  groupValue: selectedReason,
-                  activeColor: GymiesColors.darkBlue,
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  onChanged: (v) => setDialogState(() => selectedReason = v),
-                )),
+                // ignore: deprecated_member_use
+                ...reasons.map((r) =>
+                  RadioListTile<String>(
+                    title: Text(r, style: const TextStyle(fontSize: 13)),
+                    value: r,
+                    // ignore: deprecated_member_use
+                    groupValue: selectedReason,
+                    activeColor: GymiesColors.darkBlue,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    // ignore: deprecated_member_use
+                    onChanged: (v) => setDialogState(() => selectedReason = v),
+                  ),
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: detailController,
                   maxLines: 3,
                   decoration: InputDecoration(
-                    hintText: 'Toelichting (optioneel)',
+                    hintText: S.of(context).toelichtingoptioneel,
                     hintStyle: const TextStyle(fontSize: 12),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                     contentPadding: const EdgeInsets.all(10),
@@ -3215,7 +3302,7 @@ class _ClientPublicTrainerProfileScreenState
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text('Annuleer', style: TextStyle(color: Colors.grey.shade600)),
+              child: Text(S.of(context).annuleer, style: TextStyle(color: Colors.grey.shade600)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -3240,14 +3327,14 @@ class _ClientPublicTrainerProfileScreenState
                       if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: const Text('Bedankt voor je melding. We bekijken dit zo snel mogelijk.'),
+                          content: const Text(S.of(context).bedanktVoorJeMeldingWeBekijkenDitZoSnelMogelijk),
                           backgroundColor: GymiesColors.darkBlue,
                           behavior: SnackBarBehavior.floating,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                       );
                     },
-              child: const Text('Melden'),
+              child: const Text(S.of(context).melden),
             ),
           ],
         ),
@@ -3259,16 +3346,17 @@ class _ClientPublicTrainerProfileScreenState
   Widget build(BuildContext context) {
     final trainerName = trainer.displayName.trim().isNotEmpty
         ? trainer.displayName.trim()
-        : 'Trainer';
+        : S.of(context).trainer;
     final brandColor = _parseBrandColor(trainer.brandColor);
     final hasLogo = trainer.isProPlus &&
         trainer.brandLogoUrl != null &&
         trainer.brandLogoUrl!.isNotEmpty;
     final accentColor = brandColor ?? GymiesColors.primary;
+    // ignore: unused_local_variable
     final initials = trainerName.isNotEmpty ? trainerName[0].toUpperCase() : '?';
 
     final headerColors = brandColor != null && trainer.isProPlus
-        ? [brandColor, brandColor.withValues(alpha: 0.85)]
+        ? [brandColor, brandColor.withOpacity(0.85)]
         : [const Color(0xFF1E3A5F), const Color(0xFF2A4F7A)];
 
     final tabCount = trainer.isProPlus ? 4 : 3;
@@ -3314,7 +3402,7 @@ class _ClientPublicTrainerProfileScreenState
                 child: Center(
                   child: Container(
                     width: 36, height: 36,
-                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), shape: BoxShape.circle),
                     child: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: 16),
                   ),
                 ),
@@ -3335,21 +3423,21 @@ class _ClientPublicTrainerProfileScreenState
                               const SizedBox(height: 16),
                               ListTile(
                                 leading: const Icon(Icons.share_rounded),
-                                title: Text('Profiel delen', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w500)),
+                                title: Text(S.of(context).profielDelen, style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w500)),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 onTap: () {
                                   Navigator.pop(context);
                                   final url = 'https://www.gymies.nl/trainer/${trainer.userId}';
                                   SharePlus.instance.share(
                                     ShareParams(
-                                      text: 'Bekijk ${trainerName} op Gymies!\n$url',
+                                      text: 'Bekijk $trainerName op Gymies!\n$url',
                                     ),
                                   );
                                 },
                               ),
                               ListTile(
                                 leading: Icon(Icons.flag_outlined, color: Colors.red.shade400),
-                                title: Text('Profiel melden', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.red.shade400)),
+                                title: Text(S.of(context).profielMelden, style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.red.shade400)),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 onTap: () {
                                   Navigator.pop(context);
@@ -3364,7 +3452,7 @@ class _ClientPublicTrainerProfileScreenState
                   },
                   child: Container(
                     width: 36, height: 36,
-                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), shape: BoxShape.circle),
                     child: const Icon(Icons.more_horiz_rounded, color: Colors.white, size: 16),
                   ),
                 ),
@@ -3383,17 +3471,35 @@ class _ClientPublicTrainerProfileScreenState
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // ── Avatar ──
-                          Container(
-                            width: 72, height: 72,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: trainer.isProPlus ? SweepGradient(colors: [accentColor, accentColor.withValues(alpha: 0.6), accentColor]) : null,
-                              border: !trainer.isProPlus ? Border.all(color: Colors.white.withValues(alpha: 0.3), width: 2.5) : null,
-                            ),
-                            padding: const EdgeInsets.all(3),
-                            child: ClipOval(
-                              child: _GymiesAvatar(url: trainer.avatarUrl, fallbackName: trainerName, size: 64, fontSize: 24),
+                          // ── Avatar met story ring ──
+                          GestureDetector(
+                            onTap: _storyMedia.isNotEmpty ? _openStoryViewer : null,
+                            child: Container(
+                              width: 76, height: 76,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: _storyMedia.isNotEmpty
+                                    ? const SweepGradient(
+                                        colors: [Color(0xFFF58529), Color(0xFFDD2A7B), Color(0xFF8134AF), Color(0xFF515BD4), Color(0xFFF58529)],
+                                      )
+                                    : trainer.isProPlus
+                                        ? SweepGradient(colors: [accentColor, accentColor.withOpacity(0.6), accentColor])
+                                        : null,
+                                border: _storyMedia.isEmpty && !trainer.isProPlus
+                                    ? Border.all(color: Colors.white.withOpacity(0.3), width: 2.5)
+                                    : null,
+                              ),
+                              padding: const EdgeInsets.all(3),
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Color(0xFF1E3A5F), // gap ring
+                                ),
+                                padding: const EdgeInsets.all(2),
+                                child: ClipOval(
+                                  child: _GymiesAvatar(url: trainer.avatarUrl, fallbackName: trainerName, size: 62, fontSize: 24),
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(height: 10),
@@ -3406,7 +3512,7 @@ class _ClientPublicTrainerProfileScreenState
                               if (trainer.specialty != null && trainer.specialty!.trim().isNotEmpty) trainer.specialty!.trim(),
                               if (trainer.region != null && trainer.region!.trim().isNotEmpty) trainer.region!.trim(),
                             ].join(' · '),
-                            style: GoogleFonts.sora(fontSize: 12, color: Colors.white.withValues(alpha: 0.65)),
+                            style: GoogleFonts.sora(fontSize: 12, color: Colors.white.withOpacity(0.65)),
                             maxLines: 1, overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 14),
@@ -3417,17 +3523,17 @@ class _ClientPublicTrainerProfileScreenState
                             runSpacing: 6,
                             children: [
                               if (trainer.trainerVerified)
-                                _headerBadge('Geverifieerd', GymiesColors.primary.withValues(alpha: 0.2), GymiesColors.primary, icon: Icons.verified_rounded),
+                                _headerBadge('Geverifieerd', GymiesColors.primary.withOpacity(0.2), GymiesColors.primary, icon: Icons.verified_rounded),
                               if (trainer.rating != null)
-                                _headerBadge('${trainer.rating!.toStringAsFixed(1)} ★ (${trainer.reviewCount ?? 0})', Colors.white.withValues(alpha: 0.12), Colors.white),
+                                _headerBadge('${trainer.rating!.toStringAsFixed(1)} ★ (${trainer.reviewCount ?? 0})', Colors.white.withOpacity(0.12), Colors.white),
                               if (trainer.isProPlus)
-                                _headerBadge('PRO+', const Color(0xFF5DCAA5).withValues(alpha: 0.2), const Color(0xFF5DCAA5))
+                                _headerBadge('PRO+', const Color(0xFF5DCAA5).withOpacity(0.2), const Color(0xFF5DCAA5))
                               else if (_isProOrHigher(trainer))
-                                _headerBadge('PRO', Colors.white.withValues(alpha: 0.12), Colors.white.withValues(alpha: 0.8)),
+                                _headerBadge('PRO', Colors.white.withOpacity(0.12), Colors.white.withOpacity(0.8)),
                               if (hasLogo)
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(6),
-                                  child: CachedNetworkImage(imageUrl: trainer.brandLogoUrl!, width: 24, height: 24, fit: BoxFit.contain, errorWidget: (_, __, ___) => const SizedBox.shrink()),
+                                  child: CachedNetworkImage(imageUrl: trainer.brandLogoUrl!, width: 24, height: 24, fit: BoxFit.contain, errorWidget: (_, _, _) => const SizedBox.shrink()),
                                 ),
                             ],
                           ),
@@ -3453,7 +3559,7 @@ class _ClientPublicTrainerProfileScreenState
                     tabs: [
                       const Tab(text: 'Info'),
                       const Tab(text: 'Pakketten'),
-                      const Tab(text: 'Reviews'),
+                      const Tab(text: S.of(context).reviews),
                       if (trainer.isProPlus) const Tab(text: 'Media'),
                     ],
                   ),
@@ -3477,7 +3583,7 @@ class _ClientPublicTrainerProfileScreenState
               padding: EdgeInsets.fromLTRB(16, 10, 16, MediaQuery.of(context).padding.bottom + 10),
               decoration: BoxDecoration(
                 color: Colors.white,
-                boxShadow: [BoxShadow(color: GymiesColors.darkBlue.withValues(alpha: 0.08), blurRadius: 12, offset: const Offset(0, -3))],
+                boxShadow: [BoxShadow(color: GymiesColors.darkBlue.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, -3))],
               ),
               child: Row(
                 children: [
@@ -3492,7 +3598,7 @@ class _ClientPublicTrainerProfileScreenState
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         decoration: BoxDecoration(color: accentColor, borderRadius: BorderRadius.circular(14)),
-                        child: Center(child: Text('Boek nu', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: trainer.isProPlus && brandColor != null ? Colors.white : GymiesColors.darkBlue))),
+                        child: Center(child: Text(S.of(context).boekNu, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700, color: trainer.isProPlus && brandColor != null ? Colors.white : GymiesColors.darkBlue))),
                       ),
                     ),
                   ),
@@ -3513,7 +3619,7 @@ class _ClientPublicTrainerProfileScreenState
                           children: [
                             Icon(Icons.chat_bubble_outline_rounded, size: 18, color: GymiesColors.darkBlue),
                             const SizedBox(width: 6),
-                            Text('Bericht', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
+                            Text(S.of(context).bericht, style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
                           ],
                         ),
                       ),
@@ -3547,6 +3653,7 @@ class _ClientPublicTrainerProfileScreenState
     );
   }
 
+  // ignore: unused_element
   Widget _headerStat(String value, String label, {bool isAccent = false, Color? accentColor}) {
     return Expanded(
       child: Column(
@@ -3554,7 +3661,7 @@ class _ClientPublicTrainerProfileScreenState
         children: [
           Text(value, style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.w700, color: isAccent ? (accentColor ?? GymiesColors.primary) : Colors.white)),
           const SizedBox(height: 2),
-          Text(label, style: GoogleFonts.sora(fontSize: 10, color: Colors.white.withValues(alpha: 0.45), letterSpacing: 0.5)),
+          Text(label, style: GoogleFonts.sora(fontSize: 10, color: Colors.white.withOpacity(0.45), letterSpacing: 0.5)),
         ],
       ),
     );
@@ -3654,10 +3761,12 @@ class _LatestReviewPreview extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _PublicProfileStoryRing extends StatelessWidget {
   const _PublicProfileStoryRing({
     required this.imageUrl,
     required this.fallbackName,
+    // ignore: unused_element_parameter
     this.hasStory = false,
   });
 
@@ -3667,6 +3776,7 @@ class _PublicProfileStoryRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ignore: unused_local_variable
     final hasImage = imageUrl != null && imageUrl!.trim().isNotEmpty;
     return Stack(
       clipBehavior: Clip.none,
@@ -3690,7 +3800,7 @@ class _PublicProfileStoryRing extends StatelessWidget {
                 url: imageUrl,
                 fallbackName: fallbackName,
                 size: 50,
-                bgColor: GymiesColors.primary.withValues(alpha: 0.2),
+                bgColor: GymiesColors.primary.withOpacity(0.2),
                 textColor: GymiesColors.darkBlue,
               ),
             ),
@@ -3740,8 +3850,11 @@ class _StoryViewerScreen extends StatefulWidget {
 
 class _StoryViewerScreenState extends State<_StoryViewerScreen>
     with SingleTickerProviderStateMixin {
+  static const _kImageDuration = Duration(seconds: 8);
+
   late int _index;
   late AnimationController _progressController;
+  bool _isPaused = false;
 
   @override
   void initState() {
@@ -3749,9 +3862,9 @@ class _StoryViewerScreenState extends State<_StoryViewerScreen>
     _index = widget.initialIndex.clamp(0, widget.items.length - 1);
     _progressController = AnimationController(
       vsync: this,
-      duration: TimingConstants.bookingTimeout,
+      duration: _kImageDuration,
     )..addListener(() => setState(() {}));
-    _progressController.forward();
+    _startCurrent();
     _progressController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _nextOrPop();
@@ -3765,15 +3878,63 @@ class _StoryViewerScreenState extends State<_StoryViewerScreen>
     super.dispose();
   }
 
+  void _startCurrent() {
+    _progressController.duration = _kImageDuration;
+    _progressController.reset();
+    _progressController.forward();
+  }
+
   void _nextOrPop() {
     if (_index + 1 < widget.items.length) {
       setState(() {
         _index += 1;
-        _progressController.reset();
-        _progressController.forward();
       });
+      _startCurrent();
     } else {
       Navigator.of(context).pop();
+    }
+  }
+
+  void _previous() {
+    if (_index > 0) {
+      setState(() {
+        _index -= 1;
+      });
+      _startCurrent();
+    } else {
+      // Eerste story: herstart progressie
+      _startCurrent();
+    }
+  }
+
+  void _onTapDown(TapDownDetails details) {
+    // Lang indrukken: pauzeer story
+    _progressController.stop();
+    setState(() => _isPaused = true);
+  }
+
+  void _onTapUp(TapUpDetails details) {
+    if (_isPaused) {
+      _progressController.forward();
+      setState(() => _isPaused = false);
+    }
+  }
+
+  void _onTapCancel() {
+    if (_isPaused) {
+      _progressController.forward();
+      setState(() => _isPaused = false);
+    }
+  }
+
+  void _onTap(TapUpDetails details) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final tapX = details.globalPosition.dx;
+    // Tap links: vorige, rechts: volgende (Instagram-stijl)
+    if (tapX < screenWidth * 0.3) {
+      _previous();
+    } else {
+      _nextOrPop();
     }
   }
 
@@ -3784,17 +3945,19 @@ class _StoryViewerScreenState extends State<_StoryViewerScreen>
     final isVideo = widget.isVideo(item);
     final trainerName = widget.trainer.displayName.trim().isNotEmpty
         ? widget.trainer.displayName.trim()
-        : 'Trainer';
+        : S.of(context).trainer;
+    final totalItems = widget.items.length;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           children: [
+            // ── Progress bars (Instagram-stijl) ──
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               child: Row(
-                children: List.generate(widget.items.length, (i) {
+                children: List.generate(totalItems, (i) {
                   final progress = i < _index
                       ? 1.0
                       : i == _index
@@ -3823,73 +3986,130 @@ class _StoryViewerScreenState extends State<_StoryViewerScreen>
                 }),
               ),
             ),
+            // ── Content area ──
             Expanded(
-              child: Stack(
-                children: [
-                  Center(
-                    child: AspectRatio(
-                      aspectRatio: 9 / 16,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: url.trim().isEmpty
-                            ? Center(
-                                child: Icon(
-                                  isVideo ? Icons.videocam : Icons.photo,
-                                  size: 64,
-                                  color: Colors.white54,
-                                ),
-                              )
-                            : isVideo
-                                ? _VideoStoryContent(url: url)
-                                : CachedNetworkImage(
-                                    imageUrl: url,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, _, _) => Center(
-                                      child: Icon(
-                                        Icons.broken_image,
-                                        size: 64,
-                                        color: Colors.white54,
+              child: GestureDetector(
+                onTapDown: _onTapDown,
+                onTapUp: (details) {
+                  _onTapUp(details);
+                  _onTap(details);
+                },
+                onTapCancel: _onTapCancel,
+                onLongPressStart: (_) {
+                  _progressController.stop();
+                  setState(() => _isPaused = true);
+                },
+                onLongPressEnd: (_) {
+                  _progressController.forward();
+                  setState(() => _isPaused = false);
+                },
+                child: Stack(
+                  children: [
+                    // ── Main content (image or video) ──
+                    Center(
+                      child: AspectRatio(
+                        aspectRatio: 9 / 16,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: url.trim().isEmpty
+                              ? Center(
+                                  child: Icon(
+                                    isVideo ? Icons.videocam : Icons.photo,
+                                    size: 64,
+                                    color: Colors.white54,
+                                  ),
+                                )
+                              : isVideo
+                                  ? _VideoStoryPlayer(
+                                      key: ValueKey('video_${_index}_$url'),
+                                      url: url,
+                                      onVideoReady: (duration) {
+                                        // Pas progressie-duur aan op video lengte
+                                        if (mounted && duration.inSeconds > 0) {
+                                          _progressController.duration = duration;
+                                          _progressController.reset();
+                                          _progressController.forward();
+                                        }
+                                      },
+                                    )
+                                  : CachedNetworkImage(
+                                      imageUrl: url,
+                                      fit: BoxFit.cover,
+                                      placeholder: (_, _) => const Center(
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white54,
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                      errorWidget: (_, _, _) => const Center(
+                                        child: Icon(
+                                          Icons.broken_image,
+                                          size: 64,
+                                          color: Colors.white54,
+                                        ),
                                       ),
                                     ),
-                                  ),
+                        ),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    left: 12,
-                    top: 12,
-                    child: Row(
-                      children: [
-                        ClipOval(
-                          child: _GymiesAvatar(
-                            url: widget.trainer.avatarUrl,
-                            fallbackName: trainerName,
-                            size: 40,
-                            bgColor: GymiesColors.primary,
-                            textColor: GymiesColors.darkBlue,
+                    // ── Header: avatar + naam + X ──
+                    Positioned(
+                      left: 12,
+                      top: 8,
+                      right: 12,
+                      child: Row(
+                        children: [
+                          ClipOval(
+                            child: _GymiesAvatar(
+                              url: widget.trainer.avatarUrl,
+                              fallbackName: trainerName,
+                              size: 36,
+                              bgColor: GymiesColors.primary,
+                              textColor: GymiesColors.darkBlue,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          trainerName,
-                          style: GoogleFonts.sora(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  trainerName,
+                                  style: GoogleFonts.sora(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    shadows: [Shadow(blurRadius: 6, color: Colors.black54)],
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (totalItems > 1)
+                                  Text(
+                                    '${_index + 1} / $totalItems',
+                                    style: GoogleFonts.sora(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                      shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Positioned(
-                    right: 12,
-                    top: 12,
-                    child: IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close_rounded, color: Colors.white),
-                    ),
-                  ),
-                ],
+                    // ── Paused indicator ──
+                    if (_isPaused)
+                      const Center(
+                        child: Icon(Icons.pause_circle_outline, size: 64, color: Colors.white38),
+                      ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -3900,6 +4120,7 @@ class _StoryViewerScreenState extends State<_StoryViewerScreen>
 }
 
 // Trust signal stat — compact icoon + waarde + label
+// ignore: unused_element
 class _TrustStat extends StatelessWidget {
   const _TrustStat({
     required this.icon,
@@ -3969,7 +4190,7 @@ class _SocialIconButton extends StatelessWidget {
           width: 34,
           height: 34,
           decoration: BoxDecoration(
-            color: (bgColor ?? color).withValues(alpha: 0.12),
+            color: (bgColor ?? color).withOpacity(0.12),
             shape: BoxShape.circle,
           ),
           child: Icon(icon, size: 18, color: iconColor ?? color),
@@ -3979,27 +4200,76 @@ class _SocialIconButton extends StatelessWidget {
   }
 }
 
-class _VideoStoryContent extends StatelessWidget {
-  const _VideoStoryContent({required this.url});
+/// Video story player met echte video playback via video_player package.
+class _VideoStoryPlayer extends StatefulWidget {
+  const _VideoStoryPlayer({
+    super.key,
+    required this.url,
+    this.onVideoReady,
+  });
 
   final String url;
+  final void Function(Duration duration)? onVideoReady;
+
+  @override
+  State<_VideoStoryPlayer> createState() => _VideoStoryPlayerState();
+}
+
+class _VideoStoryPlayerState extends State<_VideoStoryPlayer> {
+  late VideoPlayerController _controller;
+  bool _initialized = false;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..setLooping(false)
+      ..initialize().then((_) {
+        if (!mounted) return;
+        setState(() => _initialized = true);
+        _controller.play();
+        // Laat de parent weten hoe lang de video is
+        widget.onVideoReady?.call(_controller.value.duration);
+      }).catchError((e) {
+        if (!mounted) return;
+        setState(() => _hasError = true);
+        if (kDebugMode) debugPrint('[StoryPlayer] Video init error: $e');
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        CachedNetworkImage(
-          imageUrl: url,
-          fit: BoxFit.cover,
-          errorWidget: (_, _, _) => const Center(
-            child: Icon(Icons.videocam_off, size: 64, color: Colors.white54),
-          ),
+    if (_hasError) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.videocam_off, size: 64, color: Colors.white54),
+            SizedBox(height: 8),
+            Text(S.of(context).videoKanNietWordenAfgespeeld, style: TextStyle(color: Colors.white54, fontSize: 12)),
+          ],
         ),
-        const Center(
-          child: Icon(Icons.play_circle_fill, size: 72, color: Colors.white70),
-        ),
-      ],
+      );
+    }
+    if (!_initialized) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2),
+      );
+    }
+    return FittedBox(
+      fit: BoxFit.cover,
+      child: SizedBox(
+        width: _controller.value.size.width,
+        height: _controller.value.size.height,
+        child: VideoPlayer(_controller),
+      ),
     );
   }
 }

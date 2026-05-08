@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../services/storefront_cms_provider.dart';
@@ -76,7 +77,7 @@ class _TrainerStorefrontBrandingScreenState
       // Load CMS via shared provider + Pro+ settings in parallel
       final results = await Future.wait([
         cmsProvider.ensureLoaded(),
-        api.getProPlusSettings().catchError((_) => {}),
+        api.getProPlusSettings().catchError((_) => <String, dynamic>{}),
       ]);
 
       final cmsData = cmsProvider.data;
@@ -128,7 +129,7 @@ class _TrainerStorefrontBrandingScreenState
         maxWidth: 512,
         imageQuality: 85,
       );
-      if (file != null) {
+      if (file != null && mounted) {
         setState(() => _newLogoPath = file.path);
         Haptics.selection();
       }
@@ -149,7 +150,7 @@ class _TrainerStorefrontBrandingScreenState
         maxWidth: 1920,
         imageQuality: 85,
       );
-      if (file != null) {
+      if (file != null && mounted) {
         setState(() => _newBannerPath = file.path);
         Haptics.selection();
       }
@@ -171,7 +172,7 @@ class _TrainerStorefrontBrandingScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Profile URL: use only lowercase letters, numbers, and hyphens'),
+            content: Text(S.of(context).profileUrlUseOnlyLowercaseLettersNumbersAndHyphens),
           ),
         );
       }
@@ -204,6 +205,8 @@ class _TrainerStorefrontBrandingScreenState
         await api.updateTrainerStorefrontCms({
           'profile_slug': profileSlug,
         });
+        if (!mounted) return;
+        // ignore: use_build_context_synchronously
         context.read<StorefrontCmsProvider>().invalidate();
       }
 
@@ -229,7 +232,7 @@ class _TrainerStorefrontBrandingScreenState
                 size: 20,
               ),
               const SizedBox(width: 12),
-              const Text('Branding opgeslagen'),
+              const Text(S.of(context).brandingOpgeslagen),
             ],
           ),
           backgroundColor: GymiesColors.darkBlue,
@@ -252,7 +255,7 @@ class _TrainerStorefrontBrandingScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Failed to save branding'),
+            content: const Text(S.of(context).failedToSaveBranding),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
           ),
@@ -266,7 +269,7 @@ class _TrainerStorefrontBrandingScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
-      appBar: const GymiesAppBar(title: 'Branding'),
+      appBar: const GymiesAppBar(title: S.of(context).branding),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -286,7 +289,7 @@ class _TrainerStorefrontBrandingScreenState
                       ElevatedButton(
                         onPressed: _loadData,
                         child: Text(
-                          'Retry',
+                          S.of(context).retry,
                           style: GoogleFonts.sora(),
                         ),
                       ),
@@ -305,7 +308,7 @@ class _TrainerStorefrontBrandingScreenState
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -315,7 +318,7 @@ class _TrainerStorefrontBrandingScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Profiel-URL',
+                            S.of(context).profielurl,
                             style: GoogleFonts.sora(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -335,7 +338,7 @@ class _TrainerStorefrontBrandingScreenState
                               ),
                             ],
                             decoration: InputDecoration(
-                              hintText: 'jouwnaam',
+                              hintText: S.of(context).jouwnaam,
                               prefixText: 'gymies.nl/t/',
                               hintStyle: GoogleFonts.sora(
                                 color: Colors.grey.shade400,
@@ -363,7 +366,7 @@ class _TrainerStorefrontBrandingScreenState
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -373,7 +376,7 @@ class _TrainerStorefrontBrandingScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Brand kleur',
+                            S.of(context).brandKleur,
                             style: GoogleFonts.sora(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -408,7 +411,7 @@ class _TrainerStorefrontBrandingScreenState
                                         ? [
                                             BoxShadow(
                                               color: Colors.black
-                                                  .withValues(alpha: 0.1),
+                                                  .withOpacity(0.1),
                                               blurRadius: 8,
                                               offset: const Offset(0, 4),
                                             ),
@@ -444,7 +447,7 @@ class _TrainerStorefrontBrandingScreenState
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -454,7 +457,7 @@ class _TrainerStorefrontBrandingScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Logo & Banner',
+                            S.of(context).logoBanner,
                             style: GoogleFonts.sora(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -506,6 +509,8 @@ class _TrainerStorefrontBrandingScreenState
                                             child: CachedNetworkImage(
                                               imageUrl: _logoUrl!,
                                               fit: BoxFit.cover,
+                                              cacheWidth: 240,
+                                              cacheHeight: 240,
                                             ),
                                           )
                                         else
@@ -520,7 +525,7 @@ class _TrainerStorefrontBrandingScreenState
                                               ),
                                               const SizedBox(height: 8),
                                               Text(
-                                                'Logo',
+                                                S.of(context).logo,
                                                 style: GoogleFonts.sora(
                                                   fontSize: 12,
                                                   color: Colors.grey.shade400,
@@ -576,6 +581,8 @@ class _TrainerStorefrontBrandingScreenState
                                             child: CachedNetworkImage(
                                               imageUrl: _bannerUrl!,
                                               fit: BoxFit.cover,
+                                              cacheWidth: 800,
+                                              cacheHeight: 240,
                                             ),
                                           )
                                         else
@@ -590,7 +597,7 @@ class _TrainerStorefrontBrandingScreenState
                                               ),
                                               const SizedBox(height: 8),
                                               Text(
-                                                'Banner',
+                                                S.of(context).banner,
                                                 style: GoogleFonts.sora(
                                                   fontSize: 12,
                                                   color: Colors.grey.shade400,
@@ -619,7 +626,7 @@ class _TrainerStorefrontBrandingScreenState
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -629,7 +636,7 @@ class _TrainerStorefrontBrandingScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Intro Video',
+                            S.of(context).introVideo,
                             style: GoogleFonts.sora(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -642,7 +649,7 @@ class _TrainerStorefrontBrandingScreenState
                             style: GoogleFonts.sora(),
                             keyboardType: TextInputType.url,
                             decoration: InputDecoration(
-                              hintText: 'https://youtube.com/watch?v=...',
+                              hintText: S.of(context).httpsyoutubecomwatchv,
                               prefixIcon: Icon(
                                 Icons.link_rounded,
                                 color: Colors.grey.shade400,
@@ -689,7 +696,7 @@ class _TrainerStorefrontBrandingScreenState
                                 ),
                               )
                             : Text(
-                                'Opslaan',
+                                S.of(context).opslaan,
                                 style: GoogleFonts.sora(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,

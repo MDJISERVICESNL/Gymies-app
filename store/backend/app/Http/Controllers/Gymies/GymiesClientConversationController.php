@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use App\Helpers\GymiesChatBroadcast;
 use App\Helpers\GymiesSupportSync;
@@ -27,7 +28,7 @@ final class GymiesClientConversationController extends Controller
             return response()->json(['message' => 'Alleen klanten kunnen hun gesprekken bekijken.'], 403);
         }
 
-        if (!\Illuminate\Support\Facades\Schema::hasTable('gymies_conversations')) {
+        if (!Schema::hasTable('gymies_conversations')) {
             return response()->json(['data' => []]);
         }
 
@@ -53,6 +54,7 @@ final class GymiesClientConversationController extends Controller
                 'm.created_at as last_message_at',
                 'trainer.display_name as trainer_name',
             )
+            ->limit(200)
             ->get();
 
         $unreadCounts = [];
@@ -119,15 +121,20 @@ final class GymiesClientConversationController extends Controller
             ->orderBy('created_at')
             ->get(['id', 'conversation_id', 'from_user_id', 'body', 'read_at', 'created_at']);
 
-        $messages = $rows->map(fn ($r) => [
-            'id' => (string) $r->id,
-            'conversation_id' => (string) $r->conversation_id,
-            'from_user_id' => (string) $r->from_user_id,
-            'body' => $r->body,
-            'read_at' => $r->read_at,
-            'created_at' => $r->created_at,
-            'type' => 'message',
-        ])->all();
+        $messages = $rows->map(function ($r) use ($trainerId) {
+            $fromUserId = (int) $r->from_user_id;
+            $senderType = $fromUserId === $trainerId ? 'trainer' : 'client';
+            return [
+                'id' => (string) $r->id,
+                'conversation_id' => (string) $r->conversation_id,
+                'from_user_id' => (string) $r->from_user_id,
+                'sender_type' => $senderType,
+                'body' => $r->body ?? '',
+                'read_at' => $r->read_at,
+                'created_at' => $r->created_at,
+                'type' => 'message',
+            ];
+        })->all();
 
         $includeNotifications = $request->query('include_notifications') === '1' || $request->query('include_notifications') === 'true';
         if ($includeNotifications && $trainerId > 0 && DB::getSchemaBuilder()->hasTable('gymies_notification_queue')) {
@@ -211,6 +218,11 @@ final class GymiesClientConversationController extends Controller
             'body' => 'required|string|max:5000',
         ]);
 
+        $body = trim((string) $request->input('body'));
+        if ($body === '') {
+            return response()->json(['message' => 'Bericht mag niet leeg zijn.'], 422);
+        }
+
         $conversation = DB::table('gymies_conversations')
             ->where('id', $conversationId)
             ->where('client_user_id', (int) $user->id)
@@ -219,24 +231,32 @@ final class GymiesClientConversationController extends Controller
             return response()->json(['message' => 'Conversatie niet gevonden.'], 404);
         }
 
+        $now = now();
         $id = DB::table('gymies_messages')->insertGetId([
             'conversation_id' => $conversationId,
             'from_user_id' => $user->id,
-            'body' => trim((string) $request->input('body')),
-            'created_at' => now(),
+            'body' => $body,
+            'created_at' => $now,
         ]);
-        DB::table('gymies_conversations')->where('id', $conversationId)->update(['updated_at' => now()]);
+        DB::table('gymies_conversations')->where('id', $conversationId)->update(['updated_at' => $now]);
 
         if (class_exists(GymiesChatBroadcast::class)) {
-            GymiesChatBroadcast::afterMessageInserted($conversationId, (int) $id, (int) $user->id, trim((string) $request->input('body')));
+            GymiesChatBroadcast::afterMessageInserted($conversationId, (int) $id, (int) $user->id, $body);
         }
 
-        $body = trim((string) $request->input('body'));
         if (class_exists(\App\Helpers\GymiesSupportSync::class)) {
             \App\Helpers\GymiesSupportSync::syncConversationMessageToTicket($conversationId, (int) $user->id, $body);
         }
 
-        return response()->json(['data' => ['id' => (string) $id]], 201);
+        return response()->json(['data' => [
+            'id' => (string) $id,
+            'conversation_id' => $conversationId,
+            'from_user_id' => (string) $user->id,
+            'sender_type' => 'client',
+            'body' => $body,
+            'read_at' => null,
+            'created_at' => $now->toIso8601String(),
+        ]], 201);
     }
 
     /**
@@ -337,7 +357,8 @@ final class GymiesClientConversationController extends Controller
                 try {
                     event(new \App\Events\Gymies\GymiesChatMessagesRead($trainerId, $conversationId, $readAt));
                 } catch (\Throwable $e) {
-                    // Broadcasting niet geconfigureerd
+                    Log::warning('[ClientConversation] Broadcast failed: ' . $e->getMessage());
+                    if (app()->bound('sentry')) { app('sentry')->captureException($e); }
                 }
             }
         }
@@ -365,7 +386,7 @@ final class GymiesClientConversationController extends Controller
         }
 
         // Berichten eerst verwijderen (FK constraint)
-        if (\Illuminate\Support\Facades\Schema::hasTable('gymies_messages')) {
+        if (Schema::hasTable('gymies_messages')) {
             DB::table('gymies_messages')
                 ->where('conversation_id', (int) $conversationId)
                 ->delete();
@@ -448,7 +469,7 @@ final class GymiesClientConversationController extends Controller
         }
 
         $nextBooking = null;
-        if (\Illuminate\Support\Facades\Schema::hasTable('gymies_bookings')) {
+        if (Schema::hasTable('gymies_bookings')) {
             $row = DB::table('gymies_bookings')
                 ->where('client_user_id', $clientId)
                 ->where('trainer_user_id', (int) $conversation->trainer_user_id)
@@ -494,7 +515,7 @@ final class GymiesClientConversationController extends Controller
             'trainer_user_id' => 'required|integer|exists:gymies_users,id',
         ]);
         $trainerId = (int) $request->query('trainer_user_id');
-        if (!\Illuminate\Support\Facades\Schema::hasTable('gymies_client_progress')) {
+        if (!Schema::hasTable('gymies_client_progress')) {
             return response()->json(['data' => []]);
         }
         $hasBooking = DB::table('gymies_bookings')
@@ -544,7 +565,7 @@ final class GymiesClientConversationController extends Controller
         if (!$hasBooking) {
             return response()->json(['message' => 'Geen relatie met deze trainer.'], 403);
         }
-        if (!\Illuminate\Support\Facades\Schema::hasTable('gymies_client_dossier')) {
+        if (!Schema::hasTable('gymies_client_dossier')) {
             return response()->json([
                 'shared' => false,
                 'message' => 'Je trainer heeft nog geen dossier met je gedeeld.',
@@ -560,7 +581,7 @@ final class GymiesClientConversationController extends Controller
                 'message' => 'Je trainer heeft nog geen dossier met je gedeeld.',
             ]);
         }
-        $sharedAt = \Illuminate\Support\Facades\Schema::hasColumn('gymies_client_dossier', 'shared_with_client_at')
+        $sharedAt = Schema::hasColumn('gymies_client_dossier', 'shared_with_client_at')
             ? ($row->shared_with_client_at ?? null)
             : null;
         if ($sharedAt === null || trim((string) $sharedAt) === '' || str_starts_with((string) $sharedAt, '0000-00-00')) {
@@ -569,7 +590,7 @@ final class GymiesClientConversationController extends Controller
                 'message' => 'Je trainer heeft het dossier nog niet voor je geopend. Vraag ernaar in je volgende sessie.',
             ]);
         }
-        $summary = \Illuminate\Support\Facades\Schema::hasColumn('gymies_client_dossier', 'client_facing_summary')
+        $summary = Schema::hasColumn('gymies_client_dossier', 'client_facing_summary')
             ? ($row->client_facing_summary ?? null)
             : null;
         $goals = $row->goals_long_term ?? null;
@@ -607,7 +628,7 @@ final class GymiesClientConversationController extends Controller
         if (!$hasBooking) {
             return response()->json(['message' => 'Geen relatie met deze trainer.'], 403);
         }
-        if (!\Illuminate\Support\Facades\Schema::hasTable('gymies_client_session_entries')) {
+        if (!Schema::hasTable('gymies_client_session_entries')) {
             return response()->json(['data' => ['session_entries' => [], 'pagination' => ['page' => 1, 'per_page' => 20, 'has_more' => false]]]);
         }
 

@@ -64,7 +64,7 @@ class BookingRepository {
   /// Annuleer een boeking.
   Future<Map<String, dynamic>> cancelBooking(int bookingId, {String? reason}) async {
     return await _api.post('bookings/$bookingId/cancel', {
-      if (reason != null) 'reason': reason,
+      'reason': ?reason,
     });
   }
 

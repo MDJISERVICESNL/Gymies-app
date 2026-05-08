@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 
-import '../theme/gymies_theme.dart';
 
 /// GymiesSkeleton
 /// ──────────────
@@ -128,7 +127,7 @@ class GymiesSkeletonList extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: itemCount,
-      itemBuilder: (_, __) => GymiesSkeletonCard(height: cardHeight),
+      itemBuilder: (_, _) => GymiesSkeletonCard(height: cardHeight),
     );
   }
 }

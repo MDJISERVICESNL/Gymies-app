@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../config/ui_constants.dart';
 import '../../services/connectivity_service.dart';
 
@@ -38,9 +39,9 @@ class OfflineBanner extends StatelessWidget {
             children: [
               const Icon(Icons.wifi_off_rounded, color: UiConstants.warningYellow, size: 18),
               const SizedBox(width: 8),
-              const Text(
-                'Geen internetverbinding',
-                style: TextStyle(
+              Text(
+                S.of(context).noInternetConnection,
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -49,8 +50,8 @@ class OfflineBanner extends StatelessWidget {
               const Spacer(),
               GestureDetector(
                 onTap: () => context.read<ConnectivityService>().checkNow(),
-                child: const Text(
-                  'Opnieuw',
+                child: Text(
+                  S.of(context).againLabel,
                   style: TextStyle(
                     color: UiConstants.warningYellow,
                     fontSize: 13,

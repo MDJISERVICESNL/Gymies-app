@@ -8,6 +8,7 @@ use App\Services\SlotEngine;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
@@ -190,7 +191,13 @@ class GymiesAvailabilityController
         if (in_array('slot_date', $existingColumns) && $slotDate) $row['slot_date'] = $slotDate;
         if (in_array('week_number', $existingColumns) && $weekNumber !== null) $row['week_number'] = $weekNumber;
 
-        DB::table($table)->insert($row);
+        try {
+            DB::table($table)->insert($row);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Fout bij aanmaken beschikbaarheidsslot: ' . $e->getMessage(),
+            ], 500);
+        }
 
         $slots = $this->loadSlots((int) $user->id);
         return response()->json(['slots' => $slots]);
@@ -516,7 +523,7 @@ class GymiesAvailabilityController
             return $exceptions;
         } catch (\Throwable $e) {
             // Log but don't crash — exceptions table issues shouldn't break availability
-            \Log::warning('GymiesAvailabilityController: loadExceptions failed', [
+            Log::warning('GymiesAvailabilityController: loadExceptions failed', [
                 'error' => $e->getMessage(),
                 'userId' => $userId,
             ]);

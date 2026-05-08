@@ -28,6 +28,7 @@ class GymiesChatMessageSent implements ShouldBroadcast
         public string $bodyPreview,
         public string $createdAt,
         public ?string $conversationType = null,
+        public ?string $senderType = null,
     ) {
     }
 
@@ -48,6 +49,7 @@ class GymiesChatMessageSent implements ShouldBroadcast
             'conversation_id' => $this->conversationId,
             'message_id' => $this->messageId,
             'from_user_id' => $this->fromUserId,
+            'sender_type' => $this->senderType ?? 'client',
             'body_preview' => $this->bodyPreview,
             'created_at' => $this->createdAt,
         ];

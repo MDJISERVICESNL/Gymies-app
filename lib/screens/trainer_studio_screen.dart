@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/map_utils.dart';
+import '../utils/currency_format.dart';
 import 'trainer_onboarding_screen.dart';
 import 'widgets/gymies_app_bar.dart';
 import 'widgets/gymies_dialog.dart';
@@ -65,7 +67,7 @@ class _TrainerStudioScreenState extends State<TrainerStudioScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon studio/onboarding niet laden.';
+        _error = S.of(context).konStudioonboardingNietLaden;
         _loading = false;
       });
     }
@@ -97,15 +99,15 @@ class _TrainerStudioScreenState extends State<TrainerStudioScreen> {
     Haptics.heavy();
     final confirmed = await GymiesDialog.destructive(
       context,
-      title: 'Abonnement opzeggen?',
-      message: 'Weet je zeker dat je je abonnement wilt opzeggen? Je verliest toegang tot de bijbehorende features.',
+      title: S.of(context).abonnementOpzeggen,
+      message: S.of(context).weetJeZekerDatJeJe2,
       icon: Icons.warning_amber_rounded,
-      confirmLabel: 'Opzeggen',
+      confirmLabel: S.of(context).opzeggen,
     );
     if (confirmed != true || !mounted) return;
     await _runAction(() async {
       await context.read<GymiesApi>().cancelMySubscription();
-      _success('Abonnement opgezegd');
+      _success(S.of(context).abonnementOpgezegd);
     });
   }
 
@@ -139,8 +141,7 @@ class _TrainerStudioScreenState extends State<TrainerStudioScreen> {
 
   String _money(dynamic cents) {
     final value = _toInt(cents);
-    if (value == null) return '-';
-    return '€${(value / 100).toStringAsFixed(2)}';
+    return formatEuro(value, fallback: '-');
   }
 
   Widget _sectionHeader(IconData icon, String label) {
@@ -152,7 +153,7 @@ class _TrainerStudioScreenState extends State<TrainerStudioScreen> {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.12),
+              color: GymiesColors.primary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(7),
             ),
             child: Icon(icon, size: 14, color: GymiesColors.darkBlue),
@@ -176,7 +177,7 @@ class _TrainerStudioScreenState extends State<TrainerStudioScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: GymiesAppBar(
-        title: 'Studio & Onboarding',
+        title: S.of(context).studioEnOnboarding,
       ),
       body: GymiesListBody(
         loading: _loading,
@@ -190,10 +191,10 @@ class _TrainerStudioScreenState extends State<TrainerStudioScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                     ),
                     child: ListTile(
-                      title: Text('Performance summary', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+                      title: Text(S.of(context).performanceSummary, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
                       subtitle: Text(
                         'Score: ${mapStr(_performance, ['score', 'health_score']).isNotEmpty ? mapStr(_performance, ['score', 'health_score']) : '-'}\n'
                         'Omzet: ${_money(mapPick(_performance, ['revenue_cents', 'revenueCents']))}',
@@ -209,7 +210,7 @@ class _TrainerStudioScreenState extends State<TrainerStudioScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                         ),
                         child: ListTile(
                           title: Text(
@@ -236,10 +237,10 @@ class _TrainerStudioScreenState extends State<TrainerStudioScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                     ),
                     child: ListTile(
-                      title: Text('Onboarding status', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+                      title: Text(S.of(context).onboardingStatus, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
                       subtitle: Text(
                         'Status: ${mapStr(_onboarding, ['status', 'phase']).isNotEmpty ? mapStr(_onboarding, ['status', 'phase']) : '-'}',
                       ),
@@ -249,32 +250,32 @@ class _TrainerStudioScreenState extends State<TrainerStudioScreen> {
                           backgroundColor: GymiesColors.primary,
                           foregroundColor: GymiesColors.darkBlue,
                         ),
-                        child: const Text('Mollie connect'),
+                        child: const Text(S.of(context).mollieConnect),
                       ),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  _sectionHeader(Icons.credit_card_outlined, 'Abonnement'),
+                  _sectionHeader(Icons.credit_card_outlined, S.of(context).abonnement),
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                     ),
                     child: ListTile(
-                      title: Text('Abonnement', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+                      title: Text(S.of(context).abonnement, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
                       subtitle: Text(
-                        '${mapStr(_subscription, ['plan_name', 'name']).isNotEmpty ? mapStr(_subscription, ['plan_name', 'name']) : 'Onbekend'} · '
+                        '${mapStr(_subscription, ['plan_name', 'name']).isNotEmpty ? mapStr(_subscription, ['plan_name', 'name']) : S.of(context).statusOnbekend} · '
                         '${mapStr(_subscription, ['status']).isNotEmpty ? mapStr(_subscription, ['status']) : '-'}',
                       ),
                       trailing: TextButton(
                         onPressed: _busy ? null : _cancelSubscription,
-                        child: const Text('Opzeggen'),
+                        child: const Text(S.of(context).opzeggen),
                       ),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  _sectionHeader(Icons.card_membership_outlined, 'Beschikbare plannen'),
+                  _sectionHeader(Icons.card_membership_outlined, S.of(context).beschikbarePlannen),
                   ..._plans.map(
                     (p) => Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -282,7 +283,7 @@ class _TrainerStudioScreenState extends State<TrainerStudioScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                         ),
                         child: ListTile(
                           title: Text(
@@ -303,7 +304,7 @@ class _TrainerStudioScreenState extends State<TrainerStudioScreen> {
                               backgroundColor: GymiesColors.primary,
                               foregroundColor: GymiesColors.darkBlue,
                             ),
-                            child: const Text('Kies'),
+                            child: const Text(S.of(context).kies),
                           ),
                         ),
                       ),

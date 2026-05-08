@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../services/auth_service.dart';
 import '../../services/gymies_api.dart';
 import '../../services/notification_realtime_service.dart';
 import '../../theme/gymies_theme.dart';
+import '../../utils/app_lifecycle_manager.dart';
 import '../../utils/haptics.dart';
 import '../widgets/offline_banner.dart';
 import '../client_home_screen.dart';
@@ -29,7 +32,8 @@ class ClientShell extends StatefulWidget {
   State<ClientShell> createState() => ClientShellState();
 }
 
-class ClientShellState extends State<ClientShell> {
+class ClientShellState extends State<ClientShell>
+    with AppLifecycleManager<ClientShell> {
   int _currentIndex = 0;
   bool _showOnboarding = false;
   bool _onboardingChecked = false;
@@ -50,7 +54,14 @@ class ClientShellState extends State<ClientShell> {
   @override
   void initState() {
     super.initState();
+    initLifecycle();
     _checkOnboarding();
+  }
+
+  @override
+  void dispose() {
+    disposeLifecycle();
+    super.dispose();
   }
 
   Future<void> _checkOnboarding() async {
@@ -69,6 +80,7 @@ class ClientShellState extends State<ClientShell> {
       }
       // Bestaande gebruikers herkennen: als ze al een display name of stad
       // hebben ingesteld, skip onboarding automatisch (ze kennen de app al).
+      if (!mounted) return;
       final user = context.read<AuthService>().user;
       if (user != null) {
         final name = (user['display_name'] ?? '').toString().trim();
@@ -105,6 +117,24 @@ class ClientShellState extends State<ClientShell> {
 
   void _onOnboardingComplete() {
     setState(() => _showOnboarding = false);
+  }
+
+  @override
+  void onDataRefreshNeeded() {
+    // Called when app returns from background after >5min
+    // Refresh bookings and dashboard data
+    if (kDebugMode) {
+      debugPrint('[ClientShell] Refreshing data after long background period');
+    }
+    try {
+      final api = context.read<GymiesApi>();
+      // Trigger refresh of bookings list (non-blocking)
+      api.getBookings().catchError((_) {
+        if (kDebugMode) debugPrint('[ClientShell] Booking refresh failed');
+      });
+    } catch (_) {
+      // Fail-open: refresh is optional
+    }
   }
 
   /// Navigeer naar een specifieke tab vanuit andere schermen.
@@ -151,7 +181,10 @@ class ClientShellState extends State<ClientShell> {
       final realtime =
           Provider.of<NotificationRealtimeService>(context, listen: true);
       unread = realtime.unreadCount > 0 ? realtime.unreadCount : unread;
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Realtime service unavailable, use local unread count
+      if (kDebugMode) debugPrint('[ClientShell] Realtime service error: $e');
+    }
 
     return PopScope(
       canPop: false,
@@ -189,23 +222,23 @@ class ClientShellState extends State<ClientShell> {
           selectedIndex: _currentIndex,
           onDestinationSelected: _onTabTapped,
           backgroundColor: Colors.white,
-          indicatorColor: GymiesColors.primary.withValues(alpha: 0.2),
+          indicatorColor: GymiesColors.primary.withOpacity(0.2),
           animationDuration: const Duration(milliseconds: 400),
           destinations: [
-            const NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: 'Home',
+            NavigationDestination(
+              icon: const Icon(Icons.home_outlined),
+              selectedIcon: const Icon(Icons.home_rounded),
+              label: S.of(context).navHome,
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.explore_outlined),
-              selectedIcon: Icon(Icons.explore_rounded),
-              label: 'Ontdekken',
+            NavigationDestination(
+              icon: const Icon(Icons.explore_outlined),
+              selectedIcon: const Icon(Icons.explore_rounded),
+              label: S.of(context).navDiscover,
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.fitness_center),
-              selectedIcon: Icon(Icons.fitness_center_rounded),
-              label: 'Training',
+            NavigationDestination(
+              icon: const Icon(Icons.fitness_center),
+              selectedIcon: const Icon(Icons.fitness_center_rounded),
+              label: S.of(context).navTraining,
             ),
             NavigationDestination(
               icon: unread > 0
@@ -220,12 +253,12 @@ class ClientShellState extends State<ClientShell> {
                       child: const Icon(Icons.inbox_rounded),
                     )
                   : const Icon(Icons.inbox_rounded),
-              label: 'Inbox',
+              label: S.of(context).navInbox,
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.person_outline_rounded),
-              selectedIcon: Icon(Icons.person_rounded),
-              label: 'Me',
+            NavigationDestination(
+              icon: const Icon(Icons.person_outline_rounded),
+              selectedIcon: const Icon(Icons.person_rounded),
+              label: S.of(context).navMe,
             ),
           ],
         ),

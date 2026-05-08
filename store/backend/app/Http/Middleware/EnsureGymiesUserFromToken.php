@@ -40,9 +40,12 @@ class EnsureGymiesUserFromToken
         $plainToken = str_contains($token, '|') ? substr($token, strpos($token, '|') + 1) : $token;
         $accessToken = null;
 
-        if (Schema::hasTable('gymies_users') && Schema::hasTable('gymies_personal_access_tokens')) {
+        // Try to find token via DB (try all registered tables)
+        if (Schema::hasTable('gymies_personal_access_tokens') || Schema::hasTable('personal_access_tokens')) {
             $accessToken = $this->findTokenViaDb($plainToken);
         }
+
+        // Fallback: try Sanctum's PersonalAccessToken model (only if not found)
         if ($accessToken === null && class_exists(PersonalAccessToken::class)) {
             try {
                 $accessToken = PersonalAccessToken::findToken($token);
@@ -50,11 +53,28 @@ class EnsureGymiesUserFromToken
                 $accessToken = null;
             }
         }
-        if ($accessToken === null) {
-            $accessToken = $this->findTokenViaDb($plainToken);
-        }
 
         $tokenableId = $accessToken?->tokenable_id ?? null;
+
+        // Check token expiry if applicable
+        // FIX-AUD-005: Always use UTC for token expiry comparisons to prevent DST boundary issues
+        if ($tokenableId !== null && $accessToken !== null) {
+            if (isset($accessToken->expires_at) && $accessToken->expires_at !== null) {
+                // Use UTC for comparison to prevent issues when clocks spring forward/backward
+                $expiryTime = \Carbon\Carbon::parse($accessToken->expires_at)->setTimezone('UTC');
+                $currentTime = \Carbon\Carbon::now('UTC');
+                if ($expiryTime->isPast($currentTime)) {
+                    Log::channel('single')->warning('[GymiesAuth 401] Token expired', [
+                        'path' => $request->path(),
+                        'token_source' => $tokenSource,
+                        'expires_at' => $accessToken->expires_at,
+                        'current_time_utc' => $currentTime->toDateTimeString(),
+                    ]);
+                    return response()->json(['message' => 'Ongeldige of verlopen sessie. Log opnieuw in.'], 401);
+                }
+            }
+        }
+
         if ($tokenableId === null) {
             $row = $this->findUserByApiToken($token);
             if ($row !== null) {

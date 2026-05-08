@@ -1,13 +1,16 @@
+
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
+import 'package:provider/provider.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../services/biometric_auth_service.dart';
+import '../services/locale_provider.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
 import 'client_invoices_screen.dart';
 import 'client_profile_screen.dart';
 import 'client_support_screen.dart';
-
 /// Instellingen-scherm voor klanten — modern iOS-grouped-tiles design.
 class ClientSettingsScreen extends StatefulWidget {
   const ClientSettingsScreen({super.key});
@@ -19,7 +22,7 @@ class ClientSettingsScreen extends StatefulWidget {
 class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
   bool _biometricAvailable = false;
   bool _biometricEnabled = false;
-  String _biometricLabel = 'Biometrie';
+  String _biometricLabel = '';
   bool _biometricLoading = true;
 
   @override
@@ -49,15 +52,14 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
     if (value) {
       // Inschakelen: verifieer eerst met biometric
       final verified = await bio.authenticate(
-        reason: 'Bevestig $_biometricLabel om het in te schakelen',
+        reason: S.of(context).biometricConfirmEnable(_biometricLabel),
       );
-      if (!verified) return; // Gebruiker geannuleerd of mislukt
+      if (!verified) return;
       await bio.setEnabled(true);
       await bio.markAsked();
     } else {
-      // Uitschakelen: verifieer eerst (voorkomt ongeautoriseerd uitschakelen)
       final verified = await bio.authenticate(
-        reason: 'Bevestig $_biometricLabel om het uit te schakelen',
+        reason: S.of(context).biometricConfirmDisable(_biometricLabel),
       );
       if (!verified) return;
       await bio.setEnabled(false);
@@ -96,7 +98,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Instellingen',
+                        S.of(context).settings,
                         style: GoogleFonts.sora(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -118,49 +120,54 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _sectionLabel('ACCOUNT'),
+                    _sectionLabel(S.of(context).account),
                   _GroupedTilesCard(
                     tiles: [
                       _TileData(
                         icon: Icons.person_outline_rounded,
                         iconColor: const Color(0xFF1565C0),
                         iconBg: const Color(0xFFE3F2FD),
-                        label: 'Mijn profiel',
-                        subtitle: 'Naam, e-mail, noodcontact',
+                        label: S.of(context).myProfile,
+                        subtitle: S.of(context).myProfileSubtitle,
                         onTap: () => _navigate(context, const ClientProfileScreen()),
                       ),
                       _TileData(
                         icon: Icons.receipt_long_rounded,
                         iconColor: const Color(0xFF2E7D32),
                         iconBg: const Color(0xFFE8F5E9),
-                        label: 'Facturen',
-                        subtitle: 'Bekijk en download',
+                        label: S.of(context).invoices,
+                        subtitle: S.of(context).invoicesSubtitle,
                         onTap: () => _navigate(context, const ClientInvoicesScreen()),
                       ),
                     ],
                   ),
 
+                  // ── Taal / Language ──
+                  const SizedBox(height: 24),
+                  _sectionLabel(S.of(context).preferences),
+                  _LanguagePickerCard(),
+
                   // ── Beveiliging (alleen tonen als biometric beschikbaar) ──
                   if (!_biometricLoading && _biometricAvailable) ...[
                     const SizedBox(height: 24),
-                    _sectionLabel('BEVEILIGING'),
+                    _sectionLabel(S.of(context).security),
                     _BiometricToggleCard(
-                      label: _biometricLabel,
+                      label: _biometricLabel.isNotEmpty ? _biometricLabel : S.of(context).biometric,
                       enabled: _biometricEnabled,
                       onChanged: _toggleBiometric,
                     ),
                   ],
 
                   const SizedBox(height: 24),
-                  _sectionLabel('HULP'),
+                  _sectionLabel(S.of(context).help),
                   _GroupedTilesCard(
                     tiles: [
                       _TileData(
                         icon: Icons.headset_mic_rounded,
                         iconColor: const Color(0xFF6A1B9A),
                         iconBg: const Color(0xFFF3E5F5),
-                        label: 'Support',
-                        subtitle: 'FAQ en contactformulier',
+                        label: S.of(context).support,
+                        subtitle: S.of(context).supportSubtitle,
                         onTap: () => _navigate(context, const ClientSupportScreen()),
                       ),
                     ],
@@ -221,7 +228,7 @@ class _BiometricToggleCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 12,
             offset: const Offset(0, 3),
           ),
@@ -267,8 +274,8 @@ class _BiometricToggleCard extends StatelessWidget {
                   const SizedBox(height: 1),
                   Text(
                     enabled
-                        ? 'Ingeschakeld — log snel in'
-                        : 'Schakel in voor snelle toegang',
+                        ? S.of(context).biometricEnabled
+                        : S.of(context).biometricDisabled,
                     style: GoogleFonts.sora(
                       fontSize: 12,
                       color: Colors.grey.shade500,
@@ -281,7 +288,6 @@ class _BiometricToggleCard extends StatelessWidget {
             Switch.adaptive(
               value: enabled,
               onChanged: onChanged,
-              activeColor: GymiesColors.primary,
               activeTrackColor: GymiesColors.darkBlue,
             ),
           ],
@@ -324,7 +330,7 @@ class _GroupedTilesCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 12,
             offset: const Offset(0, 3),
           ),
@@ -407,6 +413,110 @@ class _GroupedTilesCard extends StatelessWidget {
             ],
           );
         }),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LANGUAGE PICKER CARD
+// ═══════════════════════════════════════════════════════════════════
+
+class _LanguagePickerCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final lp = context.watch<LocaleProvider>();
+    final t = S.of(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8EAF6),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.language_rounded,
+                size: 20,
+                color: Color(0xFF283593),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    t.language,
+                    style: GoogleFonts.sora(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: GymiesColors.darkBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    t.languageSubtitle,
+                    style: GoogleFonts.sora(
+                      fontSize: 12,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: LocaleProvider.supportedLocales.map((locale) {
+                final isSelected = lp.locale.languageCode == locale.languageCode;
+                return Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: GestureDetector(
+                    onTap: () {
+                      Haptics.selection();
+                      lp.setLocale(locale);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? GymiesColors.darkBlue
+                            : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        locale.languageCode.toUpperCase(),
+                        style: GoogleFonts.sora(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected ? Colors.white : Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
       ),
     );
   }

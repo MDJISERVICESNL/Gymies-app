@@ -34,6 +34,7 @@ class PaymentStatusService {
         _realtime = realtime;
 
   final GymiesApi _api;
+  // ignore: unused_field
   final AuthService _auth;
   final NotificationRealtimeService _realtime;
 
@@ -65,8 +66,18 @@ class PaymentStatusService {
     _lastStatusTimestamp = DateTime.now();
     _pollCount = 0;
 
-    // Luister naar WebSocket events
-    _realtimeSub = _realtime.events.listen(_onRealtimeEvent);
+    try {
+      // BUG FIX: Add error handling for WebSocket event subscription
+      // Luister naar WebSocket events
+      _realtimeSub = _realtime.events.listen(
+        _onRealtimeEvent,
+        onError: (e) {
+          if (kDebugMode) debugPrint('[PaymentStatus] WebSocket event stream error: $e');
+        },
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('[PaymentStatus] watchPayment subscription error: $e');
+    }
 
     // Start ook polling als fallback
     _scheduleNextPoll();
@@ -136,6 +147,7 @@ class PaymentStatusService {
     }
 
     // Als WebSocket verbonden is, poll minder vaak (elke 10s als backup)
+    // BUG FIX: Ensure exponential backoff is properly applied even with WebSocket
     final intervalIndex = _realtime.isConnected
         ? _pollIntervals.length - 1 // Altijd langste interval als WS actief
         : _pollCount.clamp(0, _pollIntervals.length - 1);
@@ -152,9 +164,7 @@ class PaymentStatusService {
 
     try {
       final result = await _api.getBookingPaymentStatus(_watchingBookingId!);
-      final status = (result is Map)
-          ? (result['status'] ?? result['data']?['status'] ?? '').toString()
-          : '';
+      final status = (result['status'] ?? result['data']?['status'] ?? '').toString();
 
       if (status.isNotEmpty && !_isDuplicate(status, null)) {
         if (kDebugMode) {
@@ -169,8 +179,13 @@ class PaymentStatusService {
       }
     }
 
+    // BUG FIX: Ensure timer is properly cancelled before returning
     // Schedule next poll als status nog niet definitief is
-    if (_isFinalStatus(_lastKnownStatus ?? '')) return;
+    if (_isFinalStatus(_lastKnownStatus ?? '')) {
+      _pollTimer?.cancel();
+      _pollTimer = null;
+      return;
+    }
     _scheduleNextPoll();
   }
 

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../theme/gymies_theme.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
@@ -21,10 +24,14 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   final _codeController = TextEditingController();
   bool _loading = false;
   String? _error;
+  Timer? _resendTimer;
+  int _resendCountdown = 0;
+  bool _canResend = true;
 
   @override
   void dispose() {
     _codeController.dispose();
+    _resendTimer?.cancel();
     super.dispose();
   }
 
@@ -59,7 +66,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       if (mounted) {
         setState(() {
           _error = e.toString().contains('Exception')
-              ? 'Er ging iets mis. Probeer opnieuw.'
+              ? S.of(context).erGingIetsMisProbeerOpnieuw
               : e.toString();
           _loading = false;
         });
@@ -68,18 +75,23 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   }
 
   Future<void> _resendCode() async {
+    if (!_canResend) return;
     setState(() => _error = null);
     try {
       final auth = context.read<AuthService>();
       await auth.resendVerificationCode(widget.email);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Nieuwe code verstuurd. Controleer je e-mail.'),
-            backgroundColor: GymiesColors.darkBlue,
-          ),
-        );
-      }
+      if (!mounted) return;
+      setState(() {
+        _canResend = false;
+        _resendCountdown = 60;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.of(context).newCodeSent),
+          backgroundColor: GymiesColors.darkBlue,
+        ),
+      );
+      _startResendTimer();
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -87,6 +99,23 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
         );
       }
     }
+  }
+
+  void _startResendTimer() {
+    _resendTimer?.cancel();
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _resendCountdown--;
+        if (_resendCountdown <= 0) {
+          _canResend = true;
+          timer.cancel();
+        }
+      });
+    });
   }
 
   @override
@@ -101,7 +130,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
             children: [
               const SizedBox(height: 48),
               Text(
-                'E-mail verifiëren',
+                S.of(context).verifyEmailTitle,
                 style: GoogleFonts.sora(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
@@ -114,7 +143,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 'We hebben een code gestuurd naar ${widget.email}. Vul de code hieronder in.',
                 style: GoogleFonts.sora(
                   fontSize: 16,
-                  color: GymiesColors.darkBlue.withValues(alpha: 0.8),
+                  color: GymiesColors.darkBlue.withOpacity(0.8),
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -127,9 +156,9 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                   color: GymiesColors.darkBlue,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'Code',
+                  hintText: S.of(context).code,
                   hintStyle: GoogleFonts.sora(
-                    color: GymiesColors.darkBlue.withValues(alpha: 0.5),
+                    color: GymiesColors.darkBlue.withOpacity(0.5),
                   ),
                   filled: true,
                   fillColor: Colors.white,
@@ -171,18 +200,22 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                           ),
                         )
                       : Text(
-                          'Verifiëren',
+                          S.of(context).verify,
                           style: GoogleFonts.sora(fontSize: 18),
                         ),
                 ),
               ),
               const SizedBox(height: 16),
               TextButton(
-                onPressed: _loading ? null : _resendCode,
+                onPressed: (_loading || !_canResend) ? null : _resendCode,
                 child: Text(
-                  'Code opnieuw sturen',
+                  _canResend
+                      ? S.of(context).resendCodeAction
+                      : '${S.of(context).resendCodeAction} ($_resendCountdown${S.of(context).seconds})',
                   style: GoogleFonts.sora(
-                    color: GymiesColors.darkBlue,
+                    color: (_loading || !_canResend)
+                        ? GymiesColors.darkBlue.withOpacity(0.4)
+                        : GymiesColors.darkBlue,
                     fontWeight: FontWeight.w600,
                   ),
                 ),

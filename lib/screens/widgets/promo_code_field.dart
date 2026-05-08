@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../models/promotion.dart';
 import '../../services/promotion_service.dart';
 import '../../theme/gymies_theme.dart';
@@ -79,7 +80,7 @@ class _PromoCodeFieldState extends State<PromoCodeField> {
                 enabled: !_loading && _validPromo == null,
                 textCapitalization: TextCapitalization.characters,
                 decoration: InputDecoration(
-                  hintText: 'Heb je een code?',
+                  hintText: S.of(context).haveACode,
                   hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
                   filled: true,
                   fillColor: _validPromo != null
@@ -132,7 +133,7 @@ class _PromoCodeFieldState extends State<PromoCodeField> {
                             color: Colors.white,
                           ),
                         )
-                      : const Text('Toepassen', style: TextStyle(fontSize: 14)),
+                      : Text(S.of(context).applyAction, style: const TextStyle(fontSize: 14)),
                 ),
               ),
             ],

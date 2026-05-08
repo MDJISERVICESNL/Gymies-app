@@ -68,8 +68,12 @@ android {
             signingConfig = if (keyPropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {
-                // Fallback naar debug voor lokaal testen — NIET voor Play Store
-                signingConfigs.getByName("debug")
+                // GEEN fallback — release builds MOETEN gesigned zijn.
+                // Zonder key.properties zal de release build FALEN (gewenst gedrag).
+                throw GradleException(
+                    "Release build vereist android/key.properties met signing credentials. " +
+                    "Maak dit bestand aan of gebruik CI/CD secrets."
+                )
             }
         }
     }

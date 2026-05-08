@@ -213,7 +213,7 @@ final class GymiesClientConversationController extends Controller
             return response()->json(['message' => 'Conversatie niet gevonden.'], 404);
         }
 
-        $body = trim((string) $request->input('body'));
+        $body = strip_tags(trim((string) $request->input('body')));
 
         $id = DB::table('gymies_messages')->insertGetId([
             'conversation_id' => $conversationId,

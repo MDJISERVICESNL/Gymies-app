@@ -34,6 +34,43 @@ class GymiesTextStyles {
         fontWeight: FontWeight.w600,
         color: GymiesColors.darkBlue,
       );
+
+  // ── Body & utility styles ──────────────────────────────────
+  static TextStyle get body1 => GoogleFonts.sora(
+        fontSize: 15,
+        fontWeight: FontWeight.w400,
+        color: GymiesColors.darkBlue,
+      );
+
+  static TextStyle get body2 => GoogleFonts.sora(
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+        color: GymiesColors.darkBlue,
+      );
+
+  static TextStyle get caption => GoogleFonts.sora(
+        fontSize: 11,
+        fontWeight: FontWeight.w400,
+        color: Colors.grey,
+      );
+
+  static TextStyle get button => GoogleFonts.sora(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: GymiesColors.darkBlue,
+      );
+
+  // Material-style aliases (used by some generated screens)
+  static TextStyle get headlineLarge => h1;
+  static TextStyle get headlineSmall => h3;
+  static TextStyle get titleMedium => GoogleFonts.sora(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: GymiesColors.darkBlue,
+      );
+  static TextStyle get bodyMedium => body1;
+  static TextStyle get bodySmall => body2;
+  static TextStyle get labelSmall => caption;
 }
 
 /// GYMIES thema voor de hele app (inclusief dialogen en bottom sheets)

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Gymies;
 
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -98,8 +99,9 @@ trait TrainerMediaValidationTrait
             if (isset($info['playtime_seconds']) && is_numeric($info['playtime_seconds'])) {
                 return (float) $info['playtime_seconds'];
             }
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // ignore
+            Log::warning('Failed to get video duration via getID3 for ' . basename($path) . ': ' . $e->getMessage());
         }
 
         return null;

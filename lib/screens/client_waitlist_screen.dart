@@ -1,7 +1,9 @@
+
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../utils/haptics.dart';
 import '../services/gymies_api.dart';
@@ -9,7 +11,6 @@ import '../theme/gymies_theme.dart';
 import '../utils/map_utils.dart';
 import 'widgets/gymies_dialog.dart';
 import 'widgets/trainer_state_views.dart';
-
 /// Klant-scherm voor overzicht van standby / wachtlijst-inschrijvingen.
 class ClientWaitlistScreen extends StatefulWidget {
   const ClientWaitlistScreen({super.key});
@@ -46,7 +47,7 @@ class _ClientWaitlistScreenState extends State<ClientWaitlistScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon wachtlijsten niet laden.';
+        _error = S.of(context).konWachtlijstenNietLaden;
         _loading = false;
       });
     }
@@ -58,10 +59,10 @@ class _ClientWaitlistScreenState extends State<ClientWaitlistScreen> {
 
     final ok = await GymiesDialog.destructive(
       context,
-      title: 'Standby verwijderen',
+      title: S.of(context).standbyVerwijderen,
       message:
-          'Weet je zeker dat je je standby-inschrijving wilt verwijderen? Je verliest je plek op de wachtlijst.',
-      confirmLabel: 'Ja, verwijderen',
+          S.of(context).weetJeZekerDatJeJe3,
+      confirmLabel: S.of(context).jaVerwijderen,
     );
     if (ok != true || !mounted) return;
 
@@ -71,8 +72,8 @@ class _ClientWaitlistScreenState extends State<ClientWaitlistScreen> {
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Standby-inschrijving verwijderd'),
+        SnackBar(
+          content: Text(S.of(context).standbyinschrijvingVerwijderd),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -121,7 +122,7 @@ class _ClientWaitlistScreenState extends State<ClientWaitlistScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Mijn wachtlijsten',
+                        S.of(context).mijnWachtlijsten,
                         style: GoogleFonts.sora(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -147,7 +148,7 @@ class _ClientWaitlistScreenState extends State<ClientWaitlistScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Text(
-                          'Je staat op de standby-lijst van de volgende trainer(s). Zodra er plek vrijkomt, krijg je een melding.',
+                          S.of(context).jeStaatOpDeStandbylijstVanDeVolgendeTrainersZodraErPlekVrijkomtKrijgJeEenMelding,
                           style: GoogleFonts.sora(
                             color: Colors.grey.shade700,
                             fontSize: 14,
@@ -175,7 +176,7 @@ class _ClientWaitlistScreenState extends State<ClientWaitlistScreen> {
           width: 64,
           height: 64,
           decoration: BoxDecoration(
-            color: GymiesColors.primary.withValues(alpha: 0.15),
+            color: GymiesColors.primary.withOpacity(0.15),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Icon(
@@ -186,7 +187,7 @@ class _ClientWaitlistScreenState extends State<ClientWaitlistScreen> {
         ),
         const SizedBox(height: 16),
         Text(
-          'Geen standby-inschrijvingen',
+          S.of(context).geenStandbyinschrijvingen,
           style: GoogleFonts.sora(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -196,7 +197,7 @@ class _ClientWaitlistScreenState extends State<ClientWaitlistScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Je staat nog op geen wachtlijst. Ga naar het profiel van een trainer en klik op "Wachtlijst" om je in te schrijven als er geen plek is.',
+          S.of(context).jeStaatNogOpGeenWachtlijst,
           style: GoogleFonts.sora(
             color: Colors.grey.shade600,
             fontSize: 14,
@@ -219,7 +220,7 @@ class _WaitlistCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final trainer = mapStr(item, ['trainer_name', 'trainerName', 'name']);
+    final trainer = mapStr(item, [S.of(context).trainername, S.of(context).trainername2, 'name']);
     final preferredAt = mapStr(item, ['preferred_at', 'preferredAt', 'date']);
     final requestedFor = mapStr(item, ['requested_for_scheduled_at']);
     final note = mapStr(item, ['note', 'notes', 'message']);
@@ -230,7 +231,7 @@ class _WaitlistCard extends StatelessWidget {
     } else if (preferredAt.isNotEmpty) {
       dateLabel = 'Voorkeur: ${_formatDate(preferredAt)}';
     } else {
-      dateLabel = 'Standby actief – je krijgt een melding bij vrije plek';
+      dateLabel = S.of(context).standbyActiefJeKrijgtEenMelding;
     }
 
     return Card(
@@ -239,14 +240,14 @@ class _WaitlistCard extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
-          backgroundColor: GymiesColors.primary.withValues(alpha: 0.2),
+          backgroundColor: GymiesColors.primary.withOpacity(0.2),
           child: Icon(
             Icons.person_outline_rounded,
             color: GymiesColors.darkBlue,
           ),
         ),
         title: Text(
-          trainer.isEmpty ? 'Trainer' : trainer,
+          trainer.isEmpty ? S.of(context).trainer : trainer,
           style: GoogleFonts.sora(fontWeight: FontWeight.w600),
         ),
         subtitle: Column(
@@ -274,7 +275,7 @@ class _WaitlistCard extends StatelessWidget {
             onRemove();
           },
           icon: Icon(Icons.delete_outline_rounded, color: Colors.red.shade700),
-          tooltip: 'Verwijderen',
+          tooltip: S.of(context).verwijderen,
         ),
       ),
     );

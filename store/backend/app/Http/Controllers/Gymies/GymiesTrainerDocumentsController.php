@@ -57,6 +57,31 @@ class GymiesTrainerDocumentsController
             return response()->json(['message' => 'Niet ingelogd.'], 401);
         }
 
+        // Validate input fields
+        $request->validate([
+            'company_name' => 'nullable|string|max:255',
+            'companyName' => 'nullable|string|max:255',
+            'kvk_number' => 'nullable|string|max:50',
+            'kvk' => 'nullable|string|max:50',
+            'vat_number' => 'nullable|string|max:50',
+            'vat' => 'nullable|string|max:50',
+            'trainer_address_line1' => 'nullable|string|max:255',
+            'address_line1' => 'nullable|string|max:255',
+            'address' => 'nullable|string|max:255',
+            'trainer_postcode' => 'nullable|string|max:20',
+            'postcode' => 'nullable|string|max:20',
+            'trainer_city' => 'nullable|string|max:128',
+            'city' => 'nullable|string|max:128',
+            'trainer_country' => 'nullable|string|max:2',
+            'country' => 'nullable|string|max:2',
+            'country_code' => 'nullable|string|max:2',
+            'vog_url' => 'nullable|url|max:500',
+            'vog_document_url' => 'nullable|url|max:500',
+            'diploma_urls' => 'nullable|array',
+            'diploma_urls.*' => 'url|max:500',
+            'diploma_url' => 'nullable|url|max:500',
+        ]);
+
         $body = $request->all();
 
         // Accepteer geneste structuren (documents, company, etc.)
@@ -150,20 +175,77 @@ class GymiesTrainerDocumentsController
 
         $allowedUpdate['updated_at'] = now();
 
-        $profile = DB::table('gymies_trainer_profiles')->where('user_id', (int) $user->id)->first();
+        // Wrap profile update and payout sync in transaction
+        DB::transaction(function() use ($user, $allowedUpdate, $update) {
+            $profile = DB::table('gymies_trainer_profiles')->where('user_id', (int) $user->id)->first();
 
-        if ($profile) {
-            DB::table('gymies_trainer_profiles')
-                ->where('user_id', (int) $user->id)
-                ->update($allowedUpdate);
-        } else {
-            $allowedUpdate['user_id'] = (int) $user->id;
-            $allowedUpdate['created_at'] = now();
-            DB::table('gymies_trainer_profiles')->insert($allowedUpdate);
-        }
+            if ($profile) {
+                DB::table('gymies_trainer_profiles')
+                    ->where('user_id', (int) $user->id)
+                    ->update($allowedUpdate);
+            } else {
+                $allowedUpdate['user_id'] = (int) $user->id;
+                $allowedUpdate['created_at'] = now();
+                DB::table('gymies_trainer_profiles')->insert($allowedUpdate);
+            }
+
+            // Sync bedrijfsgegevens naar gymies_trainer_payouts (voor self-billing facturering)
+            $this->syncToPayoutTable((int) $user->id, $update);
+        });
 
         $docs = $this->loadDocuments((int) $user->id);
         return response()->json(['data' => $docs]);
+    }
+
+    /**
+     * Sync relevante bedrijfsgegevens naar gymies_trainer_payouts tabel.
+     * Zo hoeft de trainer het maar op één plek in te vullen.
+     */
+    private function syncToPayoutTable(int $userId, array $update): void
+    {
+        if (!Schema::hasTable('gymies_trainer_payouts')) {
+            return;
+        }
+
+        $payoutRow = DB::table('gymies_trainer_payouts')->where('user_id', $userId)->first();
+        if (!$payoutRow) {
+            return; // Payout profiel wordt aangemaakt bij eerste booking, niet hier
+        }
+
+        $sync = [];
+
+        // Map documenten-velden naar payout-velden
+        if (isset($update['company_name']) && $update['company_name'] !== '') {
+            $sync['company_name'] = $update['company_name'];
+        }
+        if (isset($update['kvk_number']) && $update['kvk_number'] !== '') {
+            $sync['kvk_number'] = $update['kvk_number'];
+        }
+        if (isset($update['vat_number']) && $update['vat_number'] !== '') {
+            $sync['btw_number'] = $update['vat_number'];
+        }
+        if (isset($update['trainer_address_line1']) && $update['trainer_address_line1'] !== '') {
+            $sync['street'] = $update['trainer_address_line1'];
+        }
+        if (isset($update['trainer_postcode']) && $update['trainer_postcode'] !== '') {
+            $sync['postal_code'] = strtoupper(str_replace(' ', '', $update['trainer_postcode']));
+        }
+        if (isset($update['trainer_city']) && $update['trainer_city'] !== '') {
+            $sync['city'] = $update['trainer_city'];
+        }
+
+        if (!empty($sync)) {
+            // Alleen kolommen die bestaan in payout tabel
+            $payoutColumns = Schema::getColumnListing('gymies_trainer_payouts');
+            $sync = array_intersect_key($sync, array_flip($payoutColumns));
+
+            if (!empty($sync)) {
+                $sync['updated_at'] = now();
+                DB::table('gymies_trainer_payouts')
+                    ->where('user_id', $userId)
+                    ->update($sync);
+            }
+        }
     }
 
     private function loadDocuments(int $userId): array

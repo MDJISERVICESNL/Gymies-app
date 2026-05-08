@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Gymies;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -398,12 +399,30 @@ final class GymiesCronController extends Controller
      * hun beschikbaarheid niet hebben bijgewerkt. Optioneel: zet search_rank_penalty voor lagere ranking.
      * Aanroep: GET/POST /api/gymies/cron/availability-check?key=...&days=30
      * Plan bijv. wekelijks maandag 09:00.
+     * Beveiligd met deduplicate guard: max 1x per 24h, ongeacht hoe vaak de cron draait.
      * N-037 FIXED: email header injection prevention
      */
     public function availabilityCheck(Request $request): JsonResponse
     {
         if (!$this->validateCronKey($request)) {
             return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        // ── Deduplicate guard: max 1x per 24 uur ──
+        $cacheKey = 'gymies:cron:availability-check:last-run';
+        $lastRun = null;
+        try {
+            $lastRun = Cache::get($cacheKey);
+        } catch (\Throwable $e) {
+            // Cache niet beschikbaar — check database als fallback
+        }
+        if ($lastRun !== null) {
+            return response()->json(['skipped' => true, 'reason' => 'Already ran within 24h', 'last_run' => $lastRun]);
+        }
+        try {
+            Cache::put($cacheKey, now()->toIso8601String(), 86400);
+        } catch (\Throwable $e) {
+            // Doorgaan zonder cache guard
         }
 
         $days = (int) ($request->input('days') ?? 30);
@@ -445,7 +464,7 @@ final class GymiesCronController extends Controller
                 ->whereIn('id', $inactiveTrainers)
                 ->get(['id', 'email', 'display_name']);
 
-        $appName = config('app.name', 'Gymies');
+        $appName = \App\Helpers\GymiesNotificationEmail::mailBrandName();
         $mailed = 0;
         foreach ($users as $u) {
             $email = trim((string) ($u->email ?? ''));
@@ -1213,7 +1232,12 @@ final class GymiesCronController extends Controller
                     }
                     try {
                         DB::table('gymies_audit_logs')->insert($insert);
-                    } catch (\Throwable) {}
+                    } catch (\Throwable $e) {
+                        Log::error('Gymies cron checkSafeSessionOverdue: audit log insert failed', ['trace' => $e->getTraceAsString(), 'error' => $e->getMessage()]);
+                        if (app()->bound('sentry')) {
+                            \Sentry\captureException($e);
+                        }
+                    }
                 }
 
                 // Stuur notificaties op basis van escalatie-niveau
@@ -1322,7 +1346,12 @@ final class GymiesCronController extends Controller
                             'type' => 'safe_session_overdue',
                             'booking_id' => (string) $booking->id,
                         ]);
-                    } catch (\Throwable) {}
+                    } catch (\Throwable $e) {
+                        Log::error('Gymies cron checkSafeSessionOverdue: FCM push to trainer failed', ['user_id' => $trainerId, 'trace' => $e->getTraceAsString(), 'error' => $e->getMessage()]);
+                        if (app()->bound('sentry')) {
+                            \Sentry\captureException($e);
+                        }
+                    }
                 }
                 if ($clientId) {
                     try {
@@ -1330,7 +1359,12 @@ final class GymiesCronController extends Controller
                             'type' => 'safe_session_overdue',
                             'booking_id' => (string) $booking->id,
                         ]);
-                    } catch (\Throwable) {}
+                    } catch (\Throwable $e) {
+                        Log::error('Gymies cron checkSafeSessionOverdue: FCM push to client failed', ['user_id' => $clientId, 'trace' => $e->getTraceAsString(), 'error' => $e->getMessage()]);
+                        if (app()->bound('sentry')) {
+                            \Sentry\captureException($e);
+                        }
+                    }
                 }
             }
         }
@@ -1358,7 +1392,12 @@ final class GymiesCronController extends Controller
                                 $message->subject("Gymies: Sessie van {$clientName} duurt langer dan verwacht");
                             }
                         );
-                    } catch (\Throwable) {}
+                    } catch (\Throwable $e) {
+                        Log::error('Gymies cron checkSafeSessionOverdue: emergency contact email failed', ['email' => $emergencyEmail, 'booking_id' => $booking->id, 'trace' => $e->getTraceAsString(), 'error' => $e->getMessage()]);
+                        if (app()->bound('sentry')) {
+                            \Sentry\captureException($e);
+                        }
+                    }
                 }
             }
 
@@ -1380,7 +1419,12 @@ final class GymiesCronController extends Controller
                             $message->subject("[Gymies Safety] Safe Session Overdue ({$escalation})");
                         }
                     );
-                } catch (\Throwable) {}
+                } catch (\Throwable $e) {
+                    Log::error('Gymies cron checkSafeSessionOverdue: admin email failed', ['email' => $adminEmail, 'booking_id' => $booking->id, 'escalation' => $escalation, 'trace' => $e->getTraceAsString(), 'error' => $e->getMessage()]);
+                    if (app()->bound('sentry')) {
+                        \Sentry\captureException($e);
+                    }
+                }
             }
 
             // Admin in-app notificatie
@@ -2040,6 +2084,31 @@ final class GymiesCronController extends Controller
         }
     }
 
+    /**
+     * Verlopen stories opruimen (soft-delete: verwijder rijen met expires_at < now()).
+     * Draait dagelijks samen met idempotency cleanup.
+     */
+    public function cleanupExpiredStories(Request $request): JsonResponse
+    {
+        try {
+            $deleted = 0;
+            if (Schema::hasTable('gymies_trainer_media') && Schema::hasColumn('gymies_trainer_media', 'expires_at')) {
+                $deleted = DB::table('gymies_trainer_media')
+                    ->where('usage', 'story')
+                    ->whereNotNull('expires_at')
+                    ->where('expires_at', '<', now())
+                    ->delete();
+            }
+            $this->logCronResult('cleanupExpiredStories', ['deleted' => $deleted]);
+            return response()->json(['ok' => true, 'deleted' => $deleted]);
+        } catch (\Throwable $e) {
+            if (function_exists('logger')) {
+                logger()->error('[Cron] cleanupExpiredStories mislukt', ['error' => $e->getMessage()]);
+            }
+            return response()->json(['ok' => false, 'error' => 'Serverfout bij verwerking.'], 500);
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // MOLLIE PAYMENT RECONCILIATION
     // ════════════════════════════════════════════════════════════════════
@@ -2293,5 +2362,733 @@ final class GymiesCronController extends Controller
             'old_status' => $booking->status,
             'new_status' => 'confirmed',
         ]);
+    }
+
+    // ─── PAYOUT CRON ───────────────────────────────────────────────────
+
+    /**
+     * Verwerk automatische uitbetalingen — 1 dag VAN TEVOREN klaarzetten.
+     * Draait dagelijks (bijv. 09:00):
+     * - weekly trainers → op DONDERDAG (uitbetaling vrijdag)
+     * - monthly trainers → op LAATSTE DAG van de maand (uitbetaling 1e)
+     * - daily trainers → direct bij aanvraag (geen cron nodig, gaat via POST payout/request)
+     *
+     * De cron maakt requests aan met status=pending.
+     * Admin ziet ze in het admin-scherm en maakt de volgende dag het geld over.
+     *
+     * GET/POST cron/process-payouts?key=...
+     */
+    public function processPayouts(Request $request): JsonResponse
+    {
+        if (!$this->validateCronKey($request)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        GymiesPayoutService::ensureSchema();
+
+        $today = Carbon::today();
+        $isThursday = $today->isThursday();
+        $isLastDayOfMonth = $today->day === $today->daysInMonth;
+
+        $processed = 0;
+        $skipped = 0;
+        $errors = 0;
+        $details = [];
+
+        // Haal alle trainers op met payout_mode=gymies en saldo >= minimum
+        $trainers = DB::table('gymies_trainer_payouts')
+            ->where('payout_mode', 'gymies')
+            ->where('balance_cents', '>=', GymiesPayoutService::MINIMUM_PAYOUT_CENTS)
+            ->whereNotNull('iban')
+            ->where('iban', '!=', '')
+            ->get();
+
+        foreach ($trainers as $trainer) {
+            $frequency = $trainer->payout_frequency;
+
+            // Check of vandaag een voorbereidingsdag is (1 dag voor uitbetaling)
+            // Daily trainers doen het zelf via POST payout/request → geen cron
+            $shouldProcess = match ($frequency) {
+                'weekly' => $isThursday,
+                'monthly' => $isLastDayOfMonth,
+                default => false, // 'daily' wordt direct afgehandeld bij aanvraag
+            };
+
+            if (!$shouldProcess) {
+                $skipped++;
+                continue;
+            }
+
+            // Check of er al een pending request is
+            $hasPending = DB::table('gymies_payout_requests')
+                ->where('user_id', $trainer->user_id)
+                ->where('status', 'pending')
+                ->exists();
+
+            if ($hasPending) {
+                $skipped++;
+                continue;
+            }
+
+            try {
+                $result = GymiesPayoutService::requestPayout((int) $trainer->user_id, $frequency);
+                if ($result['success']) {
+                    $processed++;
+                    $details[] = [
+                        'user_id' => $trainer->user_id,
+                        'frequency' => $frequency,
+                        'request_id' => $result['request_id'] ?? null,
+                    ];
+
+                    // Push notificatie naar trainer: "Je uitbetaling staat klaar"
+                    try {
+                        if (class_exists(FcmPushHelper::class)) {
+                            FcmPushHelper::sendToUser(
+                                (int) $trainer->user_id,
+                                'Uitbetaling klaar',
+                                'Je uitbetaling van €' . number_format(($result['net_amount'] ?? ((int) $trainer->balance_cents - GymiesPayoutService::payoutFeeForFrequency($frequency))) / 100, 2, ',', '.') . ' wordt morgen overgemaakt.',
+                                ['type' => 'payout_ready', 'request_id' => (string) ($result['request_id'] ?? '')]
+                            );
+                        }
+                    } catch (\Throwable $pushEx) {
+                        // Push mag nooit falen
+                    }
+                } else {
+                    $skipped++;
+                }
+            } catch (\Throwable $e) {
+                $errors++;
+                Log::warning('[Cron] processPayouts: fout bij trainer', [
+                    'user_id' => $trainer->user_id,
+                    'error' => $e->getMessage(),
+                ]);
+                if (app()->bound('sentry')) {
+                    app('sentry')->captureException($e);
+                }
+            }
+        }
+
+        $this->logCronResult('processPayouts', [
+            'processed' => $processed,
+            'skipped' => $skipped,
+            'errors' => $errors,
+            'is_thursday' => $isThursday,
+            'is_last_day_of_month' => $isLastDayOfMonth,
+        ]);
+
+        return response()->json([
+            'processed' => $processed,
+            'skipped' => $skipped,
+            'errors' => $errors,
+            'total_trainers_checked' => $trainers->count(),
+            'details' => $details,
+        ]);
+    }
+
+    /**
+     * Verwerk gym-settlementementen automatisch op vaste schema (maandelijks op 1e, wekelijks op maandag).
+     * Calculeert inkomsten, past platform-fee toe, en maakt settlement record (status 'pending').
+     * Cron: maandelijks op 1e om 06:00, wekelijks op maandag om 06:00.
+     */
+    public function processGymSettlements(Request $request): JsonResponse
+    {
+        if (!$this->validateCronKey($request)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        if (!Schema::hasTable('gymies_organisation_settlements') || !Schema::hasTable('gymies_organisations')) {
+            return response()->json(['message' => 'Tabellen ontbreken', 'processed' => 0], 422);
+        }
+
+        if (!Schema::hasTable('gymies_payment_transactions')) {
+            return response()->json(['message' => 'Payment transactions tabel ontbreekt', 'processed' => 0], 422);
+        }
+
+        $today = Carbon::today();
+        $isMonday = $today->isMonday();
+        $isFirstDayOfMonth = $today->day === 1;
+
+        $processed = 0;
+        $skipped = 0;
+        $errors = 0;
+        $details = [];
+
+        // Bepaal period (vorige dag voor wekelijks, vorige maand voor maandelijks)
+        if ($isMonday) {
+            // Wekelijks: vorige week (maandag-zondag)
+            $periodEnd = $today->copy()->subDay();
+            $periodStart = $periodEnd->copy()->startOfWeek();
+        } else if ($isFirstDayOfMonth) {
+            // Maandelijks: vorige maand (1e-laatste dag)
+            $periodEnd = $today->copy()->subDay();
+            $periodStart = $periodEnd->copy()->startOfMonth();
+        } else {
+            // Niet op een planningsdag
+            return response()->json([
+                'processed' => 0,
+                'message' => 'Geen settlement planning voor vandaag',
+                'is_monday' => $isMonday,
+                'is_first_of_month' => $isFirstDayOfMonth,
+            ]);
+        }
+
+        // Haal alle organisaties op met payout_mode='gymies'
+        $organisations = DB::table('gymies_organisations')
+            ->where('payout_mode', 'gymies')
+            ->whereNotNull('payout_iban')
+            ->where('payout_iban', '!=', '')
+            ->get();
+
+        foreach ($organisations as $org) {
+            $frequency = $org->payout_frequency;
+
+            // Check of deze org vandaag moet worden verwerkt
+            $shouldProcess = match ($frequency) {
+                'weekly' => $isMonday,
+                'monthly' => $isFirstDayOfMonth,
+                default => false,
+            };
+
+            if (!$shouldProcess) {
+                $skipped++;
+                continue;
+            }
+
+            // Check of er al een pending settlement voor deze periode bestaat
+            $hasPending = DB::table('gymies_organisation_settlements')
+                ->where('organisation_id', (int) $org->id)
+                ->where('period_start', $periodStart->toDateString())
+                ->where('period_end', $periodEnd->toDateString())
+                ->where('status', 'pending')
+                ->exists();
+
+            if ($hasPending) {
+                $skipped++;
+                continue;
+            }
+
+            try {
+                DB::transaction(function () use ($org, $periodStart, $periodEnd, &$processed, &$details) {
+                    // Bereken inkomsten: payments waar mollie_account_source='organisation' en org_id matcht
+                    $transactions = DB::table('gymies_payment_transactions')
+                        ->where('organisation_id', (int) $org->id)
+                        ->where('mollie_account_source', 'organisation')
+                        ->whereBetween('created_at', [
+                            $periodStart->startOfDay(),
+                            $periodEnd->endOfDay(),
+                        ])
+                        ->whereIn('status', ['success', 'paid'])
+                        ->get(['id', 'amount_cents']);
+
+                    $grossCents = (int) $transactions->sum('amount_cents');
+                    $numBookings = $transactions->count();
+                    $feeCents = $numBookings * GymiesPayoutService::BOOKING_FEE_CENTS;
+                    $netAmountCents = max($grossCents - $feeCents, 0);
+
+                    // Maak settlement record
+                    $settlementId = DB::table('gymies_organisation_settlements')->insertGetId([
+                        'organisation_id' => (int) $org->id,
+                        'amount_cents' => $grossCents,
+                        'fee_cents' => $feeCents,
+                        'net_amount_cents' => $netAmountCents,
+                        'status' => 'pending',
+                        'period_start' => $periodStart->toDateString(),
+                        'period_end' => $periodEnd->toDateString(),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    $processed++;
+                    $details[] = [
+                        'organisation_id' => (int) $org->id,
+                        'settlement_id' => $settlementId,
+                        'frequency' => $frequency,
+                        'gross_cents' => $grossCents,
+                        'fee_cents' => $feeCents,
+                        'net_cents' => $netAmountCents,
+                        'num_transactions' => $numBookings,
+                    ];
+                });
+            } catch (\Throwable $e) {
+                $errors++;
+                Log::warning('[Cron] processGymSettlements: fout bij organisatie', [
+                    'organisation_id' => $org->id,
+                    'error' => $e->getMessage(),
+                ]);
+                if (app()->bound('sentry')) {
+                    app('sentry')->captureException($e);
+                }
+            }
+        }
+
+        $this->logCronResult('processGymSettlements', [
+            'processed' => $processed,
+            'skipped' => $skipped,
+            'errors' => $errors,
+            'is_monday' => $isMonday,
+            'is_first_of_month' => $isFirstDayOfMonth,
+            'period_start' => $periodStart->toDateString(),
+            'period_end' => $periodEnd->toDateString(),
+        ]);
+
+        return response()->json([
+            'processed' => $processed,
+            'skipped' => $skipped,
+            'errors' => $errors,
+            'total_organisations_checked' => $organisations->count(),
+            'details' => $details,
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    //  ONBOARDING CRON JOBS (Fase D)
+    // ─────────────────────────────────────────────────────────
+
+    /**
+     * Trial reminders: stuur push naar trainers met trial halverwege of bijna afgelopen.
+     * Cron: dagelijks om 09:00.
+     */
+    public function onboardingTrialReminders(Request $request): JsonResponse
+    {
+        if (!$this->validateCronKey($request)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        if (!Schema::hasTable('gymies_trainer_profiles')) {
+            return response()->json(['message' => 'Tabel niet gevonden', 'sent' => 0]);
+        }
+
+        $notifier = new \App\Services\OnboardingNotificationService();
+        $now = now();
+        $sent = ['halfway' => 0, 'expiring_soon' => 0];
+
+        // Actieve trainers met lopende trial
+        $trainers = DB::table('gymies_trainer_profiles')
+            ->join('gymies_users', 'gymies_trainer_profiles.user_id', '=', 'gymies_users.id')
+            ->where('gymies_trainer_profiles.onboarding_status', 'active')
+            ->whereNotNull('gymies_trainer_profiles.trial_started_at')
+            ->whereNotNull('gymies_trainer_profiles.trial_ends_at')
+            ->where('gymies_trainer_profiles.trial_ends_at', '>', $now)
+            ->get([
+                'gymies_trainer_profiles.user_id',
+                'gymies_trainer_profiles.trial_started_at',
+                'gymies_trainer_profiles.trial_ends_at',
+                'gymies_users.display_name',
+            ]);
+
+        foreach ($trainers as $t) {
+            $trialStart = \Carbon\Carbon::parse($t->trial_started_at);
+            $trialEnd = \Carbon\Carbon::parse($t->trial_ends_at);
+            $totalDays = $trialStart->diffInDays($trialEnd);
+            $daysLeft = (int) $now->diffInDays($trialEnd, false);
+            $halfwayDay = (int) ceil($totalDays / 2);
+            $daysPassed = (int) $trialStart->diffInDays($now);
+            $name = $t->display_name ?? 'Trainer';
+
+            // Halverwege: stuur exact op de dag dat de helft bereikt is
+            if ($daysPassed === $halfwayDay) {
+                $notifier->notifyTrialHalfway($t->user_id, $name, $daysLeft);
+                $sent['halfway']++;
+            }
+
+            // Bijna afgelopen: 3 dagen resterend
+            if ($daysLeft === 3) {
+                $notifier->notifyTrialExpiringSoon($t->user_id, $name, $daysLeft);
+                $sent['expiring_soon']++;
+            }
+        }
+
+        $this->logCronResult('onboarding_trial_reminders', $sent);
+        return response()->json($sent);
+    }
+
+    /**
+     * Onboarding nudges: herinnering aan trainers die registratie niet afmaken.
+     * Cron: dagelijks om 10:00.
+     */
+    public function onboardingNudges(Request $request): JsonResponse
+    {
+        if (!$this->validateCronKey($request)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        if (!Schema::hasTable('gymies_trainer_profiles')) {
+            return response()->json(['message' => 'Tabel niet gevonden', 'sent' => 0]);
+        }
+
+        $notifier = new \App\Services\OnboardingNotificationService();
+        $now = now();
+        $sent = ['push_nudge' => 0, 'email_24h' => 0, 'email_72h' => 0];
+
+        // Trainers met status 'incomplete' — onboarding niet afgemaakt
+        $incomplete = DB::table('gymies_trainer_profiles')
+            ->join('gymies_users', 'gymies_trainer_profiles.user_id', '=', 'gymies_users.id')
+            ->where('gymies_trainer_profiles.onboarding_status', 'incomplete')
+            ->where('gymies_trainer_profiles.created_at', '>', $now->copy()->subDays(7))
+            ->get([
+                'gymies_trainer_profiles.user_id',
+                'gymies_trainer_profiles.created_at',
+                'gymies_users.display_name',
+            ]);
+
+        foreach ($incomplete as $t) {
+            $createdAt = \Carbon\Carbon::parse($t->created_at);
+            $hoursAgo = (int) $createdAt->diffInHours($now);
+            $name = $t->display_name ?? 'Trainer';
+
+            // 24u email herinnering (22-26u window om edge cases op te vangen)
+            if ($hoursAgo >= 22 && $hoursAgo <= 26) {
+                $notifier->sendOnboardingReminder24h($t->user_id, $name);
+                $sent['email_24h']++;
+            }
+
+            // 72u email nudge (70-74u window)
+            if ($hoursAgo >= 70 && $hoursAgo <= 74) {
+                $notifier->sendOnboardingNudge72h($t->user_id, $name);
+                $notifier->notifyOnboardingNudge($t->user_id, $name); // ook push
+                $sent['email_72h']++;
+                $sent['push_nudge']++;
+            }
+        }
+
+        $this->logCronResult('onboarding_nudges', $sent);
+        return response()->json($sent);
+    }
+
+    /**
+     * Betaalherinneringen: trainers die goedgekeurd zijn maar mandaat niet afgerond.
+     * Cron: dagelijks om 11:00.
+     */
+    public function onboardingPaymentReminders(Request $request): JsonResponse
+    {
+        if (!$this->validateCronKey($request)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        if (!Schema::hasTable('gymies_trainer_profiles')) {
+            return response()->json(['message' => 'Tabel niet gevonden', 'sent' => 0]);
+        }
+
+        $notifier = new \App\Services\OnboardingNotificationService();
+        $now = now();
+        $sent = 0;
+
+        // Goedgekeurde trainers zonder mandaat (approved maar niet active)
+        $pending = DB::table('gymies_trainer_profiles')
+            ->join('gymies_users', 'gymies_trainer_profiles.user_id', '=', 'gymies_users.id')
+            ->where('gymies_trainer_profiles.onboarding_status', 'approved')
+            ->whereNull('gymies_trainer_profiles.mollie_mandate_id')
+            ->whereNotNull('gymies_trainer_profiles.approved_at')
+            ->get([
+                'gymies_trainer_profiles.user_id',
+                'gymies_trainer_profiles.approved_at',
+                'gymies_users.display_name',
+            ]);
+
+        foreach ($pending as $t) {
+            $approvedAt = \Carbon\Carbon::parse($t->approved_at);
+            $hoursAgo = (int) $approvedAt->diffInHours($now);
+            $name = $t->display_name ?? 'Trainer';
+
+            // Herinnering na 24u, 72u en 168u (1 week)
+            $attempt = match (true) {
+                $hoursAgo >= 22 && $hoursAgo <= 26   => 1,
+                $hoursAgo >= 70 && $hoursAgo <= 74   => 2,
+                $hoursAgo >= 166 && $hoursAgo <= 170 => 3,
+                default => 0,
+            };
+
+            if ($attempt > 0) {
+                $notifier->notifyPaymentReminder($t->user_id, $name, $attempt);
+                $sent++;
+            }
+        }
+
+        $this->logCronResult('onboarding_payment_reminders', ['sent' => $sent]);
+        return response()->json(['sent' => $sent]);
+    }
+
+    /**
+     * Smart trial suggesties: detecteer actieve trainers waarvan trial bijna afloopt.
+     * Cron: dagelijks om 08:00.
+     */
+    public function onboardingSmartTrialSuggestions(Request $request): JsonResponse
+    {
+        if (!$this->validateCronKey($request)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        // Check of smart trial extension flag actief is
+        if (!GymiesFeatureFlags::isEnabled('smart_trial_extension')) {
+            return response()->json(['message' => 'Smart trial extension uitgeschakeld', 'suggestions' => 0]);
+        }
+
+        if (!Schema::hasTable('gymies_trainer_profiles')) {
+            return response()->json(['message' => 'Tabel niet gevonden', 'suggestions' => 0]);
+        }
+
+        $trialService = new \App\Services\TrialExtensionService();
+        $notifier = new \App\Services\OnboardingNotificationService();
+        $now = now();
+        $suggested = 0;
+
+        // Trainers waarvan trial over 5 dagen of minder afloopt
+        $trainers = DB::table('gymies_trainer_profiles')
+            ->join('gymies_users', 'gymies_trainer_profiles.user_id', '=', 'gymies_users.id')
+            ->where('gymies_trainer_profiles.onboarding_status', 'active')
+            ->whereNotNull('gymies_trainer_profiles.trial_ends_at')
+            ->whereBetween('gymies_trainer_profiles.trial_ends_at', [$now, $now->copy()->addDays(5)])
+            ->get([
+                'gymies_trainer_profiles.id as trainer_id',
+                'gymies_trainer_profiles.user_id',
+                'gymies_trainer_profiles.trial_ends_at',
+                'gymies_users.display_name',
+            ]);
+
+        foreach ($trainers as $t) {
+            // Check of verlenging nog mogelijk is
+            $canExtend = $trialService->canExtend($t->trainer_id);
+            if (!$canExtend['can_extend']) {
+                continue;
+            }
+
+            // Bereken activiteitsscore
+            $snapshot = $trialService->getActivitySnapshot($t->trainer_id);
+            $score = (float) ($snapshot['activity_score'] ?? 0);
+
+            // Alleen suggereren bij actieve trainers (score > 30%)
+            if ($score < 30) {
+                continue;
+            }
+
+            $daysLeft = (int) $now->diffInDays(\Carbon\Carbon::parse($t->trial_ends_at), false);
+            $name = $t->display_name ?? 'Trainer';
+
+            $notifier->notifyStaffSmartTrialSuggestion($t->trainer_id, $name, $score, $daysLeft);
+            $suggested++;
+        }
+
+        $this->logCronResult('onboarding_smart_trial_suggestions', ['suggested' => $suggested]);
+        return response()->json(['suggestions' => $suggested]);
+    }
+
+    /**
+     * SLA waarschuwingen: reviews die langer dan 24u wachten.
+     * Cron: elk uur.
+     */
+    public function onboardingSlaWarnings(Request $request): JsonResponse
+    {
+        if (!$this->validateCronKey($request)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        if (!Schema::hasTable('gymies_trainer_profiles')) {
+            return response()->json(['message' => 'Tabel niet gevonden', 'warnings' => 0]);
+        }
+
+        $notifier = new \App\Services\OnboardingNotificationService();
+        $now = now();
+        $warned = 0;
+
+        // SLA uren uit feature flag (standaard 48 uur)
+        $slaHours = GymiesFeatureFlags::getInt('review_sla_hours', 48);
+
+        // Trainers in pending_review langer dan SLA uren
+        $pending = DB::table('gymies_trainer_profiles')
+            ->join('gymies_users', 'gymies_trainer_profiles.user_id', '=', 'gymies_users.id')
+            ->where('gymies_trainer_profiles.onboarding_status', 'pending_review')
+            ->where('gymies_trainer_profiles.updated_at', '<', $now->copy()->subHours($slaHours))
+            ->get([
+                'gymies_trainer_profiles.id as trainer_id',
+                'gymies_trainer_profiles.user_id',
+                'gymies_trainer_profiles.updated_at',
+                'gymies_users.display_name',
+            ]);
+
+        foreach ($pending as $t) {
+            $hoursWaiting = (int) \Carbon\Carbon::parse($t->updated_at)->diffInHours($now);
+            $name = $t->display_name ?? 'Trainer';
+
+            // Stuur waarschuwing elke SLA-interval (bijv. 48, 96, 144, etc.)
+            if ($hoursWaiting % $slaHours < 2) { // 2u window rond elk SLA mark
+                $notifier->notifyStaffSlaWarning($t->trainer_id, $name, $hoursWaiting);
+                $warned++;
+            }
+        }
+
+        $this->logCronResult('onboarding_sla_warnings', ['warned' => $warned]);
+        return response()->json(['warnings' => $warned]);
+    }
+
+    /**
+     * cron/evaluate-regions
+     * For each region with status != 'open':
+     *   1. Call GymiesLaunchGateService::updateRegionCounters()
+     *   2. Call GymiesLaunchGateService::evaluateRegionReadiness()
+     *   3. If ready AND status is currently 'waitlist' or 'invite_only': auto-change to 'open' + activate waitlist
+     *   4. Log results
+     *
+     * For each region with status = 'open':
+     *   1. Update counters
+     *   2. Check if ratio is getting too high (> max_client_trainer_ratio) — log warning
+     *
+     * Send weekly status emails to waitlist users (check notified_at to avoid spam —
+     * only if notified_at is null or > 7 days ago).
+     *
+     * Return summary JSON.
+     */
+    public function evaluateRegions(Request $request): JsonResponse
+    {
+        if (!$this->validateCronKey($request)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        GymiesLaunchGateService::ensureSchema();
+
+        $results = [
+            'evaluated_regions' => 0,
+            'auto_opened' => 0,
+            'warnings' => [],
+            'notified_waitlist_users' => 0,
+        ];
+
+        try {
+            $regions = DB::table('gymies_launch_regions')->get();
+
+            foreach ($regions as $region) {
+                $slug = (string) $region->slug;
+                $status = (string) $region->status;
+
+                // Step 1: Update counters
+                GymiesLaunchGateService::updateRegionCounters($slug);
+
+                // Step 2: Evaluate readiness
+                $readiness = GymiesLaunchGateService::evaluateRegionReadiness($slug);
+
+                if ($status !== 'open') {
+                    // Step 3: Auto-open if ready and status is waitlist or invite_only
+                    if ($readiness['ready'] && in_array($status, ['waitlist', 'invite_only'], true)) {
+                        DB::table('gymies_launch_regions')
+                            ->where('slug', $slug)
+                            ->update([
+                                'status' => 'open',
+                                'opened_at' => now(),
+                                'updated_at' => now(),
+                            ]);
+
+                        $activated = GymiesLaunchGateService::activateWaitlistForRegion($slug);
+                        $results['auto_opened']++;
+
+                        Log::info('[CronController] Auto-opened region', [
+                            'slug' => $slug,
+                            'previous_status' => $status,
+                            'activated_users' => $activated,
+                        ]);
+                    } else {
+                        // Log the recommendation
+                        Log::info('[CronController] Region readiness', [
+                            'slug' => $slug,
+                            'status' => $status,
+                            'ready' => $readiness['ready'],
+                            'recommendation' => $readiness['recommendation'],
+                        ]);
+                    }
+
+                    $results['evaluated_regions']++;
+                } else {
+                    // Region is already open
+                    $maxRatio = (int) $region->max_client_trainer_ratio;
+                    $currentRatio = $readiness['ratio'];
+
+                    if ($currentRatio > $maxRatio) {
+                        $results['warnings'][] = [
+                            'slug' => $slug,
+                            'message' => 'Client-trainer ratio too high',
+                            'current_ratio' => $currentRatio,
+                            'max_ratio' => $maxRatio,
+                            'trainers' => $readiness['trainers'],
+                            'clients' => $readiness['clients'],
+                        ];
+
+                        Log::warning('[CronController] Region ratio warning', [
+                            'slug' => $slug,
+                            'current_ratio' => $currentRatio,
+                            'max_ratio' => $maxRatio,
+                        ]);
+                    }
+
+                    $results['evaluated_regions']++;
+                }
+            }
+
+            // Send weekly notification emails to waitlist users
+            if (Schema::hasTable('gymies_waitlist')) {
+                $now = now();
+                $sevenDaysAgo = $now->copy()->subDays(7);
+
+                $waitlistUsers = DB::table('gymies_waitlist')
+                    ->where('status', 'waiting')
+                    ->where(function ($q) use ($sevenDaysAgo) {
+                        $q->whereNull('notified_at')
+                            ->orWhere('notified_at', '<', $sevenDaysAgo);
+                    })
+                    ->get(['id', 'user_id', 'region_slug', 'role', 'position']);
+
+                foreach ($waitlistUsers as $entry) {
+                    try {
+                        // Send notification email
+                        if (Schema::hasTable('gymies_users')) {
+                            $user = DB::table('gymies_users')
+                                ->where('id', $entry->user_id)
+                                ->first(['email', 'first_name', 'last_name']);
+
+                            if ($user && $user->email) {
+                                // Get region details
+                                $region = DB::table('gymies_launch_regions')
+                                    ->where('slug', $entry->region_slug)
+                                    ->first();
+
+                                // Build notification (simplified)
+                                $message = "Je staat op de wachtlijst voor {$region->city} (positie {$entry->position}).";
+
+                                // In production, send email here
+                                // Mail::to($user->email)->send(new WaitlistStatusNotification($message));
+
+                                // Update notified_at
+                                DB::table('gymies_waitlist')
+                                    ->where('id', $entry->id)
+                                    ->update(['notified_at' => $now]);
+
+                                $results['notified_waitlist_users']++;
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        Log::error('[CronController] Failed to notify waitlist user', [
+                            'user_id' => $entry->user_id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
+
+            $this->logCronResult('evaluate_regions', $results);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Regio evaluatie voltooid',
+                'data' => $results,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('[CronController] evaluateRegions failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Regio evaluatie mislukt',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

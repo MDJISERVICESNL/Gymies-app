@@ -2,11 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../theme/gymies_theme.dart';
 import '../models/trainer_models.dart';
 import '../services/gymies_api.dart';
 import '../services/api_client.dart';
 import '../utils/haptics.dart';
+import '../utils/currency_format.dart';
 import 'widgets/gymies_app_bar.dart';
 import 'widgets/trainer_state_views.dart';
 
@@ -87,7 +89,7 @@ class _TrainerIncomeScreenState extends State<TrainerIncomeScreen> {
       if (mounted) {
         // Bij 404/500: toon leeg overzicht i.p.v. foutmelding
         if (e.statusCode == 404 || e.statusCode == 500) {
-          if (kDebugMode) debugPrint('[TrainerIncome] Fallback: leeg overzicht');
+          if (kDebugMode) debugPrint(S.of(context).trainerincomeFallbackLeegOverzicht);
           setState(() {
             _revenue = TrainerRevenue.fromJson({});
             _liveStatusByItemId = const {};
@@ -155,7 +157,7 @@ class _TrainerIncomeScreenState extends State<TrainerIncomeScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: GymiesAppBar(
-        title: 'Sessie-inkomsten',
+        title: S.of(context).sessieinkomsten,
       ),
       body: GymiesListBody(
         loading: _loading || _revenue == null,
@@ -171,30 +173,30 @@ class _TrainerIncomeScreenState extends State<TrainerIncomeScreen> {
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           key: ValueKey(_statusFilter),
-                          value: _statusFilter,
+                          initialValue: _statusFilter,
                           decoration: const InputDecoration(
-                            labelText: 'Status',
+                            labelText: S.of(context).status,
                             filled: true,
                             fillColor: Colors.white,
                             border: OutlineInputBorder(),
                           ),
                           items: const [
-                            DropdownMenuItem(value: 'all', child: Text('Alle')),
+                            DropdownMenuItem(value: 'all', child: Text(S.of(context).alle)),
                             DropdownMenuItem(
                               value: 'paid',
-                              child: Text('Betaald (online)'),
+                              child: Text(S.of(context).betaaldonline),
                             ),
                             DropdownMenuItem(
                               value: 'cash',
-                              child: Text('Contant betaald'),
+                              child: Text(S.of(context).contantBetaald),
                             ),
                             DropdownMenuItem(
                               value: 'open',
-                              child: Text('Openstaand'),
+                              child: Text(S.of(context).openstaand),
                             ),
                             DropdownMenuItem(
                               value: 'cancelled',
-                              child: Text('Geannuleerd'),
+                              child: Text(S.of(context).geannuleerd),
                             ),
                           ],
                           onChanged: (v) {
@@ -221,12 +223,13 @@ class _TrainerIncomeScreenState extends State<TrainerIncomeScreen> {
                             initialDateRange: _range,
                           );
                           if (picked == null) return;
+                          if (!mounted) return;
                           Haptics.light();
                           setState(() => _range = picked);
                           _load();
                         },
                         icon: const Icon(Icons.date_range_rounded),
-                        label: const Text('Periode'),
+                        label: const Text(S.of(context).periode),
                       ),
                     ],
                   ),
@@ -252,7 +255,7 @@ class _TrainerIncomeScreenState extends State<TrainerIncomeScreen> {
                             });
                             _load();
                           },
-                          child: const Text('Wis'),
+                          child: const Text(S.of(context).wis),
                         ),
                     ],
                   ),
@@ -271,7 +274,7 @@ class _TrainerIncomeScreenState extends State<TrainerIncomeScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: _SummaryCard(
-                          label: 'Betaald',
+                          label: S.of(context).betaald,
                           amountCents: _revenue!.paidRevenueCents,
                           color: Colors.green.shade700,
                           icon: Icons.check_circle_rounded,
@@ -280,7 +283,7 @@ class _TrainerIncomeScreenState extends State<TrainerIncomeScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: _SummaryCard(
-                          label: 'Openstaand',
+                          label: S.of(context).openstaand,
                           amountCents: _revenue!.pendingPayoutCents,
                           color: Colors.orange.shade700,
                           icon: Icons.schedule_rounded,
@@ -295,14 +298,14 @@ class _TrainerIncomeScreenState extends State<TrainerIncomeScreen> {
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
-                          color: GymiesColors.primary.withValues(alpha: 0.12),
+                          color: GymiesColors.primary.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Icon(Icons.history_rounded, size: 15, color: GymiesColors.darkBlue),
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Recent',
+                        S.of(context).recent,
                         style: GoogleFonts.sora(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -317,10 +320,10 @@ class _TrainerIncomeScreenState extends State<TrainerIncomeScreen> {
                       padding: const EdgeInsets.all(24),
                       child: TrainerEmptyState(
                         icon: Icons.payments_outlined,
-                        title: 'Geen transacties',
+                        title: S.of(context).geenTransacties,
                         subtitle: _statusFilter == 'all'
-                            ? 'Transacties verschijnen na bevestigde en afgeronde sessies.'
-                            : 'Geen transacties met deze status.',
+                            ? S.of(context).transactiesVerschijnenNaBevestigdeEnAfgeronde
+                            : S.of(context).geenTransactiesMetDezeStatus,
                         actionLabel: 'Ververs inkomsten',
                         onAction: _load,
                         padding: EdgeInsets.zero,
@@ -355,7 +358,7 @@ class _TrainerIncomeScreenState extends State<TrainerIncomeScreen> {
                           });
                         },
                         icon: const Icon(Icons.expand_more_rounded),
-                        label: const Text('Toon meer'),
+                        label: const Text(S.of(context).toonMeer),
                       ),
                     ),
                 ],
@@ -385,7 +388,7 @@ class _SummaryCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -397,7 +400,7 @@ class _SummaryCard extends StatelessWidget {
                 width: 22,
                 height: 22,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
+                  color: color.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Icon(icon, size: 12, color: color),
@@ -417,7 +420,7 @@ class _SummaryCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '€${(amountCents / 100).toStringAsFixed(2)}',
+            formatEuro(amountCents),
             style: GoogleFonts.sora(
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -468,14 +471,14 @@ class _RevenueItemCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: ListTile(
         leading: Container(
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: iconColor.withValues(alpha: 0.1),
+            color: iconColor.withOpacity(0.1),
             borderRadius: BorderRadius.circular(9),
           ),
           child: Icon(_statusIcon(resolvedStatus), size: 18, color: iconColor),
@@ -502,7 +505,7 @@ class _RevenueItemCard extends StatelessWidget {
           ],
         ),
         trailing: Text(
-          '€${(item.amountCents / 100).toStringAsFixed(2)}',
+          formatEuro(item.amountCents),
           style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 15),
         ),
       ),
@@ -514,16 +517,16 @@ class _RevenueItemCard extends StatelessWidget {
       case 'paid':
       case 'paid_mollie':
       case 'mollie_paid':
-        return 'Betaald (online)';
+        return S.of(context).betaaldonline;
       case 'cash':
       case 'paid_cash':
-        return 'Contant betaald';
+        return S.of(context).contantBetaald;
       case 'pending':
       case 'open':
       case 'unpaid':
-        return 'Openstaand';
+        return S.of(context).openstaand;
       case 'cancelled':
-        return 'Geannuleerd';
+        return S.of(context).geannuleerd;
       default:
         return status;
     }
@@ -561,7 +564,7 @@ class _RevenueItemCard extends StatelessWidget {
     if ((item.paymentReference ?? '').trim().isNotEmpty) {
       parts.add('Ref ${item.paymentReference}');
     }
-    if (parts.isEmpty) return 'Geen extra details';
+    if (parts.isEmpty) return S.of(context).geenExtraDetails;
     return parts.join(' · ');
   }
 }

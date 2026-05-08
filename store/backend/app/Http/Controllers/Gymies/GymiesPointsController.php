@@ -77,8 +77,9 @@ final class GymiesPointsController extends Controller
         }
 
         $userId = (int) $user->id;
-        $page = max(1, (int) ($request->input('page') ?? 1));
-        $limit = 50;
+        // BUG-005: Add strict pagination bounds to prevent unbounded queries
+        $page = max(1, min((int) ($request->input('page') ?? 1), 10000)); // Cap max page to prevent DoS
+        $limit = 50; // Fixed limit, not configurable
         $offset = ($page - 1) * $limit;
 
         // Haal totaal aantal transacties
@@ -112,7 +113,7 @@ final class GymiesPointsController extends Controller
                 'page' => $page,
                 'limit' => $limit,
                 'total' => $total,
-                'total_pages' => ceil($total / $limit),
+                'total_pages' => (int) ceil($total / $limit),
             ],
         ]);
     }

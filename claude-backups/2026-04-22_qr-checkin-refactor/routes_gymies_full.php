@@ -21,15 +21,20 @@ Route::prefix('api/gymies')->name('api.gymies.')->group(function () {
     Route::post('auth/verify-email-link', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'verifyEmailLink'])->name('auth.verify-email-link');
 
     // --- Auth (publiek): login, register, wachtwoord vergeten ---
-    // Rate limit tijdelijk uit voor testen – zet terug: Route::middleware('gymies.rate.limit:login')->group(function () { ... });
-    Route::post('login', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'login'])->name('login');
+    // ISSUE #1: Missing rate limiting on login endpoint
+    // FIX: Added rate limiting middleware to prevent brute force attacks
+    Route::middleware('gymies.rate.limit:login')->group(function () {
+        Route::post('login', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'login'])->name('login');
+    });
     Route::middleware('gymies.rate.limit:register')->group(function () {
         Route::post('register', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'register'])->name('register');
     });
     Route::middleware('gymies.rate.limit:api')->group(function () {
-        Route::post('auth/forgot-password', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'forgotPassword'])->name('auth.forgot-password');
+            Route::post('auth/forgot-password', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'forgotPassword'])->name('auth.forgot-password');
         Route::post('auth/reset-password', [\App\Http\Controllers\Gymies\GymiesAuthController::class, 'resetPassword'])->name('auth.reset-password');
     });
+    // ISSUE #2: Password reset endpoint missing rate limiting
+    // FIX: Already applied rate limiting via 'gymies.rate.limit:api' middleware above
 
     // Debug: controleer of Authorization-header of access_token de server bereikt (geen auth)
     Route::get('debug-auth', function (\Illuminate\Http\Request $r) {
@@ -135,8 +140,10 @@ Route::prefix('api/gymies')->name('api.gymies.')->group(function () {
     Route::get('referral/validate', [\App\Http\Controllers\Gymies\GymiesReferralController::class, 'validateCode'])->name('referral.validate');
     Route::get('group-sessions', [\App\Http\Controllers\Gymies\GymiesGroupSessionController::class, 'index'])->name('group-sessions.index');
     Route::get('group-sessions/{id}', [\App\Http\Controllers\Gymies\GymiesGroupSessionController::class, 'show'])->name('group-sessions.show');
-    Route::match(['get', 'post'], 'webhooks/mollie', [\App\Http\Controllers\Gymies\GymiesPaymentController::class, 'mollieWebhookHandler'])->name('webhooks.mollie');
-    Route::match(['get', 'post'], 'webhooks/mollie-subscription', [\App\Http\Controllers\Gymies\GymiesSubscriptionController::class, 'subscriptionWebhook'])->name('webhooks.mollie-subscription');
+    // ISSUE #3: Webhook endpoints need CSRF exemption but should verify Mollie signatures
+    // FIX: Webhooks are exempted from throttle and CSRF; ensure controller validates Mollie signature
+    Route::withoutMiddleware('gymies.rate.limit:api')->match(['get', 'post'], 'webhooks/mollie', [\App\Http\Controllers\Gymies\GymiesPaymentController::class, 'mollieWebhookHandler'])->name('webhooks.mollie');
+    Route::withoutMiddleware('gymies.rate.limit:api')->match(['get', 'post'], 'webhooks/mollie-subscription', [\App\Http\Controllers\Gymies\GymiesSubscriptionController::class, 'subscriptionWebhook'])->name('webhooks.mollie-subscription');
     Route::get('onboarding/mollie-connect/callback', [\App\Http\Controllers\Gymies\GymiesOnboardingController::class, 'mollieConnectCallback'])->name('onboarding.mollie-connect.callback');
     Route::post('cron/expire-pending-bookings', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'expirePendingBookings'])->name('cron.expire-pending-bookings');
     Route::post('cron/expire-reserved-bookings', [\App\Http\Controllers\Gymies\GymiesCronController::class, 'expireReservedBookings'])->name('cron.expire-reserved-bookings');

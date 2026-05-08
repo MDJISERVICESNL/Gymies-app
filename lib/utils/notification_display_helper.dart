@@ -195,6 +195,7 @@ class NotificationDisplayHelper {
     final reason = _str(data, ['reason', 'note', 'reden']);
 
     final title = displayTitle(item);
+    // ignore: unused_local_variable
     final fullText = _fullText(item);
 
     // Context-specifieke body met concrete gegevens
@@ -340,7 +341,7 @@ class NotificationDisplayHelper {
   /// Controleert of deze melding een bruikbare deep-link target heeft.
   /// Zoekt in zowel root als payload voor IDs en actionable types.
   static bool hasActionableTarget(Map<String, dynamic> item) {
-    final data = _payload(item);
+    // ignore: unused_local_variable
     final type = _normalizedType(item);
     final fullText = _fullText(item);
 

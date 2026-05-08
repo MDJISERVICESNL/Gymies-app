@@ -4,6 +4,7 @@
 /// Alle timeouts, intervals, durations en numerieke limieten op één plek.
 /// Voorkomt magic numbers verspreid over services en screens.
 /// ──────────────────────────────────────────────────────────────────────────
+library;
 
 class TimingConstants {
   TimingConstants._();
@@ -65,4 +66,7 @@ class TimingConstants {
   static const Duration loadingTimeout = Duration(milliseconds: 4500);
   static const Duration loadingFadeIn = Duration(milliseconds: 800);
   static const Duration loadingFadeOut = Duration(milliseconds: 600);
+
+  // ── App Version (FIX #9: Centralize version for easy updates) ──────────
+  static const String appVersion = '1.2.1';
 }

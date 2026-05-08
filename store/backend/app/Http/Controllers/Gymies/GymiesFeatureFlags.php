@@ -18,6 +18,9 @@ use Illuminate\Support\Facades\Schema;
  *   GymiesFeatureFlags::isEnabled('buddy_bookings');              // globaal check
  *   GymiesFeatureFlags::isEnabled('buddy_bookings', $userId, 'trainer'); // per user
  *   GymiesFeatureFlags::all();                                    // alle flags (voor Flutter sync)
+ *   GymiesFeatureFlags::getValue('mandaat_amount', '0.01');       // configureerbare waarde
+ *   GymiesFeatureFlags::getInt('yearly_discount_months', 2);     // typed integer
+ *   GymiesFeatureFlags::getFloat('mandaat_amount', 0.01);        // typed float
  *
  * Cache: flags worden 5 minuten gecachet om DB queries te minimaliseren.
  */
@@ -88,6 +91,106 @@ final class GymiesFeatureFlags
         }
 
         return $result;
+    }
+
+    /**
+     * Haal de configureerbare waarde van een flag op.
+     * Retourneert de 'value' kolom als string, of de default als flag niet bestaat/uitgeschakeld is.
+     */
+    public static function getValue(string $key, ?string $default = null): ?string
+    {
+        $flags = self::loadFlags();
+        $flag  = $flags[$key] ?? null;
+
+        if (!$flag || !(bool) $flag['enabled']) {
+            return $default;
+        }
+
+        return $flag['value'] ?? $default;
+    }
+
+    /**
+     * Haal waarde op als integer.
+     */
+    public static function getInt(string $key, int $default = 0): int
+    {
+        $val = self::getValue($key);
+        return $val !== null ? (int) $val : $default;
+    }
+
+    /**
+     * Haal waarde op als float.
+     */
+    public static function getFloat(string $key, float $default = 0.0): float
+    {
+        $val = self::getValue($key);
+        return $val !== null ? (float) $val : $default;
+    }
+
+    /**
+     * Haal waarde op als boolean (true/false string of 1/0).
+     */
+    public static function getBool(string $key, bool $default = false): bool
+    {
+        $val = self::getValue($key);
+        if ($val === null) return $default;
+        return in_array(strtolower($val), ['true', '1', 'yes', 'aan'], true);
+    }
+
+    /**
+     * Alle flags met hun volledige details ophalen (voor staff dashboard).
+     */
+    public static function allDetailed(): array
+    {
+        $flags = self::loadFlags();
+        $result = [];
+
+        foreach ($flags as $key => $flag) {
+            $result[] = [
+                'key'                => $key,
+                'name'               => $flag['name'] ?? $key,
+                'description'        => $flag['description'] ?? '',
+                'enabled'            => (bool) ($flag['enabled'] ?? false),
+                'value'              => $flag['value'] ?? null,
+                'value_type'         => $flag['value_type'] ?? 'boolean',
+                'category'           => $flag['category'] ?? 'general',
+                'allowed_roles'      => is_string($flag['allowed_roles'] ?? null)
+                    ? json_decode($flag['allowed_roles'], true)
+                    : ($flag['allowed_roles'] ?? null),
+                'rollout_percentage' => (float) ($flag['rollout_percentage'] ?? 100),
+                'updated_at'         => $flag['updated_at'] ?? null,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Update een feature flag (voor staff dashboard).
+     */
+    public static function update(string $key, array $data): bool
+    {
+        if (!Schema::hasTable('gymies_feature_flags')) return false;
+
+        $flag = DB::table('gymies_feature_flags')->where('key', $key)->first();
+        if (!$flag) return false;
+
+        $allowed = ['enabled', 'value', 'name', 'description', 'rollout_percentage'];
+        $update = [];
+        foreach ($allowed as $field) {
+            if (array_key_exists($field, $data)) {
+                $update[$field] = $data[$field];
+            }
+        }
+
+        if (empty($update)) return false;
+
+        $update['updated_at'] = now();
+
+        DB::table('gymies_feature_flags')->where('key', $key)->update($update);
+        self::clearCache();
+
+        return true;
     }
 
     /**

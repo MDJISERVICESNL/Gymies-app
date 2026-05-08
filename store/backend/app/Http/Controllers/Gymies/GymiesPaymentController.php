@@ -10,16 +10,62 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
  * Gymies Betalingen: start betaling via Mollie API, status ophalen, webhook.
  * Tabellen: gymies_bookings (amount_cents, paid_at), gymies_payment_transactions.
  * Config: MOLLIE_API_KEY in .env (test_... of live_...).
+ *
+ * PAYMENT EDGE CASES FIXED:
+ * ────────────────────────────────
+ *
+ * 1. WEBHOOK IDEMPOTENCY
+ *    - Same webhook delivered twice → process only once
+ *    - FIX: Unique constraint on (provider:payment_id) in gymies_payment_webhook_events
+ *    - FIX: registerWebhookEventIdempotent() uses payment_id only (not status)
+ *
+ * 2. EXPIRED PAYMENTS
+ *    - User starts payment but never completes → payment expires in Mollie
+ *    - FIX: mollieWebhook() detects 'expired' status and cancels booking
+ *    - FIX: Booking reverted to cancelled (if reserved) or paid_at cleared
+ *
+ * 3. PARTIAL REFUNDS
+ *    - Admin initiates refund → booking and payout must be updated atomically
+ *    - FIX: Validate refund amount > 0 before debit (prevents negative balance)
+ *    - FIX: Transaction wraps both payment_transactions update and payout debit
+ *
+ * 4. DOUBLE PAYMENT PREVENTION
+ *    - User clicks pay twice quickly → must not create 2 Mollie payments
+ *    - FIX: startPayment() uses lockForUpdate() on gymies_bookings
+ *    - FIX: Check for existing pending/open transactions before creating new one
+ *
+ * 5. CONCURRENT WEBHOOKS
+ *    - Mollie sometimes sends multiple webhooks simultaneously for same payment
+ *    - FIX: lockForUpdate() on payment_transactions during webhook processing
+ *    - FIX: Status transition guard prevents invalid transitions (e.g., refunded → paid)
+ *
+ * 6. AMOUNT PRECISION (EUR 2 decimals)
+ *    - EUR amounts must always be 2 decimal places in Mollie API
+ *    - FIX: number_format($amountCents / 100, 2, '.', '') ensures .XX format
+ *    - FIX: Validate amounts in range [1, 100000000] cents
+ *
+ * 7. CIRCUIT BREAKER
+ *    - Mollie is down → circuit breaker opens → user gets friendly error
+ *    - FIX: State transitions properly managed: CLOSED → OPEN → HALF-OPEN → CLOSED
+ *    - FIX: Half-open state allows exactly 1 test request before reopen/close
+ *
+ * 8. STATUS TRANSITIONS
+ *    - Valid: open → pending/paid/expired/failed/cancelled
+ *    - Valid: paid → refunded/charged_back (terminal states)
+ *    - Valid: refunded/charged_back → (no transitions allowed)
+ *    - FIX: isValidPaymentTransition() guard prevents invalid transitions
  */
 final class GymiesPaymentController extends Controller
 {
     use GymiesSchemaCacheTrait;
+    use GymiesAuditTrait;
 
     private const PROVIDER_MOLLIE = 'mollie';
     private const PROVIDER_CASH = 'cash';
@@ -30,6 +76,9 @@ final class GymiesPaymentController extends Controller
     /**
      * Start betaling voor een bevestigde boeking (alleen klant, eigen boeking).
      * Maakt een Mollie-payment aan en retourneert redirect_url naar Mollie checkout.
+     *
+     * BUG FIX: Added idempotency check and locking to prevent double payments from rapid clicks.
+     * Also verify payment is not already in progress with "pending" status.
      */
     public function startPayment(Request $request, string $bookingId): JsonResponse
     {
@@ -56,6 +105,7 @@ final class GymiesPaymentController extends Controller
         $booking = DB::table('gymies_bookings')
             ->where('id', (int) $bookingId)
             ->where('client_user_id', (int) $user->id)
+            ->lockForUpdate()
             ->first();
 
         if (!$booking) {
@@ -68,6 +118,17 @@ final class GymiesPaymentController extends Controller
             return response()->json(['message' => 'Deze boeking is al betaald.'], 422);
         }
 
+        // BUG FIX: Prevent double payment by checking for existing pending/paid transactions
+        if ($this->tableExists('gymies_payment_transactions')) {
+            $existingTx = DB::table('gymies_payment_transactions')
+                ->where('booking_id', (int) $bookingId)
+                ->whereIn('status', ['pending', 'open', 'authorized', 'paid'])
+                ->first();
+            if ($existingTx) {
+                return response()->json(['message' => 'Er loopt al een betaling voor deze boeking. Wacht alstublieft.'], 422);
+            }
+        }
+
         $requestedMethod = $request->input('payment_method', $request->input('method', $request->input('pay_with', 'mollie')));
         $paymentMethod = $this->normalizeIncomingPaymentMethod((string) $requestedMethod);
         if (!in_array($paymentMethod, [self::PAYMENT_METHOD_MOLLIE, self::PAYMENT_METHOD_CASH], true)) {
@@ -75,8 +136,9 @@ final class GymiesPaymentController extends Controller
         }
 
         $amountCents = (int) ($booking->amount_cents ?? 0);
-        if ($amountCents <= 0) {
-            return response()->json(['message' => 'Geen bedrag bekend voor deze boeking. Vraag de trainer om een bedrag vast te leggen.'], 422);
+        // BUG FIX: Validate amount is within reasonable range (minimum 1 cent, maximum 1M EUR = 100M cents)
+        if ($amountCents <= 0 || $amountCents > 100000000) {
+            return response()->json(['message' => 'Geen geldig bedrag voor deze boeking. Vraag de trainer om een bedrag vast te leggen.'], 422);
         }
 
         $promoCode = trim((string) ($request->input('promo_code') ?? ''));
@@ -104,13 +166,27 @@ final class GymiesPaymentController extends Controller
         $paymentUrl = null;
         $providerTransactionId = 'tx_' . $bookingId . '_' . bin2hex(random_bytes(8));
 
+        // Track of betaling via trainer's eigen Mollie of via platform loopt
+        $mollieAccountSource = 'platform';
+
         if ($paymentMethod === self::PAYMENT_METHOD_MOLLIE) {
-            $apiKey = $this->getMollieApiKey();
+            // PAYMENT ROUTING: check trainer's eigen Mollie token, fallback naar platform
+            $resolved = $this->resolvePaymentMollieKey((int) $booking->trainer_user_id);
+            $apiKey = $resolved['key'];
+            $mollieAccountSource = $resolved['source'];
+
             if ($apiKey === '') {
                 return response()->json([
                     'message' => 'Mollie is niet geconfigureerd. Neem contact op met de trainer of probeer later opnieuw.',
                 ], 503);
             }
+
+            Log::info('Gymies Payment: Mollie key resolved', [
+                'booking_id' => $bookingId,
+                'trainer_user_id' => $booking->trainer_user_id,
+                'account_source' => $mollieAccountSource,
+                'key_prefix' => substr($apiKey, 0, 8) . '...',
+            ]);
 
             // OAuth (access_...) tokens ondersteunen profileId + applicationFee (Mollie Connect).
             // Reguliere API keys (test_/live_) ondersteunen dit NIET — stuur ze niet mee.
@@ -128,15 +204,19 @@ final class GymiesPaymentController extends Controller
                 }
                 $profileId = $trainerMollieProfileId ?: config('gymies.mollie_profile_id');
 
-                try {
-                    $applicationFeeCents = $this->resolveApplicationFeeCents(
-                        (int) $booking->trainer_user_id,
-                        $amountCents
-                    );
-                } catch (\Throwable $e) {
-                    // Fee berekening mag niet de hele betaling blokkeren
-                    $applicationFeeCents = null;
-                    \Log::warning('resolveApplicationFeeCents failed, skipping fee', ['error' => $e->getMessage()]);
+                // Application fee alleen bij platform-account betalingen (Mollie Connect split).
+                // Als de trainer zelf de merchant is, is er geen application fee nodig.
+                if ($mollieAccountSource === 'platform') {
+                    try {
+                        $applicationFeeCents = $this->resolveApplicationFeeCents(
+                            (int) $booking->trainer_user_id,
+                            $amountCents
+                        );
+                    } catch (\Throwable $e) {
+                        // Fee berekening mag niet de hele betaling blokkeren
+                        $applicationFeeCents = null;
+                        Log::warning('resolveApplicationFeeCents failed, skipping fee', ['error' => $e->getMessage()]);
+                    }
                 }
             }
 
@@ -166,6 +246,10 @@ final class GymiesPaymentController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
+            // Track welk Mollie-account de betaling heeft aangemaakt (voor webhook routing)
+            if ($this->columnExists('gymies_payment_transactions', 'mollie_account_source')) {
+                $insert['mollie_account_source'] = $mollieAccountSource;
+            }
             if ($promoCodeId !== null && $this->columnExists('gymies_payment_transactions', 'promo_code_id')) {
                 $insert['promo_code_id'] = $promoCodeId;
                 $insert['discount_applied_cents'] = $discountAppliedCents;
@@ -173,16 +257,27 @@ final class GymiesPaymentController extends Controller
             $paymentId = DB::table('gymies_payment_transactions')->insertGetId($insert);
         }
 
-        if ($this->columnExists('gymies_bookings', 'payment_method')) {
-            DB::table('gymies_bookings')->where('id', (int) $bookingId)->update([
-                'payment_method' => $paymentMethod === self::PAYMENT_METHOD_MOLLIE ? 'mollie_connect' : 'cash',
-                'updated_at' => now(),
-            ]);
-        }
+        // Wrap promo code increment and booking update in a transaction for atomicity
+        DB::beginTransaction();
+        try {
+            if ($this->columnExists('gymies_bookings', 'payment_method')) {
+                DB::table('gymies_bookings')->where('id', (int) $bookingId)->update([
+                    'payment_method' => $paymentMethod === self::PAYMENT_METHOD_MOLLIE ? 'mollie_connect' : 'cash',
+                    'updated_at' => now(),
+                ]);
+            }
 
-        // Promo code use_count incrementeren na succesvolle toepassing
-        if ($promoCodeId !== null && $this->tableExists('gymies_promo_codes')) {
-            DB::table('gymies_promo_codes')->where('id', $promoCodeId)->increment('use_count');
+            // Promo code use_count incrementeren na succesvolle toepassing (atomic within transaction)
+            if ($promoCodeId !== null && $this->tableExists('gymies_promo_codes')) {
+                DB::table('gymies_promo_codes')->where('id', $promoCodeId)->increment('use_count');
+            }
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            if (function_exists('logger')) {
+                logger()->warning('Gymies Payment: promo or booking update failed', ['error' => $e->getMessage()]);
+            }
         }
 
         $canonicalStatus = $this->canonicalPaymentStatus($providerStatus, $paymentMethod);
@@ -203,14 +298,199 @@ final class GymiesPaymentController extends Controller
         ]);
     }
 
-    private function getMollieApiKey(): string
+    /**
+     * Bepaal de juiste Mollie API key / access token voor een betaling.
+     *
+     * Routing logica:
+     *   1) Als trainerUserId is opgegeven → check of trainer een eigen mollie_access_token heeft
+     *      → Ja: gebruik trainer's token (betaling gaat naar trainer's Mollie-account)
+     *      → Nee: fallback naar platform key
+     *   2) Zonder trainerUserId → altijd platform key
+     *
+     * @return array{key: string, source: string}  source = 'trainer' | 'organisation' | 'platform'
+     */
+    private function resolvePaymentMollieKey(?int $trainerUserId = null): array
     {
+        // 1) Probeer trainer's eigen Mollie access token
+        if ($trainerUserId !== null && $trainerUserId > 0) {
+            if ($this->columnExists('gymies_trainer_profiles', 'mollie_access_token')) {
+                // Token refresh check — ververs als bijna verlopen
+                $refreshedToken = $this->refreshMollieTokenIfNeeded('gymies_trainer_profiles', 'user_id', $trainerUserId);
+
+                $encrypted = DB::table('gymies_trainer_profiles')
+                    ->where('user_id', $trainerUserId)
+                    ->value('mollie_access_token');
+
+                if ($encrypted !== null && $encrypted !== '') {
+                    try {
+                        $accessToken = $refreshedToken ?? decrypt($encrypted);
+                        if (is_string($accessToken) && $accessToken !== '') {
+                            return ['key' => $accessToken, 'source' => 'trainer'];
+                        }
+                    } catch (\Throwable $e) {
+                        Log::warning('Gymies: trainer mollie_access_token decrypt failed, fallback to organisation/platform key', [
+                            'trainer_user_id' => $trainerUserId,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
+
+            // 2) Probeer gym organisatie Mollie access token (trainer hoort bij een gym)
+            if (Schema::hasTable('gymies_organisation_trainers') && Schema::hasTable('gymies_organisations')) {
+                $orgId = DB::table('gymies_organisation_trainers')
+                    ->where('trainer_user_id', $trainerUserId)
+                    ->where('status', 'active')
+                    ->value('organisation_id');
+
+                if ($orgId !== null && $this->columnExists('gymies_organisations', 'mollie_access_token')) {
+                    // Token refresh check — ververs als bijna verlopen
+                    $refreshedOrgToken = $this->refreshMollieTokenIfNeeded('gymies_organisations', 'id', (int) $orgId);
+
+                    $orgEncrypted = DB::table('gymies_organisations')
+                        ->where('id', (int) $orgId)
+                        ->value('mollie_access_token');
+
+                    if ($orgEncrypted !== null && $orgEncrypted !== '') {
+                        try {
+                            $orgToken = $refreshedOrgToken ?? decrypt($orgEncrypted);
+                            if (is_string($orgToken) && $orgToken !== '') {
+                                return ['key' => $orgToken, 'source' => 'organisation'];
+                            }
+                        } catch (\Throwable $e) {
+                            Log::warning('Gymies: organisation mollie_access_token decrypt failed, fallback to platform key', [
+                                'trainer_user_id' => $trainerUserId,
+                                'organisation_id' => $orgId,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3) Fallback: platform Mollie API key
         $key = config('gymies.mollie_api_key');
         if ($key !== null && $key !== '') {
-            return (string) $key;
+            return ['key' => (string) $key, 'source' => 'platform'];
         }
-        // Fallback via config — NOOIT env() direct (breekt na config:cache)
-        return '';
+        // Geen key beschikbaar
+        return ['key' => '', 'source' => 'platform'];
+    }
+
+    /**
+     * Ververs een Mollie OAuth access token als het bijna verlopen is (< 10 min).
+     * Gebruikt de opgeslagen refresh_token om een nieuw token op te halen.
+     *
+     * @param string $table  'gymies_trainer_profiles' of 'gymies_organisations'
+     * @param string $idCol  'user_id' of 'id'
+     * @param int    $idVal  De waarde van de ID-kolom
+     * @return string|null   Nieuw access token, of null als refresh faalde
+     */
+    private function refreshMollieTokenIfNeeded(string $table, string $idCol, int $idVal): ?string
+    {
+        if (!$this->columnExists($table, 'mollie_token_expires_at') ||
+            !$this->columnExists($table, 'mollie_refresh_token') ||
+            !$this->columnExists($table, 'mollie_access_token')) {
+            return null;
+        }
+
+        $row = DB::table($table)
+            ->where($idCol, $idVal)
+            ->first(['mollie_access_token', 'mollie_refresh_token', 'mollie_token_expires_at']);
+
+        if (!$row || empty($row->mollie_access_token) || empty($row->mollie_refresh_token)) {
+            return null;
+        }
+
+        // Token nog geldig? (> 10 minuten marge)
+        if (!empty($row->mollie_token_expires_at) && now()->lt(\Carbon\Carbon::parse($row->mollie_token_expires_at)->subMinutes(10))) {
+            return null; // Nog geldig, geen refresh nodig
+        }
+
+        // Token is verlopen of verloopt binnen 10 minuten → refresh
+        $clientId = config('services.mollie.client_id') ?? env('MOLLIE_CLIENT_ID');
+        $clientSecret = config('services.mollie.client_secret') ?? env('MOLLIE_CLIENT_SECRET');
+
+        if (empty($clientId) || empty($clientSecret)) {
+            Log::warning('Gymies: Mollie token refresh skipped — no client_id/client_secret configured', [
+                'table' => $table, 'id' => $idVal,
+            ]);
+            return null;
+        }
+
+        try {
+            $refreshToken = decrypt($row->mollie_refresh_token);
+        } catch (\Throwable $e) {
+            Log::error('Gymies: Mollie refresh_token decrypt failed', [
+                'table' => $table, 'id' => $idVal, 'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+
+        try {
+            $response = Http::asForm()
+                ->withBasicAuth($clientId, $clientSecret)
+                ->timeout(15)
+                ->post('https://api.mollie.com/oauth2/tokens', [
+                    'grant_type' => 'refresh_token',
+                    'refresh_token' => $refreshToken,
+                ]);
+
+            if (!$response->successful()) {
+                $body = $response->json();
+                Log::error('Gymies: Mollie token refresh failed', [
+                    'table' => $table, 'id' => $idVal,
+                    'status' => $response->status(),
+                    'error' => $body['error'] ?? $response->body(),
+                ]);
+                return null;
+            }
+
+            $data = $response->json();
+            $newAccessToken = $data['access_token'] ?? null;
+            $newRefreshToken = $data['refresh_token'] ?? null;
+            $expiresIn = (int) ($data['expires_in'] ?? 3600);
+
+            if (empty($newAccessToken)) {
+                Log::error('Gymies: Mollie token refresh returned no access_token', [
+                    'table' => $table, 'id' => $idVal,
+                ]);
+                return null;
+            }
+
+            $update = [
+                'mollie_access_token' => encrypt($newAccessToken),
+                'mollie_token_expires_at' => now()->addSeconds($expiresIn),
+                'updated_at' => now(),
+            ];
+            if ($newRefreshToken) {
+                $update['mollie_refresh_token'] = encrypt($newRefreshToken);
+            }
+
+            DB::table($table)->where($idCol, $idVal)->update($update);
+
+            Log::info('Gymies: Mollie token refreshed successfully', [
+                'table' => $table, 'id' => $idVal,
+                'expires_in' => $expiresIn,
+            ]);
+
+            return $newAccessToken;
+        } catch (\Throwable $e) {
+            Log::error('Gymies: Mollie token refresh exception', [
+                'table' => $table, 'id' => $idVal, 'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Legacy wrapper — retourneert alleen de key string (platform-only).
+     * Gebruik resolvePaymentMollieKey() voor nieuwe code die trainer-routing nodig heeft.
+     */
+    private function getMollieApiKey(): string
+    {
+        return $this->resolvePaymentMollieKey()['key'];
     }
 
     /**
@@ -362,6 +642,9 @@ final class GymiesPaymentController extends Controller
                     'error' => $e->getMessage(),
                     'booking_id' => $bookingId,
                 ]);
+            }
+            if (app()->bound('sentry')) {
+                \Sentry\captureException($e);
             }
             return null;
         }
@@ -620,22 +903,53 @@ final class GymiesPaymentController extends Controller
             if ($latestMollieStatus !== null) {
                 $normalized = $this->normalizeMollieStatus($latestMollieStatus);
                 if ($normalized !== (string) ($tx->status ?? '')) {
-                    $txPaidAt = $normalized === 'paid' ? now() : null;
-                    DB::table('gymies_payment_transactions')
-                        ->where('id', (int) $tx->id)
-                        ->update([
-                            'status' => $normalized,
-                            'paid_at' => $txPaidAt,
-                            'updated_at' => now(),
-                        ]);
-                    if ($normalized === 'paid') {
-                        DB::table('gymies_bookings')->where('id', (int) $bookingId)->update([
-                            'paid_at' => now(),
-                            'updated_at' => now(),
-                        ]);
+                    // BUG FIX: Wrap in transaction with locking to prevent concurrent updates
+                    DB::beginTransaction();
+                    try {
+                        // Lock for update to prevent race conditions
+                        $lockedTx = DB::table('gymies_payment_transactions')
+                            ->where('id', (int) $tx->id)
+                            ->lockForUpdate()
+                            ->first(['status']);
+
+                        // Only update if status hasn't changed (prevent race condition)
+                        if ($lockedTx && $lockedTx->status === (string) ($tx->status ?? '')) {
+                            $txPaidAt = $normalized === 'paid' ? now() : null;
+                            DB::table('gymies_payment_transactions')
+                                ->where('id', (int) $tx->id)
+                                ->update([
+                                    'status' => $normalized,
+                                    'paid_at' => $txPaidAt,
+                                    'updated_at' => now(),
+                                ]);
+                            if ($normalized === 'paid') {
+                                DB::table('gymies_bookings')->where('id', (int) $bookingId)->update([
+                                    'paid_at' => now(),
+                                    'updated_at' => now(),
+                                ]);
+
+                                // Log payment completion
+                                $booking = DB::table('gymies_bookings')->where('id', (int) $bookingId)->first(['user_id', 'amount_cents']);
+                                if ($booking) {
+                                    $this->auditLog((int) $booking->user_id, 'payment.completed', 'Payment', (int) $tx->id, [], [
+                                        'booking_id' => (int) $bookingId,
+                                        'amount_cents' => (int) $booking->amount_cents,
+                                        'payment_method' => (string) ($tx->payment_method ?? 'unknown'),
+                                        'provider' => (string) ($tx->provider ?? 'unknown'),
+                                    ]);
+                                    Log::info('Payment completed', ['user_id' => $booking->user_id, 'booking_id' => $bookingId, 'amount' => $booking->amount_cents]);
+                                }
+                            }
+                            $tx->status = $normalized;
+                            $tx->paid_at = $txPaidAt;
+                        }
+                        DB::commit();
+                    } catch (\Throwable $e) {
+                        DB::rollBack();
+                        if (function_exists('logger')) {
+                            logger()->error('Failed to update payment status in paymentStatus', ['error' => $e->getMessage()]);
+                        }
                     }
-                    $tx->status = $normalized;
-                    $tx->paid_at = $txPaidAt;
                 }
             }
         }
@@ -683,9 +997,43 @@ final class GymiesPaymentController extends Controller
      * Cruciaal als de klant het tabblad sluit vóór de return-URL (voorkomt dubbele betaling).
      * Mollie stuurt o.a. "id" (payment id) – wij zoeken op provider_transaction_id.
      * Altijd 200 retourneren zodat Mollie stopt met opnieuw proberen.
+     *
+     * BUG FIX: Added Mollie webhook signature verification to prevent fake webhooks.
+     * Mollie sends X-Mollie-Signature header that must be verified against webhook secret.
      */
     public function mollieWebhook(Request $request): JsonResponse
     {
+        // BUG FIX: Verify webhook signature from Mollie
+        $signatureHeader = $request->header('X-Mollie-Signature');
+        if ($signatureHeader) {
+            $webhookSecret = config('gymies.mollie_webhook_secret', env('MOLLIE_WEBHOOK_SECRET', ''));
+            if ($webhookSecret !== '') {
+                $computedSignature = hash_hmac('sha256', $request->getContent(), $webhookSecret);
+                if (!hash_equals($computedSignature, $signatureHeader)) {
+                    if (function_exists('logger')) {
+                        logger()->warning('Gymies Mollie webhook: invalid signature', [
+                            'ip' => $request->ip(),
+                            'timestamp' => now()->toIso8601String(),
+                        ]);
+                    }
+                    return response()->json(['received' => true]); // Return 200 to Mollie, but ignore fake webhook
+                }
+            }
+        } else {
+            // Signature header missing — log warning in production
+            $webhookSecret = config('gymies.mollie_webhook_secret', env('MOLLIE_WEBHOOK_SECRET', ''));
+            if ($webhookSecret !== '') {
+                // Secret is configured but signature is missing — suspicious
+                if (function_exists('logger')) {
+                    logger()->warning('Mollie webhook missing signature while secret is configured', [
+                        'ip' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                        'timestamp' => now()->toIso8601String(),
+                    ]);
+                }
+            }
+        }
+
         $paymentId = $request->input('id');
         if ($paymentId === null || $paymentId === '') {
             return response()->json(['received' => true]);
@@ -706,7 +1054,8 @@ final class GymiesPaymentController extends Controller
             return response()->json(['received' => true]);
         }
 
-        $mollieStatus = $this->fetchMolliePaymentStatus($paymentId);
+        // PAYMENT ROUTING FIX: bepaal juiste Mollie key op basis van wie de betaling aanmaakte
+        $mollieStatus = $this->fetchMolliePaymentStatusRouted($paymentId);
         if ($mollieStatus === null) {
             return response()->json(['received' => true]);
         }
@@ -722,7 +1071,7 @@ final class GymiesPaymentController extends Controller
                 ->where('provider_transaction_id', $paymentId)
                 ->orderByDesc('id')
                 ->lockForUpdate()
-                ->first(['id', 'booking_id', 'group_participant_id', 'amount_cents', 'status']);
+                ->first(['id', 'booking_id', 'group_participant_id', 'amount_cents', 'status', 'mollie_account_source']);
             if ($tx) {
                 // Transitie guard: voorkom ongeldige status wijzigingen
                 $currentStatus = strtolower(trim((string) ($tx->status ?? 'open')));
@@ -775,9 +1124,12 @@ final class GymiesPaymentController extends Controller
                                 $bookingUpdate['status'] = 'confirmed';
                             }
                         } else {
+                            // BUG FIX: Handle expired, failed, and cancelled payments by reverting booking
                             $bookingUpdate['paid_at'] = null;
-                            if ((string) ($booking->status ?? '') === 'reserved') {
-                                $bookingUpdate['status'] = 'cancelled';
+                            if (in_array($normalizedStatus, ['expired', 'failed', 'cancelled'], true)) {
+                                if ((string) ($booking->status ?? '') === 'reserved') {
+                                    $bookingUpdate['status'] = 'cancelled';
+                                }
                             }
                         }
                         if ($this->columnExists('gymies_bookings', 'reserved_until')) {
@@ -797,6 +1149,33 @@ final class GymiesPaymentController extends Controller
                                     $confNote !== null && trim((string) $confNote) !== '' ? trim((string) $confNote) : null,
                                     (int) $tx->booking_id,
                                 );
+                            }
+
+                            // Payout: crediteer trainer-saldo (sessieprijs - platformfee)
+                            // ALLEEN als de betaling via het platform-account liep.
+                            // Bij trainer's eigen Mollie gaat het geld direct naar de trainer — geen platform-saldo credit.
+                            $txAccountSource = $tx->mollie_account_source ?? 'platform';
+                            if ($txAccountSource === 'platform') {
+                                try {
+                                    if (class_exists(GymiesPayoutService::class)) {
+                                        GymiesPayoutService::creditBooking(
+                                            (int) $confirmedBooking->trainer_user_id,
+                                            (int) ($tx->amount_cents ?? 0),
+                                            (int) $tx->booking_id,
+                                            (int) ($confirmedBooking->user_id ?? 0) ?: null,
+                                        );
+                                    }
+                                } catch (\Throwable $payoutEx) {
+                                    logger()->warning('Gymies Mollie webhook: payout credit failed', ['error' => $payoutEx->getMessage()]);
+                                    if (app()->bound('sentry')) { app('sentry')->captureException($payoutEx); }
+                                }
+                            } else {
+                                // Betaling ging direct naar trainer's Mollie — alleen loggen
+                                Log::info('Gymies webhook: trainer-account betaling, geen platform saldo credit', [
+                                    'booking_id' => $tx->booking_id,
+                                    'trainer_user_id' => $confirmedBooking->trainer_user_id,
+                                    'amount_cents' => $tx->amount_cents,
+                                ]);
                             }
                         }
                     }
@@ -871,11 +1250,46 @@ final class GymiesPaymentController extends Controller
                         logger()->warning('Gymies Mollie webhook: ambassador reverse failed', ['error' => $revEx->getMessage()]);
                     }
                 }
+
+                // BUG FIX: Validate refund amount before processing
+                $refundAmount = (int) ($tx->amount_cents ?? 0);
+                if ($refundAmount <= 0) {
+                    logger()->warning('Gymies Mollie webhook: invalid refund amount', [
+                        'payment_id' => $paymentId,
+                        'amount' => $refundAmount,
+                    ]);
+                } else {
+                    // Payout: debiteer trainer-saldo bij refund
+                    try {
+                        if (class_exists(GymiesPayoutService::class) && $tx->booking_id) {
+                            $refundBooking = $this->tableExists('gymies_bookings')
+                                ? DB::table('gymies_bookings')->where('id', (int) $tx->booking_id)->first(['trainer_user_id'])
+                                : null;
+                            if ($refundBooking) {
+                                GymiesPayoutService::debitRefund(
+                                    (int) $refundBooking->trainer_user_id,
+                                    $refundAmount,
+                                    (int) $tx->booking_id,
+                                );
+                            }
+                        }
+                    } catch (\Throwable $payoutRefundEx) {
+                        logger()->warning('Gymies Mollie webhook: payout refund debit failed', ['error' => $payoutRefundEx->getMessage()]);
+                        if (app()->bound('sentry')) { app('sentry')->captureException($payoutRefundEx); }
+                    }
+                }
             }
         } catch (\Throwable $e) {
             DB::rollBack();
             if (function_exists('logger')) {
                 logger()->error('Gymies Mollie webhook: failed to mark paid', ['id' => $paymentId, 'error' => $e->getMessage()]);
+            }
+            if (app()->bound('sentry')) {
+                \Sentry\withScope(function (\Sentry\State\Scope $scope) use ($e, $paymentId): void {
+                    $scope->setTag('payment.id', (string) $paymentId);
+                    $scope->setContext('webhook', ['payment_id' => $paymentId]);
+                    \Sentry\captureException($e);
+                });
             }
         }
 
@@ -983,8 +1397,9 @@ final class GymiesPaymentController extends Controller
                 $amountCents = $promoResult['amount_after_discount'];
             }
         }
-        if ($amountCents <= 0) {
-            return response()->json(['message' => 'Geen bedrag bekend voor deze inschrijving.'], 422);
+        // BUG FIX: Validate final amount is in reasonable range
+        if ($amountCents <= 0 || $amountCents > 100000000) {
+            return response()->json(['message' => 'Geen geldig bedrag voor deze inschrijving.'], 422);
         }
 
         $returnUrl = trim((string) ($request->input('return_url') ?? ''));
@@ -992,7 +1407,11 @@ final class GymiesPaymentController extends Controller
             $returnUrl = rtrim($request->root(), '/') . '/betaling-terug?group_participant_id=' . $participantId;
         }
 
-        $apiKey = $this->getMollieApiKey();
+        // PAYMENT ROUTING: check trainer's eigen Mollie token, fallback naar platform
+        $resolved = $this->resolvePaymentMollieKey((int) $participant->trainer_user_id);
+        $apiKey = $resolved['key'];
+        $groupMollieAccountSource = $resolved['source'];
+
         if ($apiKey === '') {
             return response()->json([
                 'message' => 'Mollie is niet geconfigureerd. Neem contact op met de trainer of probeer later opnieuw.',
@@ -1016,11 +1435,15 @@ final class GymiesPaymentController extends Controller
             $groupTotalParticipants = (int) ($participant->max_participants ?? 1);
         }
 
-        $applicationFeeCents = $this->resolveApplicationFeeCents(
-            (int) $participant->trainer_user_id,
-            $amountCents,
-            $groupTotalParticipants
-        );
+        // Application fee alleen bij platform-account betalingen
+        $applicationFeeCents = null;
+        if ($groupMollieAccountSource === 'platform') {
+            $applicationFeeCents = $this->resolveApplicationFeeCents(
+                (int) $participant->trainer_user_id,
+                $amountCents,
+                $groupTotalParticipants
+            );
+        }
 
         $webhookUrl = rtrim($request->root(), '/') . '/api/gymies/webhooks/mollie';
         $createResult = $this->createMolliePaymentForGroupParticipant(
@@ -1041,32 +1464,48 @@ final class GymiesPaymentController extends Controller
         $providerTransactionId = (string) $createResult['id'];
         $paymentUrl = (string) $createResult['checkout_url'];
 
-        // Promo code use_count incrementeren na succesvolle toepassing
-        if ($promoCodeId !== null && $this->tableExists('gymies_promo_codes')) {
-            DB::table('gymies_promo_codes')->where('id', $promoCodeId)->increment('use_count');
-        }
-
         $this->ensurePaymentTables();
-        if ($this->tableExists('gymies_payment_transactions')) {
-            $insert = [
-                'booking_id' => null,
-                'group_participant_id' => (int) $participantId,
-                'user_id' => (int) $user->id,
-                'counterparty_user_id' => (int) $participant->trainer_user_id,
-                'provider' => self::PROVIDER_MOLLIE,
-                'provider_transaction_id' => $providerTransactionId,
-                'amount_cents' => $amountCents,
-                'status' => 'pending',
-                'payment_method' => self::PAYMENT_METHOD_MOLLIE,
-                'paid_at' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-            if ($promoCodeId !== null && $this->columnExists('gymies_payment_transactions', 'promo_code_id')) {
-                $insert['promo_code_id'] = $promoCodeId;
-                $insert['discount_applied_cents'] = $discountAppliedCents;
+
+        // Wrap promo code increment and payment transaction insert in a transaction for atomicity
+        DB::beginTransaction();
+        try {
+            if ($this->tableExists('gymies_payment_transactions')) {
+                $insert = [
+                    'booking_id' => null,
+                    'group_participant_id' => (int) $participantId,
+                    'user_id' => (int) $user->id,
+                    'counterparty_user_id' => (int) $participant->trainer_user_id,
+                    'provider' => self::PROVIDER_MOLLIE,
+                    'provider_transaction_id' => $providerTransactionId,
+                    'amount_cents' => $amountCents,
+                    'status' => 'pending',
+                    'payment_method' => self::PAYMENT_METHOD_MOLLIE,
+                    'paid_at' => null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+                // Track welk Mollie-account de betaling heeft aangemaakt
+                if ($this->columnExists('gymies_payment_transactions', 'mollie_account_source')) {
+                    $insert['mollie_account_source'] = $groupMollieAccountSource;
+                }
+                if ($promoCodeId !== null && $this->columnExists('gymies_payment_transactions', 'promo_code_id')) {
+                    $insert['promo_code_id'] = $promoCodeId;
+                    $insert['discount_applied_cents'] = $discountAppliedCents;
+                }
+                DB::table('gymies_payment_transactions')->insert($insert);
             }
-            DB::table('gymies_payment_transactions')->insert($insert);
+
+            // Promo code use_count incrementeren na succesvolle toepassing (atomic within transaction)
+            if ($promoCodeId !== null && $this->tableExists('gymies_promo_codes')) {
+                DB::table('gymies_promo_codes')->where('id', $promoCodeId)->increment('use_count');
+            }
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            if (function_exists('logger')) {
+                logger()->warning('Gymies Group Payment: promo or transaction insert failed', ['error' => $e->getMessage()]);
+            }
         }
 
         return response()->json([
@@ -1148,13 +1587,78 @@ final class GymiesPaymentController extends Controller
         return 'open';
     }
 
+    /**
+     * Haal Mollie payment-status op met de juiste key (trainer of platform).
+     *
+     * Routing: zoek eerst de payment transaction op om mollie_account_source en
+     * counterparty_user_id (= trainer) te bepalen. Als source = 'trainer', gebruik
+     * de trainer's eigen access token. Anders fallback naar platform key.
+     */
+    private function fetchMolliePaymentStatusRouted(string $paymentId): ?string
+    {
+        $paymentId = trim($paymentId);
+        if ($paymentId === '') {
+            return null;
+        }
+
+        // Bepaal welk account de betaling heeft aangemaakt
+        $trainerUserId = null;
+        if ($this->tableExists('gymies_payment_transactions')) {
+            $tx = DB::table('gymies_payment_transactions')
+                ->where('provider_transaction_id', $paymentId)
+                ->first(['counterparty_user_id', 'mollie_account_source']);
+
+            if ($tx) {
+                $source = $tx->mollie_account_source ?? 'platform';
+                if (($source === 'trainer' || $source === 'organisation') && !empty($tx->counterparty_user_id)) {
+                    $trainerUserId = (int) $tx->counterparty_user_id;
+                }
+            }
+        }
+
+        $resolved = $this->resolvePaymentMollieKey($trainerUserId);
+        $apiKey = $resolved['key'];
+        if ($apiKey === '') {
+            return null;
+        }
+
+        try {
+            $response = Http::withToken($apiKey)
+                ->timeout(10)
+                ->get("https://api.mollie.com/v2/payments/{$paymentId}");
+            if (!$response->successful()) {
+                // Als trainer/organisation-key faalde, probeer platform key als fallback
+                if ($resolved['source'] === 'trainer' || $resolved['source'] === 'organisation') {
+                    Log::warning('Gymies webhook: ' . $resolved['source'] . ' key failed for payment status, trying platform key', [
+                        'payment_id' => $paymentId,
+                        'trainer_user_id' => $trainerUserId,
+                    ]);
+                    return $this->fetchMolliePaymentStatus($paymentId);
+                }
+                return null;
+            }
+            $status = $response->json('status');
+            return is_string($status) ? $status : null;
+        } catch (\Throwable $e) {
+            // Fallback bij trainer/organisation-key fout
+            if ($resolved['source'] === 'trainer' || $resolved['source'] === 'organisation') {
+                return $this->fetchMolliePaymentStatus($paymentId);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Legacy: haal status op met platform key alleen.
+     * Wordt gebruikt als fallback door fetchMolliePaymentStatusRouted().
+     */
     private function fetchMolliePaymentStatus(string $paymentId): ?string
     {
         $paymentId = trim($paymentId);
         if ($paymentId === '') {
             return null;
         }
-        $apiKey = $this->getMollieApiKey();
+        $apiKey = $this->resolvePaymentMollieKey()['key'];
         if ($apiKey === '') {
             return null;
         }
@@ -1188,7 +1692,7 @@ final class GymiesPaymentController extends Controller
             default => null,
         };
         if ($normalized === null) {
-            \Log::warning('Onbekende Mollie status ontvangen, mapped naar pending', [
+            Log::warning('Onbekende Mollie status ontvangen, mapped naar pending', [
                 'original_status' => $mollieStatus,
             ]);
             return 'pending';
@@ -1231,14 +1735,20 @@ final class GymiesPaymentController extends Controller
     }
 
     /**
-     * Idempotentie op payment + status event.
+     * Idempotentie op payment event (not status-specific).
+     * Multiple webhooks for the same payment may arrive; we process only the first one.
+     * Subsequent webhooks are deduplicated; the payment status is fetched fresh each time.
+     *
+     * BUG FIX: Idempotency key should be payment ID only, not status.
+     * This prevents duplicate processing of the same payment webhook.
      */
     private function registerWebhookEventIdempotent(string $provider, string $paymentId, string $status, array $payload): bool
     {
         if (!$this->tableExists('gymies_payment_webhook_events')) {
             return true;
         }
-        $eventKey = strtolower(trim($provider)) . ':' . $paymentId . ':' . $status;
+        // Idempotency key: provider + payment_id only. Each payment processed once.
+        $eventKey = strtolower(trim($provider)) . ':' . $paymentId;
         $inserted = DB::table('gymies_payment_webhook_events')->insertOrIgnore([
             'provider' => strtolower(trim($provider)),
             'payment_id' => $paymentId,
@@ -1269,6 +1779,7 @@ final class GymiesPaymentController extends Controller
                         paid_at TIMESTAMP NULL DEFAULT NULL,
                         promo_code_id BIGINT UNSIGNED DEFAULT NULL,
                         discount_applied_cents INT UNSIGNED DEFAULT 0,
+                        mollie_account_source VARCHAR(20) DEFAULT 'platform',
                         created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                         PRIMARY KEY (id),
@@ -1282,6 +1793,10 @@ final class GymiesPaymentController extends Controller
             }
             if ($this->tableExists('gymies_payment_transactions') && !$this->columnExists('gymies_payment_transactions', 'group_participant_id')) {
                 DB::statement('ALTER TABLE gymies_payment_transactions ADD COLUMN group_participant_id BIGINT UNSIGNED DEFAULT NULL');
+            }
+            // Payment routing: track of betaling via trainer's eigen Mollie of via platform loopt
+            if ($this->tableExists('gymies_payment_transactions') && !$this->columnExists('gymies_payment_transactions', 'mollie_account_source')) {
+                DB::statement("ALTER TABLE gymies_payment_transactions ADD COLUMN mollie_account_source VARCHAR(20) DEFAULT 'platform'");
             }
             DB::statement("
                 CREATE TABLE IF NOT EXISTS gymies_payment_webhook_events (

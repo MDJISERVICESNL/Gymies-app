@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../services/promotion_service.dart';
 import '../../theme/gymies_theme.dart';
 
@@ -41,7 +42,7 @@ class PromotionBanner extends StatelessWidget {
             colors: isTrialEnding
                 ? [Colors.orange.shade600, Colors.orange.shade800]
                 : promo.isTrial
-                    ? [GymiesColors.primary, GymiesColors.primary.withValues(alpha: 0.8)]
+                    ? [GymiesColors.primary, GymiesColors.primary.withOpacity(0.8)]
                     : [Colors.green.shade600, Colors.green.shade800],
           ),
         ),
@@ -75,8 +76,8 @@ class PromotionBanner extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       color: isTrialEnding
-                          ? Colors.white.withValues(alpha: 0.9)
-                          : GymiesColors.darkBlue.withValues(alpha: 0.8),
+                          ? Colors.white.withOpacity(0.9)
+                          : GymiesColors.darkBlue.withOpacity(0.8),
                     ),
                   ),
                 ],
@@ -90,7 +91,7 @@ class PromotionBanner extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'Upgrade',
+                  S.of(context).upgradeAction,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 12,

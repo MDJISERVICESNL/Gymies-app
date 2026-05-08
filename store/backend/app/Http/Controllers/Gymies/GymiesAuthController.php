@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
@@ -19,9 +20,17 @@ use Illuminate\Validation\ValidationException;
 /**
  * Gymies API: login, register, me, profiel opslaan.
  * Tabellen: gymies_users, gymies_sessions.
+ *
+ * AUDIT LOGGING ADDED:
+ * - User login (success/failure)
+ * - User registration
+ * - Password reset
+ * - Logout
+ * - Email verification
  */
 final class GymiesAuthController extends Controller
 {
+    use GymiesAuditTrait;
     private const AUTH_WINDOW_SECONDS = 900;
     private const AUTH_BLOCK_SECONDS = 900;
     private const AUTH_MAX_ATTEMPTS_PER_IP = 12;
@@ -81,12 +90,21 @@ final class GymiesAuthController extends Controller
         $ipAddress = (string) ($request->ip() ?? 'unknown');
 
         if ($this->isAuthBlocked($email, $ipAddress)) {
+            // Log blocked login attempt (too many failures)
+            Log::warning('Login blocked: rate limit exceeded', ['email' => $email, 'ip' => $ipAddress]);
             throw ValidationException::withMessages(['email' => ['Deze inloggegevens kloppen niet.']]);
         }
 
         $user = DB::table('gymies_users')->where('email', $email)->first();
-        if (!$user || !Hash::check((string) $request->input('password'), (string) $user->password_hash)) {
+        // FIX-AUD-001: Defensive null check on password_hash for social login users
+        if (!$user || ($user->password_hash === null) || !Hash::check((string) $request->input('password'), (string) $user->password_hash)) {
             $this->recordAuthAttempt($email, $ipAddress, false);
+            // Log failed login attempt
+            if ($user) {
+                $this->auditLog((int) $user->id, 'auth.login.failed', 'User', (int) $user->id, ['reason' => 'invalid_password'], $ipAddress);
+            } else {
+                Log::warning('Login failed: user not found', ['email' => $email, 'ip' => $ipAddress]);
+            }
             throw ValidationException::withMessages(['email' => ['Deze inloggegevens kloppen niet.']]);
         }
 
@@ -108,6 +126,7 @@ final class GymiesAuthController extends Controller
         // Niet alleen === null: MySQL kan '', '0000-00-00...' of andere lege waarden geven; dan bleef login op verify hangen.
         if (!$this->isEmailVerifiedUser($user)) {
             $this->recordAuthAttempt($email, $ipAddress, false);
+            $this->auditLog((int) $user->id, 'auth.login.blocked', 'User', (int) $user->id, ['reason' => 'email_not_verified'], $ipAddress);
             return response()->json([
                 'message' => 'Je e-mail is nog niet geverifieerd. Vul de code in die we naar je e-mailadres hebben gestuurd, of vraag een nieuwe code aan.',
                 'requires_email_verification' => true,
@@ -116,7 +135,15 @@ final class GymiesAuthController extends Controller
         }
 
         $this->recordAuthAttempt($email, $ipAddress, true);
-        $token = $this->createSession((int) $user->id, $request);
+
+        // FIX-AUD-004: Wrap session creation in transaction for atomicity
+        $token = DB::transaction(function () use ($user, $request) {
+            return $this->createSession((int) $user->id, $request);
+        });
+
+        // Log successful login
+        $this->auditLog((int) $user->id, 'auth.login.success', 'User', (int) $user->id, ['role' => $user->role], $ipAddress);
+        Log::info('User login success', ['user_id' => $user->id, 'email' => $email, 'ip' => $ipAddress]);
 
         return response()->json([
             'user' => $this->userToArray($user),
@@ -128,6 +155,13 @@ final class GymiesAuthController extends Controller
     public function register(GymiesRegisterRequest $request): JsonResponse
     {
         $email = mb_strtolower(trim((string) $request->input('email')));
+
+        // FIX-AUD-002: Check for duplicate email before attempting transaction
+        $existingUser = DB::table('gymies_users')->where('email', $email)->first();
+        if ($existingUser) {
+            throw ValidationException::withMessages(['email' => ['Dit e-mailadres is al geregistreerd.']]);
+        }
+
         $gymInviteToken = trim((string) $request->input('gym_invite_token', ''));
 
         // Gym invite: alleen voor trainers; valideer token vooraf
@@ -154,8 +188,12 @@ final class GymiesAuthController extends Controller
         }
 
         // S-020: Role whitelist — voorheen kon een aanvaller 'admin' meesturen als role.
-        $allowedRoles = ['klant', 'trainer'];
+        $allowedRoles = ['client', 'klant', 'trainer'];
         $requestedRole = $request->input('role');
+        // Normalize: 'client' → 'klant' (backend standaard is 'klant')
+        if ($requestedRole === 'client') {
+            $requestedRole = 'klant';
+        }
         if (!in_array($requestedRole, $allowedRoles, true)) {
             $requestedRole = 'klant';
         }
@@ -171,28 +209,29 @@ final class GymiesAuthController extends Controller
         if (Schema::hasColumn('gymies_users', 'gender')) {
             $insert['gender'] = $request->input('gender');
         }
+        if (Schema::hasColumn('gymies_users', 'city') && $request->filled('city')) {
+            $insert['city'] = trim((string) $request->input('city'));
+        }
         if (Schema::hasColumn('gymies_users', 'newsletter_subscribed')) {
             $insert['newsletter_subscribed'] = filter_var($request->input('newsletter_subscribe'), FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
         }
         if (Schema::hasColumn('gymies_users', 'email_verified_at')) {
             $insert['email_verified_at'] = null;
         }
-        $id = DB::table('gymies_users')->insertGetId($insert);
+
+        // FIX-AUD-003: Wrap user creation in transaction to ensure user is created before any dependent operations
+        $id = DB::transaction(function () use ($insert) {
+            return DB::table('gymies_users')->insertGetId($insert);
+        });
 
         // Referral: code koppelt uitnodiger (referrer) aan nieuwe gebruiker.
         // Permanente codes (permanent=1) kunnen meerdere keer gebruikt worden; creates separate referral rows.
         // Blokkeert dubbele referral bonus: checkt of gebruiker al in andere rij als referred_user_id voorkomt.
-        $referralCode = trim((string) $request->input('referral_code'));
+        $referralCode = strtoupper(trim((string) $request->input('referral_code')));
         if ($referralCode !== '' && Schema::hasTable('gymies_referrals')) {
-            $referralCodeNorm = strtoupper($referralCode);
             $referral = DB::table('gymies_referrals')
-                ->where('referral_code', $referralCodeNorm)
+                ->where('referral_code', $referralCode)
                 ->first();
-            if (!$referral) {
-                $referral = DB::table('gymies_referrals')
-                    ->whereRaw('LOWER(referral_code) = ?', [mb_strtolower($referralCode)])
-                    ->first();
-            }
             if ($referral) {
                 // Zelf-uitnodiging voorkomen
                 if ((int) $referral->referrer_user_id === (int) $id) {
@@ -208,7 +247,7 @@ final class GymiesAuthController extends Controller
                         if (function_exists('logger')) {
                             logger()->info('Gymies register: user already referred elsewhere', [
                                 'user_id' => $id,
-                                'code' => $referralCodeNorm,
+                                'code' => $referralCode,
                             ]);
                         }
                     } else {
@@ -217,7 +256,7 @@ final class GymiesAuthController extends Controller
                             // Permanente code: insert nieuwe rij met permanent=0 (individuele gekoppelde registratie)
                             DB::table('gymies_referrals')->insert([
                                 'referrer_user_id' => (int) $referral->referrer_user_id,
-                                'referral_code' => $referralCodeNorm,
+                                'referral_code' => $referralCode,
                                 'referred_user_id' => $id,
                                 'referred_email' => $email,
                                 'permanent' => 0,
@@ -294,6 +333,47 @@ final class GymiesAuthController extends Controller
             }
         }
 
+        // ── Launch Gate: exclusiviteits-check ──
+        $inviteCode = strtoupper(trim((string) $request->input('invite_code', '')));
+        $userCity = trim((string) $request->input('city', ''));
+        try {
+            if (class_exists(GymiesLaunchGateService::class)) {
+                // Ensure schema for pending_invite_code column
+                GymiesSchemaEnsure::pendingInviteCodeColumn();
+
+                // ── Multi-stad: koppel trainer aan regio via gymies_trainer_regions ──
+                if ($requestedRole === 'trainer' && $userCity !== '') {
+                    $cityRegion = GymiesLaunchGateService::resolveRegionForCity($userCity);
+                    if ($cityRegion) {
+                        GymiesLaunchGateService::addTrainerToRegion(
+                            (int) $id,
+                            $cityRegion->slug,
+                            'self_reported',  // Nog niet KvK-geverifieerd
+                            false
+                        );
+                    }
+                }
+
+                $gateResult = GymiesLaunchGateService::canAccessPlatform((int) $id, $requestedRole, $inviteCode !== '' ? $inviteCode : null);
+
+                if (!$gateResult['allowed']) {
+                    // User is created but goes to waitlist
+                    if ($gateResult['region']) {
+                        GymiesLaunchGateService::addToWaitlist((int) $id, $gateResult['region']->slug, $requestedRole === 'trainer' ? 'trainer' : 'client');
+                    }
+                } elseif ($inviteCode !== '' && $gateResult['allowed']) {
+                    // Valid invite code — consume it (but only after email verification is confirmed)
+                    // Store invite_code on user for later consumption
+                    if (Schema::hasColumn('gymies_users', 'pending_invite_code')) {
+                        DB::table('gymies_users')->where('id', $id)->update(['pending_invite_code' => $inviteCode]);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Launch gate is non-blocking — never fail registration
+            Log::warning('Gymies register: launch gate check failed (non-blocking)', ['user_id' => $id, 'error' => $e->getMessage()]);
+        }
+
         try {
             $this->ensureEmailVerificationTable();
             $this->ensureEmailVerificationLinkTokenColumn();
@@ -321,12 +401,17 @@ final class GymiesAuthController extends Controller
                     'error' => $e->getMessage(),
                 ]);
             }
+            $this->auditLog($id, 'auth.register.email_verification_failed', 'User', $id, ['error' => $e->getMessage()]);
             return response()->json([
                 'message' => 'Registratie is gelukt, maar de verificatie-e-mail kon niet worden verstuurd. Ga naar de verificatiepagina en klik op "Code opnieuw sturen", of neem contact met ons op.',
                 'requires_email_verification' => true,
                 'email' => $email,
             ], 503);
         }
+
+        // Log successful registration
+        $this->auditLog($id, 'auth.register.success', 'User', $id, ['email' => $email, 'role' => $requestedRole], (string) ($request->ip() ?? 'unknown'));
+        Log::info('User registration success', ['user_id' => $id, 'email' => $email, 'role' => $requestedRole]);
 
         $response = [
             'requires_email_verification' => true,
@@ -336,6 +421,33 @@ final class GymiesAuthController extends Controller
             $response['gym_invite_applied'] = true;
             $response['organisation_name'] = (string) $gymInvite->organisation_name;
         }
+
+        // Launch gate: include waitlist position if user is on waitlist
+        try {
+            if (class_exists(GymiesLaunchGateService::class)) {
+                $waitlistPos = GymiesLaunchGateService::getWaitlistPosition((int) $id);
+                if ($waitlistPos !== null) {
+                    $response['waitlist_position'] = $waitlistPos;
+                    $response['on_waitlist'] = true;
+
+                    // Get region info for status
+                    $userCityFromInput = trim((string) $request->input('city', ''));
+                    if ($userCityFromInput !== '') {
+                        $region = GymiesLaunchGateService::resolveRegionForCity($userCityFromInput);
+                        if ($region) {
+                            $response['region_status'] = [
+                                'city' => $region->city,
+                                'slug' => $region->slug,
+                                'status' => $region->status,
+                            ];
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Gymies register: could not include waitlist info in response', ['user_id' => $id, 'error' => $e->getMessage()]);
+        }
+
         return response()->json($response);
     }
 
@@ -372,10 +484,17 @@ final class GymiesAuthController extends Controller
             throw ValidationException::withMessages(['token' => ['Account niet gevonden.']]);
         }
 
-        DB::table('gymies_users')->where('id', $user->id)->update(['email_verified_at' => now()]);
-        DB::table('gymies_email_verification_codes')->where('user_id', $user->id)->delete();
+        // FIX-AUD-008: Wrap email verification and session creation in transaction
+        $sessionToken = DB::transaction(function () use ($user, $request) {
+            DB::table('gymies_users')->where('id', $user->id)->update(['email_verified_at' => now()]);
+            DB::table('gymies_email_verification_codes')->where('user_id', $user->id)->delete();
+            return $this->createSession((int) $user->id, $request);
+        });
 
-        $sessionToken = $this->createSession((int) $user->id, $request);
+        // Log email verification and login
+        $this->auditLog((int) $user->id, 'auth.email.verified', 'User', (int) $user->id, [], (string) ($request->ip() ?? 'unknown'));
+        $this->auditLog((int) $user->id, 'auth.login.success', 'User', (int) $user->id, ['method' => 'email_link'], (string) ($request->ip() ?? 'unknown'));
+
         $fresh = DB::table('gymies_users')->where('id', $user->id)->first();
 
         return response()->json([
@@ -433,10 +552,13 @@ final class GymiesAuthController extends Controller
             throw ValidationException::withMessages(['code' => ['Deze code is ongeldig of verlopen. Vraag een nieuwe code aan.']]);
         }
 
-        DB::table('gymies_users')->where('id', $user->id)->update(['email_verified_at' => now()]);
-        DB::table('gymies_email_verification_codes')->where('user_id', $user->id)->delete();
+        // FIX-AUD-007: Wrap email verification and session creation in transaction
+        $token = DB::transaction(function () use ($user, $request) {
+            DB::table('gymies_users')->where('id', $user->id)->update(['email_verified_at' => now()]);
+            DB::table('gymies_email_verification_codes')->where('user_id', $user->id)->delete();
+            return $this->createSession((int) $user->id, $request);
+        });
 
-        $token = $this->createSession((int) $user->id, $request);
         $fresh = DB::table('gymies_users')->where('id', $user->id)->first();
 
         return response()->json([
@@ -631,9 +753,24 @@ final class GymiesAuthController extends Controller
         $query = DB::table('gymies_sessions')
             ->where('id', $sessionId)
             ->where('user_id', $user->id);
+
+        // FIX-AUD-005: Also delete any associated device_tokens if the column exists
+        if (Schema::hasTable('gymies_device_tokens')) {
+            $session = DB::table('gymies_sessions')->where('id', $sessionId)->where('user_id', $user->id)->first();
+            if ($session) {
+                DB::table('gymies_device_tokens')->where('session_id', $sessionId)->delete();
+            }
+        }
+
         $deleted = Schema::hasColumn('gymies_sessions', 'revoked_at')
             ? $query->update(['revoked_at' => now()])
             : $query->delete();
+
+        // Log device logout
+        if ($deleted > 0) {
+            $this->auditLog((int) $user->id, 'auth.logout.device', 'User', (int) $user->id, ['session_id' => $sessionId], (string) ($request->ip() ?? 'unknown'));
+            Log::info('Device logout', ['user_id' => $user->id, 'session_id' => $sessionId]);
+        }
 
         return response()->json(['ok' => $deleted > 0]);
     }
@@ -645,12 +782,29 @@ final class GymiesAuthController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
         $currentToken = (string) ($request->attributes->get('gymies_token') ?? '');
+
+        // FIX-AUD-006: Delete device tokens associated with sessions being revoked (except current device)
+        if (Schema::hasTable('gymies_device_tokens') && Schema::hasTable('gymies_sessions')) {
+            $sessionIdsToRevoke = DB::table('gymies_sessions')
+                ->where('user_id', $user->id)
+                ->where('token', '!=', $currentToken)
+                ->pluck('id')
+                ->toArray();
+            if (!empty($sessionIdsToRevoke)) {
+                DB::table('gymies_device_tokens')->whereIn('session_id', $sessionIdsToRevoke)->delete();
+            }
+        }
+
         $query = DB::table('gymies_sessions')
             ->where('user_id', $user->id)
             ->where('token', '!=', $currentToken);
         $deleted = Schema::hasColumn('gymies_sessions', 'revoked_at')
             ? $query->update(['revoked_at' => now()])
             : $query->delete();
+
+        // Log logout from all devices
+        $this->auditLog((int) $user->id, 'auth.logout.all_devices', 'User', (int) $user->id, ['sessions_revoked' => $deleted], (string) ($request->ip() ?? 'unknown'));
+        Log::warning('User logged out from all devices', ['user_id' => $user->id, 'sessions_revoked' => $deleted]);
 
         return response()->json(['ok' => true, 'deleted' => $deleted]);
     }
@@ -734,18 +888,25 @@ final class GymiesAuthController extends Controller
             'password_hash' => Hash::make($request->input('password')),
         ]);
         DB::table('gymies_password_reset_tokens')->where('id', $row->id)->update(['used_at' => now()]);
+
+        // Log password reset
+        $this->auditLog((int) $row->user_id, 'auth.password.reset', 'User', (int) $row->user_id, ['via_token' => true], (string) ($request->ip() ?? 'unknown'));
+        Log::warning('Password reset via token', ['user_id' => $row->user_id]);
+
         // Alle bestaande sessies intrekken na een wachtwoord-reset:
         // voorkomt dat een aanvaller met een eerder gestolen token blijft ingelogd.
+        $sessionCount = 0;
         if (Schema::hasColumn('gymies_sessions', 'revoked_at')) {
-            DB::table('gymies_sessions')
+            $sessionCount = DB::table('gymies_sessions')
                 ->where('user_id', (int) $row->user_id)
                 ->whereNull('revoked_at')
                 ->update(['revoked_at' => now()]);
         } else {
-            DB::table('gymies_sessions')
+            $sessionCount = DB::table('gymies_sessions')
                 ->where('user_id', (int) $row->user_id)
                 ->delete();
         }
+
         return response()->json(['message' => 'Je wachtwoord is gewijzigd. Je kunt nu inloggen.']);
     }
 
@@ -773,6 +934,11 @@ final class GymiesAuthController extends Controller
         DB::table('gymies_users')->where('id', $user->id)->update([
             'password_hash' => Hash::make($request->input('password')),
         ]);
+
+        // Log password change
+        $this->auditLog((int) $user->id, 'auth.password.changed', 'User', (int) $user->id, ['by_user' => true], (string) ($request->ip() ?? 'unknown'));
+        Log::warning('User changed password', ['user_id' => $user->id]);
+
         // Alle andere sessies intrekken na wachtwoordwijziging (behoud huidige sessie).
         $currentToken = (string) ($request->attributes->get('gymies_token') ?? '');
         $otherSessionsQuery = DB::table('gymies_sessions')
@@ -881,7 +1047,7 @@ final class GymiesAuthController extends Controller
             return false;
         }
         $fromEmail = (string) (config('mail.from.address') ?: env('MAIL_FROM_ADDRESS', ''));
-        $fromName = config('mail.from.name') ?: config('app.name', 'Gymies');
+        $fromName = \App\Helpers\GymiesNotificationEmail::mailBrandName();
         if ($fromEmail === '' || !str_contains($fromEmail, '@')) {
             if (function_exists('logger')) {
                 logger()->warning('Brevo API: mail.from.address ontbreekt of ongeldig');
@@ -1303,6 +1469,34 @@ final class GymiesAuthController extends Controller
             'emergency_contact_email' => $field($user, 'emergency_contact_email'),
             'onboarding_completed_at' => $field($user, 'onboarding_completed_at'),
             ...$this->trainerSaasFields((int) $user->id, $user->role),
+            ...$this->gymMembershipFields((int) $user->id),
+        ];
+    }
+
+    /**
+     * Voeg gym/organisatie lidmaatschap velden toe aan user response.
+     * Retourneert is_gym_member, organisation_id, gym_role als de user lid is van een organisatie.
+     */
+    private function gymMembershipFields(int $userId): array
+    {
+        if (!Schema::hasTable('gymies_organisation_members')) {
+            return ['is_gym_member' => false, 'organisation_id' => null, 'gym_role' => null];
+        }
+
+        $member = DB::table('gymies_organisation_members')
+            ->where('user_id', $userId)
+            ->where('status', 'active')
+            ->orderByDesc('created_at')
+            ->first();
+
+        if (!$member) {
+            return ['is_gym_member' => false, 'organisation_id' => null, 'gym_role' => null];
+        }
+
+        return [
+            'is_gym_member'   => true,
+            'organisation_id' => (string) $member->organisation_id,
+            'gym_role'        => $member->role ?? 'member',
         ];
     }
 
@@ -1454,5 +1648,590 @@ final class GymiesAuthController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * Generate invite codes for the authenticated user (trainer or gym staff).
+     * POST /api/gymies/invite-codes/generate
+     * Body: count (default 20), max_uses (default 1 for single-use)
+     */
+    public function generateInviteCodes(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Niet geautoriseerd'], 401);
+        }
+
+        // Only trainers and gym staff can generate codes
+        if (!in_array((string) $user->role, ['trainer', 'gym'], true)) {
+            return response()->json(['message' => 'Je rol mag geen invitatiescodes aanmaken.'], 403);
+        }
+
+        $request->validate([
+            'count' => 'nullable|integer|min:1|max:50',
+            'max_uses' => 'nullable|integer|min:1|max:20',
+        ]);
+
+        try {
+            if (!class_exists(GymiesLaunchGateService::class)) {
+                return response()->json(['message' => 'Launch gate service niet beschikbaar.'], 503);
+            }
+
+            GymiesLaunchGateService::ensureSchema();
+
+            $count = (int) $request->input('count', 20);
+            $maxUses = (int) $request->input('max_uses', 1);
+            $ownerType = (string) $user->role === 'trainer' ? 'trainer' : 'gym';
+
+            // Get user's city/region
+            $userCity = GymiesLaunchGateService::getUserCity((int) $user->id, (string) $user->role);
+            $regionSlug = null;
+            if ($userCity) {
+                $region = GymiesLaunchGateService::resolveRegionForCity($userCity);
+                $regionSlug = $region ? (string) $region->slug : null;
+            }
+
+            // Generate codes
+            $codes = GymiesLaunchGateService::generateInviteCodes(
+                (int) $user->id,
+                $ownerType,
+                $count,
+                $regionSlug,
+                'client',
+                $maxUses
+            );
+
+            return response()->json([
+                'ok' => true,
+                'codes' => $codes,
+                'count' => count($codes),
+                'region_slug' => $regionSlug,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Gymies generateInviteCodes failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+            return response()->json(['message' => 'Fout bij aanmaken codes: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Get all invite codes owned by the authenticated user.
+     * GET /api/gymies/invite-codes/mine
+     */
+    public function getMyInviteCodes(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Niet geautoriseerd'], 401);
+        }
+
+        try {
+            if (!class_exists(GymiesLaunchGateService::class)) {
+                return response()->json(['message' => 'Launch gate service niet beschikbaar.'], 503);
+            }
+
+            GymiesLaunchGateService::ensureSchema();
+
+            // Fetch codes owned by this user
+            $codes = DB::table('gymies_invite_codes')
+                ->where('owner_user_id', $user->id)
+                ->orderByDesc('created_at')
+                ->get();
+
+            $result = $codes->map(function ($code) {
+                // Get usage details
+                $uses = DB::table('gymies_invite_code_uses')
+                    ->where('invite_code_id', $code->id)
+                    ->orderByDesc('created_at')
+                    ->get(['used_by_user_id', 'ip_address', 'confirmed_at', 'created_at']);
+
+                return [
+                    'id' => (string) $code->id,
+                    'code' => (string) $code->code,
+                    'owner_type' => (string) $code->owner_type,
+                    'region_slug' => $code->region_slug ? (string) $code->region_slug : null,
+                    'max_uses' => (int) $code->max_uses,
+                    'uses_count' => (int) $code->uses_count,
+                    'valid_until' => $code->valid_until,
+                    'referred_role' => (string) $code->referred_role,
+                    'status' => (string) $code->status,
+                    'created_at' => $code->created_at,
+                    'updated_at' => $code->updated_at,
+                    'uses' => $uses->map(fn ($u) => [
+                        'user_id' => (string) $u->used_by_user_id,
+                        'ip_address' => $u->ip_address,
+                        'confirmed_at' => $u->confirmed_at,
+                        'created_at' => $u->created_at,
+                    ])->all(),
+                ];
+            })->all();
+
+            return response()->json([
+                'ok' => true,
+                'codes' => $result,
+                'count' => count($result),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Gymies getMyInviteCodes failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+            return response()->json(['message' => 'Fout bij ophalen codes: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Validate an invite code (public endpoint, no auth required).
+     * POST /api/gymies/invite-codes/validate
+     * Body: code
+     */
+    public function validateInviteCodeEndpoint(Request $request): JsonResponse
+    {
+        $request->validate(['code' => 'required|string|max:32']);
+
+        try {
+            if (!class_exists(GymiesLaunchGateService::class)) {
+                return response()->json(['valid' => false, 'message' => 'Launch gate niet beschikbaar.'], 503);
+            }
+
+            $code = strtoupper(trim((string) $request->input('code')));
+            $result = GymiesLaunchGateService::validateInviteCode($code);
+
+            $response = [
+                'valid' => $result['valid'],
+                'message' => $result['message'],
+            ];
+
+            if ($result['valid'] && isset($result['code_row'])) {
+                $codeRow = $result['code_row'];
+                $response['code_info'] = [
+                    'region_slug' => $codeRow->region_slug ? (string) $codeRow->region_slug : null,
+                    'referred_role' => (string) $codeRow->referred_role,
+                    'remaining_uses' => ((int) $codeRow->max_uses - (int) $codeRow->uses_count),
+                ];
+            }
+
+            return response()->json($response);
+        } catch (\Throwable $e) {
+            Log::warning('Gymies validateInviteCodeEndpoint failed', ['error' => $e->getMessage()]);
+            return response()->json(['valid' => false, 'message' => 'Fout bij validatie'], 500);
+        }
+    }
+
+    /**
+     * Get waitlist status for authenticated user.
+     * GET /api/gymies/waitlist/status
+     */
+    public function getWaitlistStatus(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Niet geautoriseerd'], 401);
+        }
+
+        try {
+            if (!class_exists(GymiesLaunchGateService::class)) {
+                return response()->json(['on_waitlist' => false], 503);
+            }
+
+            GymiesLaunchGateService::ensureSchema();
+
+            // Find all waitlist entries for this user
+            $entries = DB::table('gymies_waitlist')
+                ->where('user_id', $user->id)
+                ->where('status', 'waiting')
+                ->get();
+
+            if ($entries->isEmpty()) {
+                return response()->json(['on_waitlist' => false, 'entries' => []]);
+            }
+
+            $result = $entries->map(function ($entry) {
+                $region = DB::table('gymies_launch_regions')
+                    ->where('slug', $entry->region_slug)
+                    ->first();
+
+                // Get vague progress indicators instead of exact numbers
+                $regionProgress = null;
+                try {
+                    $regionProgress = GymiesLaunchGateService::getRegionProgress($entry->region_slug);
+                } catch (\Throwable $e) {
+                    // Non-blocking — progress is optional
+                }
+
+                return [
+                    'region_slug' => (string) $entry->region_slug,
+                    'region_name' => $region ? (string) $region->city : 'Onbekend',
+                    'role' => (string) $entry->role,
+                    'position' => (int) $entry->position,
+                    'status' => (string) $entry->status,
+                    'created_at' => $entry->created_at,
+                    'region_status' => $region ? [
+                        'status' => (string) $region->status,
+                        'total_waitlist' => (int) $region->waitlist_count,
+                    ] : null,
+                    'region_progress' => $regionProgress,
+                ];
+            })->all();
+
+            return response()->json([
+                'on_waitlist' => true,
+                'entries' => $result,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Gymies getWaitlistStatus failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+            return response()->json(['on_waitlist' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Activate user from waitlist with an invite code.
+     * POST /api/gymies/waitlist/activate-with-code
+     * Body: code
+     */
+    public function activateWithCode(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Niet geautoriseerd'], 401);
+        }
+
+        $request->validate(['code' => 'required|string|max:32']);
+
+        try {
+            if (!class_exists(GymiesLaunchGateService::class)) {
+                return response()->json(['message' => 'Launch gate niet beschikbaar.'], 503);
+            }
+
+            $code = strtoupper(trim((string) $request->input('code')));
+
+            // Validate code
+            $validation = GymiesLaunchGateService::validateInviteCode($code);
+            if (!$validation['valid']) {
+                return response()->json(['ok' => false, 'message' => $validation['message']], 422);
+            }
+
+            // Check user is on waitlist
+            $waitlistEntry = DB::table('gymies_waitlist')
+                ->where('user_id', $user->id)
+                ->where('status', 'waiting')
+                ->first();
+
+            if (!$waitlistEntry) {
+                return response()->json(['ok' => false, 'message' => 'Je staat niet op de wachtlijst.'], 422);
+            }
+
+            // Activate from waitlist
+            $activated = GymiesLaunchGateService::activateFromWaitlist((int) $user->id, (string) $waitlistEntry->region_slug);
+            if (!$activated) {
+                return response()->json(['ok' => false, 'message' => 'Kon niet activeren van wachtlijst.'], 500);
+            }
+
+            // Consume the code
+            $consumed = GymiesLaunchGateService::consumeInviteCode($code, (int) $user->id, (string) ($request->ip() ?? 'unknown'));
+            if (!$consumed) {
+                // Still activated but code consumption failed; non-critical
+                Log::warning('Gymies activateWithCode: code consumption failed', ['user_id' => $user->id, 'code' => $code]);
+            }
+
+            return response()->json([
+                'ok' => true,
+                'message' => 'Je bent geactiveerd en kunt nu het platform gebruiken!',
+                'region_slug' => $waitlistEntry->region_slug,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Gymies activateWithCode failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+            return response()->json(['ok' => false, 'message' => 'Fout bij activatie: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Check if a client can book a specific trainer (launch gate check).
+     * Called right before the booking flow starts.
+     * GET /api/gymies/launch-gate/check/{trainerUserId}
+     *
+     * Returns: can_book, region info, progress data, and whether user is already on notify list.
+     */
+    public function launchGateCheck(Request $request, $trainerUserId): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Niet geautoriseerd'], 401);
+        }
+
+        $trainerUserId = (int) $trainerUserId;
+        if ($trainerUserId <= 0) {
+            return response()->json(['message' => 'Ongeldige trainer ID'], 422);
+        }
+
+        try {
+            if (!class_exists(GymiesLaunchGateService::class)) {
+                // Launch gate service not available — allow booking (fail-open)
+                return response()->json(['can_book' => true]);
+            }
+
+            GymiesLaunchGateService::ensureSchema();
+
+            // 1. Find the trainer's primary region
+            $trainerRegion = null;
+            if (Schema::hasTable('gymies_trainer_regions')) {
+                $trainerRegion = DB::table('gymies_trainer_regions')
+                    ->where('trainer_user_id', $trainerUserId)
+                    ->orderByRaw("FIELD(source, 'kvk_verified', 'staff_assigned', 'self_reported')")
+                    ->first();
+            }
+
+            // If trainer has no region, fall back to their city
+            if (!$trainerRegion) {
+                $trainerCity = DB::table('gymies_users')
+                    ->where('id', $trainerUserId)
+                    ->value('city');
+
+                if ($trainerCity) {
+                    $region = GymiesLaunchGateService::resolveRegionForCity((string) $trainerCity);
+                    if ($region && $region->status === 'open') {
+                        return response()->json(['can_book' => true]);
+                    }
+                    if ($region) {
+                        $trainerRegion = (object) ['region_slug' => $region->slug];
+                    }
+                }
+            }
+
+            // No region found at all — allow booking (no gate configured)
+            if (!$trainerRegion) {
+                return response()->json(['can_book' => true]);
+            }
+
+            $regionSlug = (string) $trainerRegion->region_slug;
+
+            // 2. Check region status
+            $region = DB::table('gymies_launch_regions')
+                ->where('slug', $regionSlug)
+                ->first();
+
+            if (!$region) {
+                return response()->json(['can_book' => true]);
+            }
+
+            $status = (string) $region->status;
+
+            // 3. Region is OPEN — always allow
+            if ($status === 'open') {
+                return response()->json(['can_book' => true]);
+            }
+
+            // 4. Check if user has a valid invite code (stored at registration or used before)
+            $hasValidCode = DB::table('gymies_invite_code_uses')
+                ->where('used_by_user_id', (int) $user->id)
+                ->exists();
+
+            if ($hasValidCode) {
+                return response()->json(['can_book' => true]);
+            }
+
+            // 5. Region is INVITE_ONLY or WAITLIST — check if user already on notify list
+            $alreadyOnList = DB::table('gymies_waitlist')
+                ->where('user_id', (int) $user->id)
+                ->where('region_slug', $regionSlug)
+                ->where('status', 'waiting')
+                ->exists();
+
+            // 6. Get progress data
+            $progress = GymiesLaunchGateService::getRegionProgress($regionSlug);
+
+            return response()->json([
+                'can_book' => false,
+                'region_slug' => $regionSlug,
+                'region_name' => (string) $region->city,
+                'region_status' => $status,
+                'already_on_notify_list' => $alreadyOnList,
+                'progress' => $progress,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Gymies launchGateCheck failed', [
+                'user_id' => $user->id,
+                'trainer_user_id' => $trainerUserId,
+                'error' => $e->getMessage(),
+            ]);
+            // Fail-open: allow booking if gate check crashes
+            return response()->json(['can_book' => true]);
+        }
+    }
+
+    /**
+     * Add user to "notify me" list for a specific region.
+     * POST /api/gymies/launch-gate/notify-me
+     * Body: region_slug, (optional) trainer_user_id
+     *
+     * This replaces the automatic waitlist at registration.
+     * Users now explicitly opt in when they try to book in a non-open region.
+     */
+    public function launchGateNotifyMe(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Niet geautoriseerd'], 401);
+        }
+
+        $request->validate([
+            'region_slug' => 'required|string|max:64',
+            'trainer_user_id' => 'nullable|integer|min:1',
+        ]);
+
+        $regionSlug = trim((string) $request->input('region_slug'));
+
+        try {
+            if (!class_exists(GymiesLaunchGateService::class)) {
+                return response()->json(['ok' => false, 'message' => 'Service niet beschikbaar'], 503);
+            }
+
+            GymiesLaunchGateService::ensureSchema();
+
+            // Check region exists
+            $region = DB::table('gymies_launch_regions')
+                ->where('slug', $regionSlug)
+                ->first();
+
+            if (!$region) {
+                return response()->json(['ok' => false, 'message' => 'Regio niet gevonden'], 404);
+            }
+
+            // Check if already on list
+            $existing = DB::table('gymies_waitlist')
+                ->where('user_id', (int) $user->id)
+                ->where('region_slug', $regionSlug)
+                ->where('status', 'waiting')
+                ->first();
+
+            if ($existing) {
+                return response()->json([
+                    'ok' => true,
+                    'message' => 'Je staat al op de lijst! We laten het je weten.',
+                    'already_existed' => true,
+                ]);
+            }
+
+            // Determine role
+            $role = 'client';
+            if (isset($user->role) && in_array((string) $user->role, ['trainer', 'gym'], true)) {
+                $role = (string) $user->role;
+            }
+
+            // Get next position
+            $nextPosition = DB::table('gymies_waitlist')
+                ->where('region_slug', $regionSlug)
+                ->max('position');
+            $nextPosition = ($nextPosition ?? 0) + 1;
+
+            // Insert
+            DB::table('gymies_waitlist')->insert([
+                'user_id' => (int) $user->id,
+                'region_slug' => $regionSlug,
+                'role' => $role,
+                'position' => $nextPosition,
+                'status' => 'waiting',
+                'source' => 'booking_gate',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Update waitlist counter
+            DB::table('gymies_launch_regions')
+                ->where('slug', $regionSlug)
+                ->increment('waitlist_count');
+
+            // Optionally track which trainer triggered the notify
+            $trainerUserId = $request->input('trainer_user_id');
+            if ($trainerUserId) {
+                Log::info('Gymies launch-gate notify-me triggered by trainer view', [
+                    'user_id' => $user->id,
+                    'region_slug' => $regionSlug,
+                    'trainer_user_id' => (int) $trainerUserId,
+                ]);
+            }
+
+            return response()->json([
+                'ok' => true,
+                'message' => 'We laten het je weten zodra ' . ($region->city ?? $regionSlug) . ' opengaat!',
+                'already_existed' => false,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Gymies launchGateNotifyMe failed', [
+                'user_id' => $user->id,
+                'region_slug' => $regionSlug,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['ok' => false, 'message' => 'Er ging iets mis. Probeer het opnieuw.'], 500);
+        }
+    }
+
+    /**
+     * Activate booking access with invite code from bottom sheet.
+     * POST /api/gymies/launch-gate/activate-with-code
+     * Body: code, region_slug
+     *
+     * Unlike waitlist/activate-with-code, this does NOT require being on waitlist.
+     * It simply validates the code and records usage, so the next gate check allows booking.
+     */
+    public function launchGateActivateCode(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Niet geautoriseerd'], 401);
+        }
+
+        $request->validate([
+            'code' => 'required|string|max:32',
+            'region_slug' => 'nullable|string|max:64',
+        ]);
+
+        try {
+            if (!class_exists(GymiesLaunchGateService::class)) {
+                return response()->json(['ok' => false, 'message' => 'Service niet beschikbaar'], 503);
+            }
+
+            GymiesLaunchGateService::ensureSchema();
+
+            $code = strtoupper(trim((string) $request->input('code')));
+
+            // Validate code
+            $validation = GymiesLaunchGateService::validateInviteCode($code);
+            if (!$validation['valid']) {
+                return response()->json(['ok' => false, 'message' => $validation['message']], 422);
+            }
+
+            // Consume the code (tracks usage for fraud detection)
+            $consumed = GymiesLaunchGateService::consumeInviteCode(
+                $code,
+                (int) $user->id,
+                (string) ($request->ip() ?? 'unknown')
+            );
+
+            if (!$consumed) {
+                return response()->json(['ok' => false, 'message' => 'Code kon niet worden gebruikt. Probeer het opnieuw.'], 422);
+            }
+
+            // If user was on waitlist for this region, mark as activated
+            $regionSlug = trim((string) ($request->input('region_slug') ?? ''));
+            if ($regionSlug !== '') {
+                DB::table('gymies_waitlist')
+                    ->where('user_id', (int) $user->id)
+                    ->where('region_slug', $regionSlug)
+                    ->where('status', 'waiting')
+                    ->update([
+                        'status' => 'activated',
+                        'updated_at' => now(),
+                    ]);
+            }
+
+            return response()->json([
+                'ok' => true,
+                'message' => 'Code geactiveerd! Je kunt nu boeken.',
+                'can_book' => true,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Gymies launchGateActivateCode failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['ok' => false, 'message' => 'Fout bij activatie: ' . $e->getMessage()], 500);
+        }
     }
 }

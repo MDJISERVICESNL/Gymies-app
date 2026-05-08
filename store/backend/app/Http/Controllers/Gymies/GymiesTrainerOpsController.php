@@ -15,6 +15,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use App\Helpers\GymiesChatBroadcast;
@@ -118,6 +119,111 @@ final class GymiesTrainerOpsController extends Controller
 
         $row = DB::table('gymies_trainer_media')->where('id', $id)->first();
         return response()->json(['data' => $this->mediaRowToArray($row)], 201);
+    }
+
+    /**
+     * POST trainer/story – Upload een story (verloopt automatisch na 24 uur).
+     * Pro feature: trainers met Pro of hoger mogen stories plaatsen.
+     */
+    public function uploadStory(Request $request): JsonResponse
+    {
+        $user = $this->requireTrainer($request);
+        if ($user instanceof JsonResponse) {
+            return $user;
+        }
+
+        GymiesSchemaEnsure::trainerMediaStoryColumns();
+
+        if (!DB::getSchemaBuilder()->hasTable('gymies_trainer_media')) {
+            return response()->json(['message' => 'Media tabel ontbreekt op deze omgeving.'], 422);
+        }
+
+        $file = $request->file('file');
+        if (!$file || !$file->isValid()) {
+            return response()->json(['message' => 'Geen geldig bestand ontvangen.'], 422);
+        }
+
+        $ext = strtolower($file->getClientOriginalExtension() ?: $file->guessExtension() ?: 'bin');
+        $allowedImages = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        $allowedVideo = ['mp4', 'webm'];
+        if (in_array($ext, $allowedVideo)) {
+            $mediaType = 'video';
+            $maxMb = 100;
+        } elseif (in_array($ext, $allowedImages)) {
+            $mediaType = 'image';
+            $maxMb = 50;
+        } else {
+            return response()->json(['message' => 'Alleen afbeeldingen (jpg, png, gif, webp) of video (mp4, webm) toegestaan.'], 422);
+        }
+        if ($file->getSize() > $maxMb * 1024 * 1024) {
+            return response()->json(['message' => "Bestand te groot. Max {$maxMb} MB."], 422);
+        }
+
+        $dir = public_path('gymies-media');
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        $name = \Illuminate\Support\Str::uuid()->toString() . '.' . $ext;
+        if (!$file->move($dir, $name)) {
+            return response()->json(['message' => 'Opslaan mislukt.'], 500);
+        }
+        $filePath = '/gymies-media/' . $name;
+
+        $caption = trim((string) $request->input('caption', ''));
+        $expiresAt = now()->addHours(24);
+
+        $insertData = [
+            'trainer_user_id' => (int) $user->id,
+            'media_type' => $mediaType,
+            'source_type' => 'upload',
+            'file_path' => $filePath,
+            'external_url' => null,
+            'thumbnail_url' => null,
+            'caption' => $caption !== '' ? $caption : null,
+            'is_public' => 1,
+            'sort_order' => 0,
+            'usage' => 'story',
+            'expires_at' => $expiresAt,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
+        $id = DB::table('gymies_trainer_media')->insertGetId($insertData);
+        $row = DB::table('gymies_trainer_media')->where('id', $id)->first();
+
+        $data = $this->mediaRowToArray($row);
+        $data['usage'] = 'story';
+        $data['expires_at'] = (string) $expiresAt;
+
+        return response()->json(['data' => $data], 201);
+    }
+
+    /**
+     * GET trainer/{id}/has-stories — Authenticated variant (zelfde als public).
+     */
+    public function hasStoriesAuth(Request $request, string $id): JsonResponse
+    {
+        GymiesSchemaEnsure::trainerMediaStoryColumns();
+
+        $trainerId = (int) $id;
+        if ($trainerId <= 0 || !Schema::hasTable('gymies_trainer_media') || !Schema::hasColumn('gymies_trainer_media', 'usage')) {
+            return response()->json(['has_stories' => false]);
+        }
+
+        $userIdCol = Schema::hasColumn('gymies_trainer_media', 'trainer_user_id')
+            ? 'trainer_user_id'
+            : 'user_id';
+
+        $exists = DB::table('gymies_trainer_media')
+            ->where($userIdCol, $trainerId)
+            ->where('usage', 'story')
+            ->where(function ($q) {
+                $q->whereNull('expires_at')
+                  ->orWhere('expires_at', '>', now());
+            })
+            ->exists();
+
+        return response()->json(['has_stories' => $exists]);
     }
 
     public function storeMedia(Request $request): JsonResponse
@@ -1543,7 +1649,9 @@ final class GymiesTrainerOpsController extends Controller
     private function saveBase64Image(string $input): ?string
     {
         if ($input === '') {
-            \Log::debug('saveBase64Image: lege input');
+            if (config('app.debug')) {
+                Log::debug('saveBase64Image: lege input');
+            }
             return null;
         }
 
@@ -1557,17 +1665,17 @@ final class GymiesTrainerOpsController extends Controller
             }
         }
         if ($mime !== null && !in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
-            \Log::warning('saveBase64Image: ongeldig MIME-type', ['mime' => $mime]);
+            Log::warning('saveBase64Image: ongeldig MIME-type', ['mime' => $mime]);
             return null;
         }
 
         $bin = base64_decode($data, true);
         if ($bin === false) {
-            \Log::warning('saveBase64Image: base64 decode mislukt');
+            Log::warning('saveBase64Image: base64 decode mislukt');
             return null;
         }
         if (strlen($bin) > (5 * 1024 * 1024)) { // 5MB
-            \Log::warning('saveBase64Image: bestand te groot', ['bytes' => strlen($bin)]);
+            Log::warning('saveBase64Image: bestand te groot', ['bytes' => strlen($bin)]);
             return null;
         }
 
@@ -1585,7 +1693,7 @@ final class GymiesTrainerOpsController extends Controller
         $name = Str::uuid()->toString() . '.' . $ext;
         $absolute = $dir . DIRECTORY_SEPARATOR . $name;
         if (@file_put_contents($absolute, $bin) === false) {
-            \Log::error('saveBase64Image: schrijven naar disk mislukt', ['path' => $absolute]);
+            Log::error('saveBase64Image: schrijven naar disk mislukt', ['path' => $absolute]);
             return null;
         }
 
@@ -1881,14 +1989,30 @@ final class GymiesTrainerOpsController extends Controller
             $groupRevenue['gross_cents'] = (int) ($groupTx->total ?? 0);
         }
 
-        // Fee berekening (geschat: we weten de fee config)
+        // Fee berekening: fees alleen over platform-betalingen (niet over trainer's eigen Mollie)
         $feeConfig = $this->getTrainerFeeConfig($trainerUserId);
         $totalGross = $bookingRevenue['gross_cents'];
         $estimatedFees = 0;
+
+        // Tel alleen platform-betalingen voor fee berekening
+        $platformBookingCount = $bookingRevenue['count'];
+        $platformGross = $totalGross;
+        if (Schema::hasTable('gymies_payment_transactions') && Schema::hasColumn('gymies_payment_transactions', 'mollie_account_source')) {
+            $platformTx = DB::table('gymies_payment_transactions')
+                ->where('counterparty_user_id', $trainerUserId)
+                ->where('status', 'paid')
+                ->where('created_at', '>=', $startDate)
+                ->where('mollie_account_source', 'platform')
+                ->selectRaw('COUNT(*) as cnt, COALESCE(SUM(amount_cents), 0) as total')
+                ->first();
+            $platformBookingCount = (int) ($platformTx->cnt ?? 0);
+            $platformGross = (int) ($platformTx->total ?? 0);
+        }
+
         if ($feeConfig['type'] === 'percent') {
-            $estimatedFees = (int) round($totalGross * $feeConfig['value'] / 10000);
+            $estimatedFees = (int) round($platformGross * $feeConfig['value'] / 10000);
         } else {
-            $estimatedFees = $bookingRevenue['count'] * $feeConfig['value'];
+            $estimatedFees = $platformBookingCount * $feeConfig['value'];
         }
 
         $netRevenue = $totalGross - $estimatedFees - $bookingRevenue['refunded_cents'];

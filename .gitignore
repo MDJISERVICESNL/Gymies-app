@@ -17,6 +17,7 @@
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
 firebase_options.dart
+firebase-service-account.json
 
 # ── Flutter / Dart ─────────────────────────────────────────
 .dart_tool/

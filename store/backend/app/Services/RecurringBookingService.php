@@ -36,18 +36,36 @@ class RecurringBookingService
             return 0;
         }
 
-        $recurrings = DB::table(self::TABLE)
-            ->where('status', 'active')
-            ->get();
+        // BUG-007: Wrap in transaction to handle partial failures gracefully
+        try {
+            return DB::transaction(function () {
+                $recurrings = DB::table(self::TABLE)
+                    ->where('status', 'active')
+                    ->get();
 
-        $totalGenerated = 0;
+                $totalGenerated = 0;
 
-        foreach ($recurrings as $recurring) {
-            $generated = $this->generateForRecurring($recurring);
-            $totalGenerated += $generated;
+                foreach ($recurrings as $recurring) {
+                    try {
+                        $generated = $this->generateForRecurring($recurring);
+                        $totalGenerated += $generated;
+                    } catch (\Throwable $e) {
+                        \Log::error('RecurringBookingService: failed to generate for recurring ID ' . $recurring->id, [
+                            'error' => $e->getMessage(),
+                        ]);
+                        // Continue with next recurring booking
+                        continue;
+                    }
+                }
+
+                return $totalGenerated;
+            });
+        } catch (\Throwable $e) {
+            \Log::error('RecurringBookingService::generateAll failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return 0;
         }
-
-        return $totalGenerated;
     }
 
     /**
@@ -55,89 +73,92 @@ class RecurringBookingService
      */
     public function generateForRecurring(object $recurring): int
     {
-        $generatedUntil = $recurring->generated_until
-            ? Carbon::parse($recurring->generated_until)
-            : Carbon::today();
+        // BUG-008: Wrap generation in transaction to ensure atomic updates
+        return DB::transaction(function () use ($recurring) {
+            $generatedUntil = $recurring->generated_until
+                ? Carbon::parse($recurring->generated_until)
+                : Carbon::today();
 
-        $targetDate = Carbon::today()->addWeeks(self::GENERATE_AHEAD_WEEKS);
+            $targetDate = Carbon::today()->addWeeks(self::GENERATE_AHEAD_WEEKS);
 
-        // Respecteer repeat_until
-        if ($recurring->repeat_until) {
-            $repeatUntil = Carbon::parse($recurring->repeat_until);
-            if ($targetDate->gt($repeatUntil)) {
-                $targetDate = $repeatUntil;
-            }
-        }
-
-        if ($generatedUntil->gte($targetDate)) {
-            return 0; // Al bijgewerkt
-        }
-
-        $dayOfWeek = (int) $recurring->day_of_week;
-        $startTime = $recurring->start_time;
-        $duration = (int) $recurring->duration_minutes;
-        $repeatEvery = (int) ($recurring->repeat_every_weeks ?? 1);
-        $amountCents = (int) ($recurring->amount_cents ?? 0);
-
-        $generated = 0;
-        $date = $generatedUntil->copy()->addDay();
-
-        // Spring naar de eerste matching weekdag
-        while ($date->dayOfWeekIso !== $dayOfWeek && $date->lte($targetDate)) {
-            $date->addDay();
-        }
-
-        while ($date->lte($targetDate)) {
-            $dateStr = $date->format('Y-m-d');
-            $scheduledAt = "{$dateStr} {$startTime}:00";
-
-            // Check: al een booking voor deze datum+tijd?
-            $exists = DB::table('gymies_bookings')
-                ->where('client_user_id', $recurring->client_user_id)
-                ->where('trainer_user_id', $recurring->trainer_user_id)
-                ->where('scheduled_at', $scheduledAt)
-                ->whereNotIn('status', ['cancelled'])
-                ->exists();
-
-            if (!$exists) {
-                // Check: trainer exception?
-                $blocked = $this->isDateBlocked(
-                    (int) $recurring->trainer_user_id,
-                    $dateStr,
-                );
-
-                if ($blocked) {
-                    // Notificatie: "Je wekelijkse sessie op {datum} kan niet doorgaan"
-                    $this->notifyConflict($recurring, $dateStr);
-                } else {
-                    // Check: overlap met andere bookings
-                    $overlap = $this->hasOverlap(
-                        (int) $recurring->trainer_user_id,
-                        $scheduledAt,
-                        $duration,
-                    );
-
-                    if (!$overlap) {
-                        $this->createBooking($recurring, $scheduledAt, $duration, $amountCents);
-                        $generated++;
-                    } else {
-                        $this->notifyConflict($recurring, $dateStr);
-                    }
+            // Respecteer repeat_until
+            if ($recurring->repeat_until) {
+                $repeatUntil = Carbon::parse($recurring->repeat_until);
+                if ($targetDate->gt($repeatUntil)) {
+                    $targetDate = $repeatUntil;
                 }
             }
 
-            $date->addWeeks($repeatEvery);
-        }
+            if ($generatedUntil->gte($targetDate)) {
+                return 0; // Al bijgewerkt
+            }
 
-        // Update generated_until
-        DB::table(self::TABLE)
-            ->where('id', $recurring->id)
-            ->update([
-                'generated_until' => $targetDate->format('Y-m-d'),
-                'updated_at' => now(),
-            ]);
+            $dayOfWeek = (int) $recurring->day_of_week;
+            $startTime = $recurring->start_time;
+            $duration = (int) $recurring->duration_minutes;
+            $repeatEvery = (int) ($recurring->repeat_every_weeks ?? 1);
+            $amountCents = (int) ($recurring->amount_cents ?? 0);
 
-        return $generated;
+            $generated = 0;
+            $date = $generatedUntil->copy()->addDay();
+
+            // Spring naar de eerste matching weekdag
+            while ($date->dayOfWeekIso !== $dayOfWeek && $date->lte($targetDate)) {
+                $date->addDay();
+            }
+
+            while ($date->lte($targetDate)) {
+                $dateStr = $date->format('Y-m-d');
+                $scheduledAt = "{$dateStr} {$startTime}:00";
+
+                // Check: al een booking voor deze datum+tijd?
+                $exists = DB::table('gymies_bookings')
+                    ->where('client_user_id', $recurring->client_user_id)
+                    ->where('trainer_user_id', $recurring->trainer_user_id)
+                    ->where('scheduled_at', $scheduledAt)
+                    ->whereNotIn('status', ['cancelled'])
+                    ->exists();
+
+                if (!$exists) {
+                    // Check: trainer exception?
+                    $blocked = $this->isDateBlocked(
+                        (int) $recurring->trainer_user_id,
+                        $dateStr,
+                    );
+
+                    if ($blocked) {
+                        // Notificatie: "Je wekelijkse sessie op {datum} kan niet doorgaan"
+                        $this->notifyConflict($recurring, $dateStr);
+                    } else {
+                        // Check: overlap met andere bookings
+                        $overlap = $this->hasOverlap(
+                            (int) $recurring->trainer_user_id,
+                            $scheduledAt,
+                            $duration,
+                        );
+
+                        if (!$overlap) {
+                            $this->createBooking($recurring, $scheduledAt, $duration, $amountCents);
+                            $generated++;
+                        } else {
+                            $this->notifyConflict($recurring, $dateStr);
+                        }
+                    }
+                }
+
+                $date->addWeeks($repeatEvery);
+            }
+
+            // Update generated_until
+            DB::table(self::TABLE)
+                ->where('id', $recurring->id)
+                ->update([
+                    'generated_until' => $targetDate->format('Y-m-d'),
+                    'updated_at' => now(),
+                ]);
+
+            return $generated;
+        });
     }
 
     /**

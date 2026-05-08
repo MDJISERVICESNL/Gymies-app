@@ -8,6 +8,7 @@ import '../services/api_client.dart';
 import '../utils/map_utils.dart';
 import '../utils/haptics.dart';
 import 'widgets/gymies_app_bar.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// Admin gebruiker detail – profiel en notities.
 class AdminUserDetailScreen extends StatefulWidget {
@@ -72,7 +73,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon gebruiker niet laden.';
+        _error = S.of(context).konGebruikerNietLaden;
         _loading = false;
       });
     }
@@ -133,7 +134,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen> {
             Icon(Icons.error_outline, size: 48, color: Colors.red.shade700),
             const SizedBox(height: 16),
             Text(
-              _error ?? 'Er ging iets mis.',
+              _error ?? S.of(context).erGingIetsMis,
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey.shade800),
             ),
@@ -144,7 +145,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen> {
                 _load();
               },
               icon: const Icon(Icons.refresh),
-              label: const Text('Opnieuw proberen'),
+              label: const Text(S.of(context).opnieuwProberen),
               style: FilledButton.styleFrom(
                 backgroundColor: GymiesColors.primary,
                 foregroundColor: GymiesColors.darkBlue,
@@ -174,7 +175,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen> {
               children: [
                 CircleAvatar(
                   radius: 32,
-                  backgroundColor: GymiesColors.primary.withValues(alpha: 0.3),
+                  backgroundColor: GymiesColors.primary.withOpacity(0.3),
                   child: Text(
                     (name.isNotEmpty ? name[0] : email.isNotEmpty ? email[0] : '?')
                         .toUpperCase(),
@@ -190,7 +191,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        name.isNotEmpty ? name : 'Geen naam',
+                        name.isNotEmpty ? name : S.of(context).geenNaam,
                         style: GoogleFonts.sora(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -257,7 +258,7 @@ class _AdminUserDetailScreenState extends State<AdminUserDetailScreen> {
         ),
         child: Center(
           child: Text(
-            'Geen notities',
+            S.of(context).geenNotities,
             style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
           ),
         ),
@@ -302,7 +303,7 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: (color ?? GymiesColors.primary).withValues(alpha: 0.2),
+        color: (color ?? GymiesColors.primary).withOpacity(0.2),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(

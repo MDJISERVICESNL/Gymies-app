@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/gymies_api.dart';
 import '../services/subscription_entitlements_service.dart';
 import '../theme/gymies_theme.dart';
@@ -13,7 +15,7 @@ import 'widgets/gymies_app_bar.dart';
 import 'widgets/gymies_section_header.dart';
 
 class TrainerMarketingHubScreen extends StatefulWidget {
-  const TrainerMarketingHubScreen({Key? key}) : super(key: key);
+  const TrainerMarketingHubScreen({super.key});
 
   @override
   State<TrainerMarketingHubScreen> createState() =>
@@ -49,7 +51,10 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
       try {
         final packages = await api.getTrainerPackages();
         packagesCount = packages.length;
-      } catch (_) {}
+      } catch (e) {
+        // Fail-open: Packages count optional
+        if (kDebugMode) debugPrint('[TrainerMarketing] Fetch packages failed: $e');
+      }
 
       // Load promo codes
       final promoCodes = await api.getTrainerPromoCodes();
@@ -72,7 +77,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
       if (mounted) {
         setState(() {
           _hasError = true;
-          _errorMessage = 'Fout bij laden van marketinggegevens';
+          _errorMessage = S.of(context).foutBijLadenVanMarketinggegevens;
           _isLoading = false;
           _packagesCount = 0;
           _activePromosCount = 0;
@@ -111,7 +116,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
                       ElevatedButton.icon(
                         onPressed: _loadMarketingData,
                         icon: const Icon(Icons.refresh),
-                        label: const Text('Opnieuw proberen'),
+                        label: const Text(S.of(context).opnieuwProberen),
                       ),
                     ],
                   ),
@@ -151,7 +156,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
         const SizedBox(width: 12),
         Expanded(
           child: _buildStatCard(
-            label: 'Actieve promo\'s',
+            label: S.of(context).actievePromo,
             value: _activePromosCount.toString(),
             icon: Icons.local_offer_outlined,
           ),
@@ -173,7 +178,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       child: Column(
@@ -182,7 +187,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.12),
+              color: GymiesColors.primary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(7),
             ),
             child: Icon(icon, size: 14, color: GymiesColors.darkBlue),
@@ -213,6 +218,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
   }
 
   Widget _buildNavigationCards(BuildContext context, String tierLower) {
+    // ignore: unused_local_variable
     final isPro = tierLower.contains('pro') || tierLower == 'studio';
     final isProPlus = tierLower.contains('pro_plus') ||
         tierLower.contains('proplus') ||
@@ -225,7 +231,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
           context: context,
           icon: Icons.inventory_2_outlined,
           title: 'Pakketten',
-          subtitle: 'Beheer je sessie-pakketten en strippenkaarten',
+          subtitle: S.of(context).beheerJeSessiepakkettenEnStrippenkaarten,
           onTap: () {
             Haptics.selection();
             Navigator.push(
@@ -243,7 +249,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
           context: context,
           icon: Icons.local_offer_outlined,
           title: 'Promo codes',
-          subtitle: 'Maak kortingscodes en volg gebruik',
+          subtitle: S.of(context).maakKortingscodesEnVolgGebruik,
           onTap: () {
             Haptics.selection();
             Navigator.push(
@@ -260,8 +266,8 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
         _buildNavigationCard(
           context: context,
           icon: Icons.email_outlined,
-          title: 'Nieuwsbrief',
-          subtitle: 'Verstuur updates naar je klanten',
+          title: S.of(context).newsletterLabel,
+          subtitle: S.of(context).verstuurUpdatesNaarJeKlanten,
           isLocked: !isProPlus,
           lockLabel: isProPlus ? null : 'Pro+',
           onTap: isProPlus
@@ -300,7 +306,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
               ? null
               : [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -313,7 +319,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
               decoration: BoxDecoration(
                 color: isLocked
                     ? Colors.grey.shade100
-                    : GymiesColors.primary.withValues(alpha: 0.1),
+                    : GymiesColors.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               padding: const EdgeInsets.all(12),
@@ -350,7 +356,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
             if (isLocked && lockLabel != null)
               Container(
                 decoration: BoxDecoration(
-                  color: GymiesColors.primary.withValues(alpha: 0.1),
+                  color: GymiesColors.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -376,16 +382,16 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
 
   Widget _buildTipsSection() {
     final tips = [
-      'Gebruik promo codes bij seizoenswisselingen voor meer boekingen',
-      'Verstuur maandelijks een nieuwsbrief om klanten betrokken te houden',
-      'Voeg je social media links toe zodat klanten je kunnen volgen',
+      S.of(context).gebruikPromoCodesBijSeizoenswisselingenVoor,
+      S.of(context).verstuurMaandelijksEenNieuwsbriefOmKlanten,
+      S.of(context).voegJeSocialMediaLinksToe,
     ];
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -417,7 +423,7 @@ class _TrainerMarketingHubScreenState extends State<TrainerMarketingHubScreen> {
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: GymiesColors.primary.withValues(alpha: 0.12),
+            color: GymiesColors.primary.withOpacity(0.12),
             borderRadius: BorderRadius.circular(7),
           ),
           child: const Icon(

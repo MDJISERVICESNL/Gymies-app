@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/map_utils.dart';
 import '../utils/haptics.dart';
+import '../utils/currency_format.dart';
 import 'widgets/gymies_app_bar.dart';
 import 'widgets/gymies_dialog.dart';
 import 'widgets/trainer_state_views.dart';
@@ -33,12 +35,13 @@ class _TrainerGroupSessionsScreenState
   }
 
   Future<void> _load() async {
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final list = await context.read<GymiesApi>().getTrainerGroupSessions();
+      final list = await api.getTrainerGroupSessions();
       if (!mounted) return;
       setState(() {
         _sessions = list;
@@ -53,16 +56,12 @@ class _TrainerGroupSessionsScreenState
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon groepslessen niet laden.';
+        _error = S.of(context).konGroepslessenNietLaden;
         _loading = false;
       });
     }
   }
 
-  String _formatEuro(int cents) {
-    final euros = (cents / 100).toStringAsFixed(2).replaceAll('.', ',');
-    return '€$euros';
-  }
 
   Future<void> _showCreateOrEdit({Map<String, dynamic>? item}) async {
     final title = TextEditingController(text: mapStr(item, ['title', 'name']));
@@ -94,8 +93,8 @@ class _TrainerGroupSessionsScreenState
     // Confirmation deadline (uren voor aanvang)
     final deadlineHours = TextEditingController(text: '48');
     final existingStart =
-        mapStr(item, ['starts_at', 'startsAt', 'start_time']).isNotEmpty
-        ? DateTime.tryParse(mapStr(item, ['starts_at', 'startsAt', 'start_time']))
+        mapStr(item, ['scheduled_at', 'scheduledAt', 'starts_at', 'startsAt', 'start_time']).isNotEmpty
+        ? DateTime.tryParse(mapStr(item, ['scheduled_at', 'scheduledAt', 'starts_at', 'startsAt', 'start_time']))
         : null;
     DateTime selectedDate = existingStart ?? DateTime.now();
     TimeOfDay selectedTime = TimeOfDay.fromDateTime(
@@ -105,7 +104,7 @@ class _TrainerGroupSessionsScreenState
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => GymiesDialog(
-          title: item == null ? 'Groepsles toevoegen' : 'Groepsles bewerken',
+          title: item == null ? S.of(context).groepslesToevoegen : S.of(context).groepslesBewerken,
           headerIcon: Icons.groups_rounded,
           content: SingleChildScrollView(
             child: Column(
@@ -113,12 +112,12 @@ class _TrainerGroupSessionsScreenState
               children: [
                 TextField(
                   controller: title,
-                  decoration: const InputDecoration(labelText: 'Titel'),
+                  decoration: const InputDecoration(labelText: S.of(context).titel),
                 ),
                 const SizedBox(height: 10),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Datum'),
+                  title: const Text(S.of(context).datum),
                   subtitle: Text(
                     '${selectedDate.day.toString().padLeft(2, '0')}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.year}',
                   ),
@@ -142,7 +141,7 @@ class _TrainerGroupSessionsScreenState
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Tijd'),
+                  title: const Text(S.of(context).tijd),
                   subtitle: Text(
                     '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}',
                   ),
@@ -162,14 +161,14 @@ class _TrainerGroupSessionsScreenState
                 TextField(
                   controller: capacity,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Capaciteit'),
+                  decoration: const InputDecoration(labelText: S.of(context).capaciteit),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: priceController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(
-                    labelText: 'Prijs per persoon (€)',
+                    labelText: S.of(context).prijsPerPersoon,
                     hintText: '15.00',
                     prefixText: '€ ',
                   ),
@@ -179,7 +178,7 @@ class _TrainerGroupSessionsScreenState
                   controller: duration,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'Duur (minuten)',
+                    labelText: S.of(context).duurminuten,
                     hintText: '60',
                   ),
                 ),
@@ -198,14 +197,14 @@ class _TrainerGroupSessionsScreenState
                         children: [
                           Icon(Icons.group_add_rounded, size: 16, color: Colors.blue.shade700),
                           const SizedBox(width: 6),
-                          Text('Doorgang garantie',
+                          Text(S.of(context).doorgangGarantie,
                             style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.blue.shade700),
                           ),
                         ],
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Klanten reserveren een plek. Pas als het minimum bereikt is, wordt de betaallink verstuurd.',
+                        S.of(context).klantenReserverenEenPlekPasAlsHetMinimumBereiktIsWordtDeBetaallinkVerstuurd,
                         style: GoogleFonts.sora(fontSize: 11, color: Colors.blue.shade600, height: 1.3),
                       ),
                       const SizedBox(height: 10),
@@ -213,7 +212,7 @@ class _TrainerGroupSessionsScreenState
                         controller: minParticipants,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: 'Min. deelnemers voor doorgang',
+                          labelText: S.of(context).minDeelnemersVoorDoorgang,
                           hintText: '4',
                         ),
                       ),
@@ -222,9 +221,9 @@ class _TrainerGroupSessionsScreenState
                         controller: deadlineHours,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
-                          labelText: 'Deadline (uren voor aanvang)',
+                          labelText: S.of(context).deadlineurenVoorAanvang,
                           hintText: '48',
-                          helperText: 'Als het minimum niet bereikt is voor deze deadline, wordt de les automatisch geannuleerd.',
+                          helperText: S.of(context).alsHetMinimumNietBereiktIs,
                           helperMaxLines: 3,
                         ),
                       ),
@@ -236,11 +235,11 @@ class _TrainerGroupSessionsScreenState
           ),
           actions: [
             GymiesDialogAction(
-              label: 'Annuleren',
+              label: S.of(context).annuleren,
               returnValue: null,
             ),
             GymiesDialogAction(
-              label: 'Opslaan',
+              label: S.of(context).opslaan,
               isPrimary: true,
               onPressed: _busy
                   ? null
@@ -249,7 +248,7 @@ class _TrainerGroupSessionsScreenState
                       final navigator = Navigator.of(ctx);
                       final cap = int.tryParse(capacity.text.trim());
                       if (title.text.trim().isEmpty || cap == null || cap <= 0) {
-                        _errorSnack('Vul een titel in en een capaciteit van minimaal 1.');
+                        _errorSnack(S.of(context).vulEenTitelInEnEen);
                         return;
                       }
                       // Parse price: "15.00" or "15,00" → 1500 cents
@@ -285,7 +284,7 @@ class _TrainerGroupSessionsScreenState
                           final groupSessionId = _resolveGroupSessionId(item);
                           if (groupSessionId == null) {
                             _errorSnack(
-                              'Groepsles-ID ontbreekt. Vernieuw de lijst en probeer opnieuw.',
+                              S.of(context).groepslesidOntbreektVernieuwDeLijstEn,
                             );
                             return;
                           }
@@ -305,8 +304,8 @@ class _TrainerGroupSessionsScreenState
                         await _load();
                         _success(
                           item == null
-                              ? 'Groepsles toegevoegd'
-                              : 'Groepsles bijgewerkt',
+                              ? S.of(context).groepslesToegevoegd
+                              : S.of(context).groepslesBijgewerkt,
                         );
                       } on ApiException catch (e) {
                         if (!mounted) return;
@@ -327,7 +326,7 @@ class _TrainerGroupSessionsScreenState
     final groupSessionId = _resolveGroupSessionId(item);
     if (groupSessionId == null) {
       _errorSnack(
-        'Groepsles-ID ontbreekt. Vernieuw de lijst en probeer opnieuw.',
+        S.of(context).groepslesidOntbreektVernieuwDeLijstEn,
       );
       return;
     }
@@ -335,7 +334,7 @@ class _TrainerGroupSessionsScreenState
       await context.read<GymiesApi>().publishTrainerGroupSession(
         groupSessionId,
       );
-      _success('Groepsles gepubliceerd');
+      _success(S.of(context).groepslesGepubliceerd);
     });
   }
 
@@ -344,13 +343,13 @@ class _TrainerGroupSessionsScreenState
     final groupSessionId = _resolveGroupSessionId(item);
     if (groupSessionId == null) {
       _errorSnack(
-        'Groepsles-ID ontbreekt. Vernieuw de lijst en probeer opnieuw.',
+        S.of(context).groepslesidOntbreektVernieuwDeLijstEn,
       );
       return;
     }
     await _runAction(() async {
       await context.read<GymiesApi>().cancelTrainerGroupSession(groupSessionId);
-      _success('Groepsles geannuleerd');
+      _success(S.of(context).groepslesGeannuleerd);
     });
   }
 
@@ -359,7 +358,7 @@ class _TrainerGroupSessionsScreenState
     final groupSessionId = _resolveGroupSessionId(item);
     if (groupSessionId == null) {
       _errorSnack(
-        'Groepsles-ID ontbreekt. Vernieuw de lijst en probeer opnieuw.',
+        S.of(context).groepslesidOntbreektVernieuwDeLijstEn,
       );
       return;
     }
@@ -383,7 +382,7 @@ class _TrainerGroupSessionsScreenState
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.15),
+                        color: GymiesColors.primary.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(
@@ -395,7 +394,7 @@ class _TrainerGroupSessionsScreenState
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Deelnemers',
+                        S.of(context).deelnemers,
                         style: GoogleFonts.sora(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -405,7 +404,7 @@ class _TrainerGroupSessionsScreenState
                     ),
                     IconButton(
                       icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(_).pop(),
+                      onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
                 ),
@@ -421,7 +420,7 @@ class _TrainerGroupSessionsScreenState
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.04),
+                                  color: Colors.black.withOpacity(0.04),
                                   blurRadius: 10,
                                   offset: const Offset(0, 2),
                                 ),
@@ -451,7 +450,7 @@ class _TrainerGroupSessionsScreenState
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
-                                        mapStr(p, ['payment_status']) == 'paid' ? 'Betaald' : 'Open',
+                                        mapStr(p, ['payment_status']) == 'paid' ? S.of(context).betaald : 'Open',
                                         style: GoogleFonts.sora(
                                           fontSize: 10,
                                           fontWeight: FontWeight.w600,
@@ -465,7 +464,7 @@ class _TrainerGroupSessionsScreenState
                                       int.parse(mapStr(p, ['amount_cents'])) > 0) ...[
                                     const SizedBox(width: 6),
                                     Text(
-                                      _formatEuro(int.parse(mapStr(p, ['amount_cents']))),
+                                      formatEuro(int.parse(mapStr(p, ['amount_cents']))),
                                       style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade600),
                                     ),
                                   ],
@@ -477,7 +476,7 @@ class _TrainerGroupSessionsScreenState
                                   final participantId = _resolveParticipantId(p);
                                   if (participantId == null) {
                                     _errorSnack(
-                                      'Deelnemer-ID ontbreekt voor deze regel.',
+                                      S.of(context).deelnemeridOntbreektVoorDezeRegel,
                                     );
                                     return;
                                   }
@@ -514,7 +513,7 @@ class _TrainerGroupSessionsScreenState
     Haptics.selection();
     final groupSessionId = _resolveGroupSessionId(session);
     if (groupSessionId == null) {
-      _errorSnack('Groepsles-ID ontbreekt.');
+      _errorSnack(S.of(context).groepslesidOntbreekt);
       return;
     }
     List<Map<String, dynamic>> waitlist = [];
@@ -556,12 +555,12 @@ class _TrainerGroupSessionsScreenState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Wachtlijst', style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
+                        Text(S.of(context).wachtlijst, style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue)),
                         Text('${waitlist.length} wachtenden', style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600)),
                       ],
                     ),
                   ),
-                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(_).pop()),
+                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.of(context).pop()),
                 ],
               ),
               const SizedBox(height: 16),
@@ -572,7 +571,7 @@ class _TrainerGroupSessionsScreenState
                     children: [
                       Icon(Icons.hourglass_empty_rounded, size: 40, color: Colors.grey.shade400),
                       const SizedBox(height: 8),
-                      Text('Nog niemand op de wachtlijst', style: GoogleFonts.sora(color: Colors.grey.shade600)),
+                      Text(S.of(context).nogNiemandOpDeWachtlijst, style: GoogleFonts.sora(color: Colors.grey.shade600)),
                     ],
                   ),
                 )
@@ -586,7 +585,7 @@ class _TrainerGroupSessionsScreenState
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 10,
                             offset: const Offset(0, 2),
                           ),
@@ -597,7 +596,7 @@ class _TrainerGroupSessionsScreenState
                           width: 38,
                           height: 38,
                           decoration: BoxDecoration(
-                            color: GymiesColors.primary.withValues(alpha: 0.15),
+                            color: GymiesColors.primary.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Center(
@@ -607,7 +606,7 @@ class _TrainerGroupSessionsScreenState
                             ),
                           ),
                         ),
-                        title: Text(mapStr(w, ['name', 'full_name']).isNotEmpty ? mapStr(w, ['name', 'full_name']) : 'Klant', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+                        title: Text(mapStr(w, ['name', 'full_name']).isNotEmpty ? mapStr(w, ['name', 'full_name']) : S.of(context).clientSingle, style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
                         subtitle: Text(mapStr(w, ['created_at', 'joined_at']).isNotEmpty ? 'Aangemeld: ${mapStr(w, ['created_at', 'joined_at'])}' : '', style: GoogleFonts.sora(fontSize: 12)),
                         trailing: FilledButton(
                           onPressed: () async {
@@ -620,7 +619,7 @@ class _TrainerGroupSessionsScreenState
                               if (!mounted) return;
                               Haptics.success();
                               Navigator.of(context).pop();
-                              _success('Klant gepromoveerd van wachtlijst');
+                              _success(S.of(context).klantGepromoveerdVanWachtlijst);
                               await _load();
                             } on ApiException catch (e) {
                               if (!mounted) return;
@@ -634,7 +633,7 @@ class _TrainerGroupSessionsScreenState
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
-                          child: Text('Toelaten', style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600)),
+                          child: Text(S.of(context).toelaten, style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600)),
                         ),
                       ),
                     )).toList(),
@@ -684,7 +683,7 @@ class _TrainerGroupSessionsScreenState
   }
 
   String _formatDate(Map<String, dynamic> session) {
-    final raw = mapStr(session, ['starts_at', 'startsAt', 'start_time']);
+    final raw = mapStr(session, ['scheduled_at', 'scheduledAt', 'starts_at', 'startsAt', 'start_time']);
     final dt = DateTime.tryParse(raw);
     if (dt == null) return raw;
     const days = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
@@ -692,7 +691,7 @@ class _TrainerGroupSessionsScreenState
   }
 
   String _formatTime(Map<String, dynamic> session) {
-    final raw = mapStr(session, ['starts_at', 'startsAt', 'start_time']);
+    final raw = mapStr(session, ['scheduled_at', 'scheduledAt', 'starts_at', 'startsAt', 'start_time']);
     final dt = DateTime.tryParse(raw);
     if (dt == null) return raw;
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
@@ -717,7 +716,7 @@ class _TrainerGroupSessionsScreenState
       case 'cancelled':
         bg = Colors.red.shade50;
         fg = Colors.red.shade700;
-        label = 'Geannuleerd';
+        label = S.of(context).geannuleerd;
         break;
       default:
         bg = Colors.grey.shade100;
@@ -754,7 +753,7 @@ class _TrainerGroupSessionsScreenState
                   color: Colors.orange.shade50,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Text('VOL', style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.orange.shade800)),
+                child: Text(S.of(context).vol, style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.orange.shade800)),
               ),
             ],
             if (waitlistCount > 0) ...[
@@ -789,7 +788,7 @@ class _TrainerGroupSessionsScreenState
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: GymiesAppBar(
-        title: 'Groepslessen',
+        title: S.of(context).groepslessen,
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _busy
@@ -801,7 +800,7 @@ class _TrainerGroupSessionsScreenState
         backgroundColor: GymiesColors.primary,
         foregroundColor: GymiesColors.darkBlue,
         icon: const Icon(Icons.add),
-        label: const Text('Groepsles'),
+        label: const Text(S.of(context).groepsles),
       ),
       body: GymiesListBody(
         loading: _loading,
@@ -813,8 +812,8 @@ class _TrainerGroupSessionsScreenState
                       children: [
                         TrainerEmptyState(
                           icon: Icons.groups_rounded,
-                          title: 'Nog geen groepslessen',
-                          actionLabel: 'Groepsles toevoegen',
+                          title: S.of(context).nogGeenGroepslessen,
+                          actionLabel: S.of(context).groepslesToevoegen,
                           actionIcon: Icons.add,
                           onAction: _showCreateOrEdit,
                         ),
@@ -825,7 +824,7 @@ class _TrainerGroupSessionsScreenState
                       itemCount: _sessions.length,
                       itemBuilder: (_, i) {
                         final s = _sessions[i];
-                        final title = mapStr(s, ['title', 'name']).isNotEmpty ? mapStr(s, ['title', 'name']) : 'Groepsles';
+                        final title = mapStr(s, ['title', 'name']).isNotEmpty ? mapStr(s, ['title', 'name']) : S.of(context).groepsles;
                         final status = mapStr(s, ['status', 'state']).isNotEmpty ? mapStr(s, ['status', 'state']) : 'draft';
                         final formattedDate = _formatDate(s);
                         final formattedTime = _formatTime(s);
@@ -837,7 +836,7 @@ class _TrainerGroupSessionsScreenState
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.04),
+                                color: Colors.black.withOpacity(0.04),
                                 blurRadius: 10,
                                 offset: const Offset(0, 2),
                               ),
@@ -879,7 +878,7 @@ class _TrainerGroupSessionsScreenState
                                       Icon(Icons.euro_rounded, size: 14, color: Colors.green.shade600),
                                       const SizedBox(width: 6),
                                       Text(
-                                        '${_formatEuro(int.parse(mapStr(s, ['price_per_participant_cents'])))} p.p.',
+                                        '${formatEuro(int.parse(mapStr(s, ['price_per_participant_cents'])))} p.p.',
                                         style: GoogleFonts.sora(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.green.shade700),
                                       ),
                                     ],
@@ -907,13 +906,13 @@ class _TrainerGroupSessionsScreenState
                                             width: 22,
                                             height: 22,
                                             decoration: BoxDecoration(
-                                              color: GymiesColors.darkBlue.withValues(alpha: 0.08),
+                                              color: GymiesColors.darkBlue.withOpacity(0.08),
                                               borderRadius: BorderRadius.circular(6),
                                             ),
                                             child: const Icon(Icons.groups_rounded, size: 13, color: GymiesColors.darkBlue),
                                           ),
                                           const SizedBox(width: 6),
-                                          Text('Deelnemers', style: GoogleFonts.sora(fontSize: 12, color: GymiesColors.darkBlue)),
+                                          Text(S.of(context).deelnemers, style: GoogleFonts.sora(fontSize: 12, color: GymiesColors.darkBlue)),
                                         ],
                                       ),
                                     ),
@@ -934,13 +933,13 @@ class _TrainerGroupSessionsScreenState
                                               width: 22,
                                               height: 22,
                                               decoration: BoxDecoration(
-                                                color: Colors.blue.shade700.withValues(alpha: 0.08),
+                                                color: Colors.blue.shade700.withOpacity(0.08),
                                                 borderRadius: BorderRadius.circular(6),
                                               ),
                                               child: Icon(Icons.hourglass_top_rounded, size: 13, color: Colors.blue.shade700),
                                             ),
                                             const SizedBox(width: 6),
-                                            Text('Wachtlijst', style: GoogleFonts.sora(fontSize: 12, color: Colors.blue.shade700)),
+                                            Text(S.of(context).wachtlijst, style: GoogleFonts.sora(fontSize: 12, color: Colors.blue.shade700)),
                                           ],
                                         ),
                                       ),
@@ -963,15 +962,15 @@ class _TrainerGroupSessionsScreenState
                                       itemBuilder: (_) => const [
                                         PopupMenuItem(
                                           value: 'edit',
-                                          child: Text('Bewerken'),
+                                          child: Text(S.of(context).bewerken),
                                         ),
                                         PopupMenuItem(
                                           value: 'publish',
-                                          child: Text('Publiceren'),
+                                          child: Text(S.of(context).publiceren),
                                         ),
                                         PopupMenuItem(
                                           value: 'cancel',
-                                          child: Text('Annuleren'),
+                                          child: Text(S.of(context).annuleren),
                                         ),
                                       ],
                                     ),

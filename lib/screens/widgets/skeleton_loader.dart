@@ -73,7 +73,7 @@ class SkeletonTrainerList extends StatelessWidget {
       itemCount: count,
       physics: const NeverScrollableScrollPhysics(),
       shrinkWrap: true,
-      itemBuilder: (_, __) => const SkeletonTrainerCard(),
+      itemBuilder: (_, _) => const SkeletonTrainerCard(),
     );
   }
 }

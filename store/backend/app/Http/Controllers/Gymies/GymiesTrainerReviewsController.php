@@ -30,6 +30,7 @@ class GymiesTrainerReviewsController
         $reviews = DB::table($table)
             ->where('trainer_user_id', $trainerId)
             ->orderByDesc('created_at')
+            ->limit(100)
             ->get()
             ->map(function ($row) {
                 $clientName = ($row->is_anonymous ?? false) ? 'Anoniem' : null;

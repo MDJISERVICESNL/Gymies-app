@@ -2,11 +2,13 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../services/api_client.dart';
 import '../../services/gymies_api.dart';
 import '../../services/subscription_entitlements_service.dart';
@@ -25,10 +27,14 @@ Future<Duration?> _getVideoDuration(String path) async {
     final duration = controller.value.duration;
     await controller.dispose();
     return duration;
-  } catch (_) {
+  } catch (e) {
+    // Fail-open: Video duration check failed
+    if (kDebugMode) debugPrint('[TrainerMediaSection] Get video duration failed: $e');
     try {
       await controller.dispose();
-    } catch (_) {}
+    } catch (_) {
+      // Cleanup disposal error, continue
+    }
     return null;
   }
 }
@@ -48,7 +54,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
   String? _error;
   bool _uploading = false;
   bool _selectMode = false;
-  Set<String> _selectedIds = {};
+  final Set<String> _selectedIds = {};
   bool _deleting = false;
 
   @override
@@ -83,7 +89,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
       if (mounted) {
         setState(() {
           _allMedia = [];
-          _error = 'Kon media niet laden.';
+          _error = S.of(context).konMediaNietLaden;
           _loading = false;
         });
       }
@@ -148,12 +154,14 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
     return !tier.contains('pro');
   }
 
+  // ignore: unused_element
   bool get _isProTier {
     final ent = context.read<SubscriptionEntitlementsService>();
     final tier = ent.tier?.toLowerCase() ?? 'starter';
     return tier.contains('pro') && !tier.contains('pro_plus') && !tier.contains('proplus');
   }
 
+  // ignore: unused_element
   bool get _isProPlusTier {
     final ent = context.read<SubscriptionEntitlementsService>();
     final tier = ent.tier?.toLowerCase() ?? 'starter';
@@ -165,7 +173,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
       if (_isStarterTier) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Media is niet beschikbaar voor Starter plan. Upgrade naar Pro.'),
+            content: const Text(S.of(context).mediaIsNietBeschikbaarVoorStarterPlanUpgradeNaarPro),
             backgroundColor: Colors.orange.shade700,
           ),
         );
@@ -243,7 +251,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
         if (duration == null) {
           messenger?.showSnackBar(
             const SnackBar(
-              content: Text('Video kon niet worden gelezen. Kies een andere.'),
+              content: Text(S.of(context).videoKonNietWordenGelezenKiesEenAndere),
               backgroundColor: Colors.red,
             ),
           );
@@ -252,7 +260,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
         if (duration > kMaxVideoDuration) {
           messenger?.showSnackBar(
             const SnackBar(
-              content: Text('Video mag max. 30 seconden zijn op je profiel.'),
+              content: Text(S.of(context).videoMagMax30SecondenZijnOpJeProfiel),
               backgroundColor: Colors.orange,
             ),
           );
@@ -267,8 +275,8 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
           messenger?.showSnackBar(
             const SnackBar(
               content: Text(
-                'Foto is te groot (max 5 MB). Kies een kleinere foto of '
-                'pas de resolutie aan.',
+                S.of(context).fotoIsTeGrootMax5
+                S.of(context).pasDeResolutieAan,
               ),
               backgroundColor: Colors.orange,
             ),
@@ -287,7 +295,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
         await _load();
         setState(() => _uploading = false);
         messenger?.showSnackBar(
-          const SnackBar(content: Text('Media toegevoegd')),
+          const SnackBar(content: Text(S.of(context).mediaToegevoegd)),
         );
       }
     } on ApiException catch (e) {
@@ -302,7 +310,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
         setState(() => _uploading = false);
         messenger?.showSnackBar(
           const SnackBar(
-            content: Text('Upload mislukt. Probeer opnieuw.'),
+            content: Text(S.of(context).uploadMisluktProbeerOpnieuw),
             backgroundColor: Colors.red,
           ),
         );
@@ -317,10 +325,10 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
     final messenger = ScaffoldMessenger.maybeOf(context);
     final confirmed = await GymiesDialog.destructive(
       context,
-      title: 'Media verwijderen',
-      message: 'Weet je zeker dat je dit wilt verwijderen?',
+      title: S.of(context).mediaVerwijderenTitle,
+      message: S.of(context).weetJeZekerDatJeDit,
       icon: Icons.delete_rounded,
-      confirmLabel: 'Verwijderen',
+      confirmLabel: S.of(context).verwijderen,
     );
     if (confirmed != true || !mounted) return;
     try {
@@ -328,7 +336,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
       if (mounted) {
         await _load();
         messenger?.showSnackBar(
-          const SnackBar(content: Text('Media verwijderd')),
+          const SnackBar(content: Text(S.of(context).mediaVerwijderd)),
         );
       }
     } on ApiException catch (e) {
@@ -348,7 +356,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
       if (mounted) {
         await _load();
         messenger?.showSnackBar(
-          const SnackBar(content: Text('Media als featured ingesteld')),
+          const SnackBar(content: Text(S.of(context).mediaAlsFeaturedIngesteld)),
         );
       }
     } on ApiException catch (e) {
@@ -366,10 +374,10 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
     final messenger = ScaffoldMessenger.maybeOf(context);
     final confirmed = await GymiesDialog.destructive(
       context,
-      title: 'Media verwijderen',
+      title: S.of(context).mediaVerwijderen,
       message: 'Weet je zeker dat je ${_selectedIds.length} item(s) wilt verwijderen?',
       icon: Icons.delete_rounded,
-      confirmLabel: 'Verwijderen',
+      confirmLabel: S.of(context).verwijderen,
     );
     if (confirmed != true || !mounted) return;
     setState(() => _deleting = true);
@@ -383,7 +391,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
           _deleting = false;
         });
         messenger?.showSnackBar(
-          SnackBar(content: Text('${_selectedIds.length} item(s) verwijderd')),
+          SnackBar(content: Text(S.of(context).mediaItemsVerwijderd(_selectedIds.length.toString()))),
         );
       }
     } on ApiException catch (e) {
@@ -398,7 +406,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
         setState(() => _deleting = false);
         messenger?.showSnackBar(
           const SnackBar(
-            content: Text('Verwijderen mislukt. Probeer opnieuw.'),
+            content: Text(S.of(context).verwijderenMisluktProbeerOpnieuw),
             backgroundColor: Colors.red,
           ),
         );
@@ -429,7 +437,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Foto\'s & video\'s niet beschikbaar',
+                        S.of(context).fotos & video\S.of(context).sNietBeschikbaar,
                         style: GoogleFonts.sora(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -438,7 +446,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Media features zijn alleen beschikbaar voor Pro en Pro+ plannen.',
+                        S.of(context).mediaFeaturesZijnAlleenBeschikbaarVoorProEnProPlannen,
                         style: GoogleFonts.sora(
                           fontSize: 12,
                           color: Colors.blue.shade700,
@@ -460,7 +468,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.blue.shade700,
               ),
-              child: Text('Upgrade naar Pro', style: GoogleFonts.sora(fontSize: 13)),
+              child: Text(S.of(context).upgradeToProAction, style: GoogleFonts.sora(fontSize: 13)),
             ),
           ],
         ),
@@ -483,7 +491,7 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
             const SizedBox(height: 8),
             TextButton(
               onPressed: _load,
-              child: const Text('Opnieuw proberen'),
+              child: Text(S.of(context).retryAction),
             ),
           ],
         ),
@@ -504,12 +512,12 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Foto\'s & video\'s op je profiel',
+                    S.of(context).fotos & video\S.of(context).sOpJeProfiel,
                     style: GymiesTextStyles.h2,
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Voeg foto\'s en video\'s toe voor je Story en de Media Gallery. Video\'s max. 30 sec. Klanten zien dit op je openbare profiel.',
+                    S.of(context).voegFotos en video\S.of(context).sToeVoorJeStoryEn,
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
                   ),
                 ],
@@ -527,11 +535,11 @@ class _TrainerMediaSectionState extends State<TrainerMediaSection> {
                 });
               },
               style: TextButton.styleFrom(
-                backgroundColor: _selectMode ? GymiesColors.primary.withValues(alpha: 0.2) : Colors.transparent,
+                backgroundColor: _selectMode ? GymiesColors.primary.withOpacity(0.2) : Colors.transparent,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               ),
               child: Text(
-                'Selecteer',
+                S.of(context).selecteer,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -691,7 +699,7 @@ class _MediaSubSection extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(
-                'Sleep items om de volgorde te wijzigen',
+                S.of(context).sleepItemsOmDeVolgordeTeWijzigen,
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontStyle: FontStyle.italic),
               ),
             ),
@@ -713,12 +721,12 @@ class _MediaSubSection extends StatelessWidget {
               }),
               if (items.length < limit) ...[
                 _AddMediaButton(
-                  label: 'Foto',
+                  label: S.of(context).photoLabel,
                   icon: Icons.photo_library_outlined,
                   onTap: uploading ? null : onAdd,
                 ),
                 _AddMediaButton(
-                  label: 'Video',
+                  label: S.of(context).galleryLabel,
                   icon: Icons.videocam_outlined,
                   onTap: uploading ? null : onAddVideo,
                 ),
@@ -775,6 +783,8 @@ class _MediaThumb extends StatelessWidget {
                 ? CachedNetworkImage(
                     imageUrl: url,
                     fit: BoxFit.cover,
+                    cacheWidth: 160,
+                    cacheHeight: 160,
                     errorWidget: (_, _, _) => Center(
                       child: Icon(
                         isVideo ? Icons.videocam : Icons.photo,
@@ -876,10 +886,10 @@ class _AddMediaButton extends StatelessWidget {
         width: 80,
         height: 80,
         decoration: BoxDecoration(
-          color: GymiesColors.primary.withValues(alpha: 0.15),
+          color: GymiesColors.primary.withOpacity(0.15),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: GymiesColors.primary.withValues(alpha: 0.5),
+            color: GymiesColors.primary.withOpacity(0.5),
             width: 1.5,
           ),
         ),

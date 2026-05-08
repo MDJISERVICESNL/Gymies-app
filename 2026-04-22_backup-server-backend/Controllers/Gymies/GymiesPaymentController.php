@@ -275,15 +275,36 @@ final class GymiesPaymentController extends Controller
             }
         }
 
-        $response = Http::withToken($apiKey)
-            ->timeout(15)
-            ->post(self::MOLLIE_API_URL, $body);
+        // ISSUE #2: Missing try-catch on external API call
+        // FIX: Wrap HTTP request in try-catch to handle network failures
+        try {
+            $response = Http::withToken($apiKey)
+                ->timeout(15)
+                ->post(self::MOLLIE_API_URL, $body);
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            if (function_exists('logger')) {
+                logger()->error('Gymies Mollie API connection failed', [
+                    'error' => $e->getMessage(),
+                    'amount' => $amountEur,
+                ]);
+            }
+            return null;
+        } catch (\Exception $e) {
+            if (function_exists('logger')) {
+                logger()->error('Gymies Mollie API request failed', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+            return null;
+        }
 
         if (!$response->successful()) {
             if (function_exists('logger')) {
+                // ISSUE #4: Don't log full response body with sensitive data
+                // FIX: Only log status code, not full response
                 logger()->warning('Gymies Mollie create payment failed', [
                     'status' => $response->status(),
-                    'body' => $response->json(),
+                    'has_mollie_error' => isset($response->json()['error']) ? true : false,
                 ]);
             }
             return null;
@@ -757,8 +778,10 @@ final class GymiesPaymentController extends Controller
             return response()->json(['received' => true]);
         }
 
-        DB::beginTransaction();
+        // ISSUE #3: Missing exception handling in transaction
+        // FIX: Wrap entire transaction in try-catch with rollback
         try {
+            DB::beginTransaction();
             $tx = DB::table('gymies_payment_transactions')
                 ->where('provider_transaction_id', $paymentId)
                 ->orderByDesc('id')

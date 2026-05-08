@@ -8,6 +8,7 @@ import '../gym_clients_screen.dart';
 import '../gym_dashboard_screen.dart';
 import '../gym_settings_screen.dart';
 import '../gym_trainers_screen.dart';
+import '../../l10n/generated/app_localizations.dart';
 
 /// Shell voor de gym-rol: vijf tabs onderaan via Material 3 NavigationBar.
 ///
@@ -38,9 +39,9 @@ class _GymShellState extends State<GymShell> {
     super.initState();
     _screens = [
       GymDashboardScreen(
-        onTrainersTap: () => switchTab(1),
-        onBookingsTap: () => switchTab(2),
-        onClientsTap: () => switchTab(3),
+        onTrainersTap: () => jumpToTab(1),
+        onBookingsTap: () => jumpToTab(2),
+        onClientsTap: () => jumpToTab(3),
       ),
       const GymTrainersScreen(),
       const GymBookingsScreen(),
@@ -49,10 +50,10 @@ class _GymShellState extends State<GymShell> {
     ];
   }
 
-  void switchTab(int index) {
-    if (index == _currentIndex) {
-      _navigatorKeys[index].currentState?.popUntil((r) => r.isFirst);
-    } else {
+  /// Public: navigeer naar een specifieke tab vanuit child widgets.
+  void jumpToTab(int index) {
+    if (index >= 0 && index < 5 && index != _currentIndex) {
+      Haptics.selection();
       setState(() => _currentIndex = index);
     }
   }
@@ -99,9 +100,13 @@ class _GymShellState extends State<GymShell> {
                       offstage: i != _currentIndex,
                       child: Navigator(
                         key: _navigatorKeys[i],
-                        onGenerateRoute: (_) => MaterialPageRoute(
-                          builder: (_) => _screens[i],
-                        ),
+                        initialRoute: '/',
+                        onGenerateRoute: (settings) {
+                          return MaterialPageRoute(
+                            settings: settings,
+                            builder: (_) => _screens[i],
+                          );
+                        },
                       ),
                     ),
                 ],
@@ -113,36 +118,43 @@ class _GymShellState extends State<GymShell> {
           selectedIndex: _currentIndex,
           onDestinationSelected: _onTabTapped,
           backgroundColor: Colors.white,
-          indicatorColor: GymiesColors.primary.withValues(alpha: 0.2),
-          destinations: const [
+          indicatorColor: GymiesColors.primary.withOpacity(0.2),
+          destinations: [
             NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard_rounded),
-              label: 'Dashboard',
+              icon: const Icon(Icons.dashboard_outlined),
+              selectedIcon: const Icon(Icons.dashboard_rounded),
+              label: S.of(context).dashboard,
             ),
             NavigationDestination(
-              icon: Icon(Icons.people_outline_rounded),
-              selectedIcon: Icon(Icons.people_rounded),
-              label: 'Trainers',
+              icon: const Icon(Icons.people_outline_rounded),
+              selectedIcon: const Icon(Icons.people_rounded),
+              label: S.of(context).trainers,
             ),
             NavigationDestination(
-              icon: Icon(Icons.event_available_outlined),
-              selectedIcon: Icon(Icons.event_available_rounded),
-              label: 'Boekingen',
+              icon: const Icon(Icons.event_available_outlined),
+              selectedIcon: const Icon(Icons.event_available_rounded),
+              label: S.of(context).bookings,
             ),
             NavigationDestination(
-              icon: Icon(Icons.person_outline_rounded),
-              selectedIcon: Icon(Icons.person_rounded),
-              label: 'Klanten',
+              icon: const Icon(Icons.person_outline_rounded),
+              selectedIcon: const Icon(Icons.person_rounded),
+              label: S.of(context).klanten,
             ),
             NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings_rounded),
-              label: 'Instellingen',
+              icon: const Icon(Icons.settings_outlined),
+              selectedIcon: const Icon(Icons.settings_rounded),
+              label: S.of(context).instellingen,
             ),
           ],
         ),
       ),
     );
   }
+}
+
+/// Navigeer naar een specifieke tab vanuit buiten de shell.
+/// Gebruik: GymShell.of(context)?.jumpToTab(1);
+extension GymShellExtension on BuildContext {
+  _GymShellState? get gymShell =>
+      findAncestorStateOfType<_GymShellState>();
 }

@@ -1,12 +1,13 @@
+
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
 import 'client_dispute_detail_screen.dart';
-
 /// Overzicht van alle geschillen van de ingelogde client.
 class ClientDisputesScreen extends StatefulWidget {
   const ClientDisputesScreen({super.key});
@@ -27,12 +28,12 @@ class _ClientDisputesScreenState extends State<ClientDisputesScreen> {
   }
 
   Future<void> _load() async {
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
       final list = await api.getMyDisputes();
       if (!mounted) return;
       setState(() {
@@ -42,7 +43,7 @@ class _ClientDisputesScreenState extends State<ClientDisputesScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon geschillen niet laden.';
+        _error = S.of(context).konGeschillenNietLaden;
         _loading = false;
       });
     }
@@ -66,7 +67,7 @@ class _ClientDisputesScreenState extends State<ClientDisputesScreen> {
       case 'open':
         return 'Open';
       case 'in_progress':
-        return 'In behandeling';
+        return S.of(context).statusInBehandeling;
       case 'resolved':
         return 'Opgelost';
       default:
@@ -95,7 +96,7 @@ class _ClientDisputesScreenState extends State<ClientDisputesScreen> {
         backgroundColor: GymiesColors.darkBlue,
         foregroundColor: Colors.white,
         title: Text(
-          'Geschillen',
+          S.of(context).geschillen,
           style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 18),
         ),
         centerTitle: true,
@@ -129,7 +130,7 @@ class _ClientDisputesScreenState extends State<ClientDisputesScreen> {
             TextButton.icon(
               onPressed: _load,
               icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: Text('Opnieuw proberen', style: GoogleFonts.sora(fontSize: 13)),
+              label: Text(S.of(context).opnieuwProberen, style: GoogleFonts.sora(fontSize: 13)),
             ),
           ],
         ),
@@ -148,18 +149,18 @@ class _ClientDisputesScreenState extends State<ClientDisputesScreen> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: GymiesColors.primary.withValues(alpha: 0.12),
+                color: GymiesColors.primary.withOpacity(0.12),
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 Icons.gavel_rounded,
                 size: 36,
-                color: GymiesColors.darkBlue.withValues(alpha: 0.6),
+                color: GymiesColors.darkBlue.withOpacity(0.6),
               ),
             ),
             const SizedBox(height: 20),
             Text(
-              'Geen geschillen',
+              S.of(context).geenGeschillen,
               style: GoogleFonts.sora(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
@@ -168,8 +169,8 @@ class _ClientDisputesScreenState extends State<ClientDisputesScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Mocht je ooit een probleem hebben met een boeking, '
-              'dan kun je hier een geschil indienen.',
+              S.of(context).mochtJeOoitEenProbleemHebben
+              S.of(context).danKunJeHierEenGeschil,
               style: GoogleFonts.sora(
                 fontSize: 13,
                 color: Colors.grey.shade600,
@@ -190,12 +191,12 @@ class _ClientDisputesScreenState extends State<ClientDisputesScreen> {
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: _disputes.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (context, i) {
           final d = _disputes[i];
           final status = (d['status'] ?? 'open').toString();
           final reason = (d['reason'] ?? '').toString();
-          final otherParty = (d['other_party'] ?? 'Onbekend').toString();
+          final otherParty = (d['other_party'] ?? S.of(context).statusOnbekend).toString();
           final createdAt = (d['created_at'] ?? '').toString();
           final id = d['id']?.toString() ?? '';
 
@@ -223,7 +224,7 @@ class _ClientDisputesScreenState extends State<ClientDisputesScreen> {
                       width: 42,
                       height: 42,
                       decoration: BoxDecoration(
-                        color: _statusColor(status).withValues(alpha: 0.12),
+                        color: _statusColor(status).withOpacity(0.12),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(
@@ -265,7 +266,7 @@ class _ClientDisputesScreenState extends State<ClientDisputesScreen> {
                                   vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: _statusColor(status).withValues(alpha: 0.12),
+                                  color: _statusColor(status).withOpacity(0.12),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(

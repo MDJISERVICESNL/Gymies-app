@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -12,6 +14,23 @@ class GymiesApi {
   GymiesApi({required ApiClient apiClient}) : _api = apiClient;
 
   final ApiClient _api;
+
+  /// Convenience wrappers voor legacy repositories.
+  /// Deze delegateert direct naar `ApiClient` zodat code niet afhankelijk is van
+  /// het brede GymiesApi endpointoppervlak.
+  Future<Map<String, dynamic>> get(
+    String path, {
+    Map<String, String>? queryParams,
+  }) async {
+    return _api.get(path, queryParams: queryParams);
+  }
+
+  Future<Map<String, dynamic>> post(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    return _api.post(path, body);
+  }
 
   Map<String, dynamic>? _asMap(dynamic raw) {
     if (raw is Map<String, dynamic>) return raw;
@@ -45,7 +64,7 @@ class GymiesApi {
   /// Vraag een kortstondig WebSocket ticket op bij de backend.
   /// Het ticket vervangt het access_token in de WS query string
   /// zodat het lange-termijn token niet wordt blootgesteld.
-  /// Verwacht response: { "ticket": "<short-lived-token>" }
+  /// Verwacht response: { "ticket": "[short-lived-token]" }
   /// Fallback: geeft null terug als het endpoint (nog) niet bestaat.
   Future<String?> getWsTicket() async {
     try {
@@ -92,6 +111,15 @@ class GymiesApi {
 
   /// GET trainers?query=...&lat=...&lng=...
   /// Pass lat/lng voor afstandsberekening (distance_km per trainer).
+    Future<bool> hasStories(int trainerId) async {
+    try {
+      final res = await _api.get('trainers/$trainerId/has-stories');
+      return res['has_stories'] as bool? ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<List<Trainer>> getTrainers({
     String? query,
     double? lat,
@@ -173,10 +201,13 @@ class GymiesApi {
   }
 
   /// GET trainers/{id}/media – publieke media voor klanten.
+  /// Retourneert de volledige response map (met 'data' als List van media items).
   Future<Map<String, dynamic>> getTrainerPublicMedia(String trainerId) async {
     try {
       final res = await _api.get('trainers/$trainerId/media');
-      return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+      // Backend retourneert {"data": [...items...], "media": [...items...]}.
+      // Geef de volledige map terug zodat de caller 'data' als List kan parsen.
+      return _asMap(res) ?? <String, dynamic>{};
     } on ApiException catch (e) {
       if (e.statusCode == 404) return <String, dynamic>{};
       rethrow;
@@ -377,20 +408,31 @@ class GymiesApi {
   }
 
   /// GET bookings/{id}/payment-status
+  /// BUG FIX: Added validation for empty booking IDs
   Future<Map<String, dynamic>> getBookingPaymentStatus(String bookingId) async {
-    final res = await _api.get('bookings/$bookingId/payment-status');
+    final trimmedBookingId = bookingId.trim();
+    if (trimmedBookingId.isEmpty) {
+      throw ArgumentError('bookingId cannot be empty');
+    }
+    final res = await _api.get('bookings/$trimmedBookingId/payment-status');
     return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
   }
 
   /// POST bookings/{id}/payments/start
+  /// BUG FIX: Added validation to prevent empty booking IDs and ensure clean responses
   Future<Map<String, dynamic>> startBookingPayment({
     required String bookingId,
     String? promoCode,
     String? paymentMethod,
   }) async {
+    final trimmedBookingId = bookingId.trim();
+    if (trimmedBookingId.isEmpty) {
+      throw ArgumentError('bookingId cannot be empty');
+    }
+
     final body = <String, dynamic>{
       // Deep link return URL: na Mollie betaling terug naar de app
-      'return_url': 'gymies://payment/complete?booking_id=$bookingId',
+      'return_url': 'gymies://payment/complete?booking_id=$trimmedBookingId',
     };
     if (promoCode != null && promoCode.trim().isNotEmpty) {
       body['promo_code'] = promoCode.trim();
@@ -401,7 +443,7 @@ class GymiesApi {
       body['method'] = paymentMethod.trim();
       body['pay_with'] = paymentMethod.trim();
     }
-    final res = await _api.post('bookings/$bookingId/payments/start', body);
+    final res = await _api.post('bookings/$trimmedBookingId/payments/start', body);
     return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
   }
 
@@ -987,6 +1029,21 @@ class GymiesApi {
     });
   }
 
+  /// DELETE notifications/unregister-device – verwijder FCM/APNs token van backend.
+  /// Roep dit aan vóór het lokaal verwijderen (logout).
+  Future<void> unregisterDeviceToken({
+    required String token,
+  }) async {
+    try {
+      await _api.delete('notifications/unregister-device', {
+        'fcm_token': token,
+      });
+    } catch (e) {
+      // Best-effort: fout bij unregister mag logout niet blokkeren
+      if (kDebugMode) debugPrint('[GymiesApi] unregisterDeviceToken failed: $e');
+    }
+  }
+
   /// GET notifications/unread-count
   Future<int> getNotificationUnreadCount() async {
     final res = await _api.get('notifications/unread-count');
@@ -1146,7 +1203,12 @@ class GymiesApi {
 
   /// POST trainer/bookings/:id/reject
   Future<void> rejectTrainerBooking(String id) async {
-    await _api.post('trainer/bookings/$id/reject', {});
+    try {
+      await _api.post('bookings/$id/reject', {});
+    } on ApiException catch (e) {
+      if (e.statusCode != 404) rethrow;
+      await _api.post('trainer/bookings/$id/reject', {});
+    }
   }
 
   /// GET trainer/revenue
@@ -1170,7 +1232,7 @@ class GymiesApi {
       'trainer/revenue',
       queryParams: queryParams.isEmpty ? null : queryParams,
     );
-    if (kDebugMode) debugPrint('[GymiesApi] trainer/revenue OK – keys: ${(res is Map ? res.keys.toList() : res.runtimeType)}');
+    if (kDebugMode) debugPrint('[GymiesApi] trainer/revenue OK – keys: ${(res.keys.toList())}');
     final raw = res['data'] ?? res;
     final map = _asMap(raw);
     if (map != null) return TrainerRevenue.fromJson(map);
@@ -1196,14 +1258,14 @@ class GymiesApi {
     try {
       if (kDebugMode) debugPrint('[GymiesApi] GET trainer/me …');
       final res = await _api.get('trainer/me');
-      if (kDebugMode) debugPrint('[GymiesApi] trainer/me OK – keys: ${(res is Map ? res.keys.toList() : res.runtimeType)}');
+      if (kDebugMode) debugPrint('[GymiesApi] trainer/me OK – keys: ${(res.keys.toList())}');
       return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
     } on ApiException catch (e) {
       if (kDebugMode) debugPrint('[GymiesApi] trainer/me FAILED ${e.statusCode}: ${e.message}');
       if (e.statusCode != 404) rethrow;
       if (kDebugMode) debugPrint('[GymiesApi] Fallback → GET trainer/profile …');
       final res = await _api.get('trainer/profile');
-      if (kDebugMode) debugPrint('[GymiesApi] trainer/profile OK – keys: ${(res is Map ? res.keys.toList() : res.runtimeType)}');
+      if (kDebugMode) debugPrint('[GymiesApi] trainer/profile OK – keys: ${(res.keys.toList())}');
       return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
     }
   }
@@ -1337,9 +1399,14 @@ class GymiesApi {
         'postcode': body['trainer_postcode'],
       if (body['trainer_city'] != null) 'city': body['trainer_city'],
       if (body['trainer_country'] != null) 'country': body['trainer_country'],
-      if (body['diploma_urls'] is List &&
-          (body['diploma_urls'] as List).isNotEmpty)
-        'diploma_url': (body['diploma_urls'] as List).first.toString(),
+      if (() {
+        final urls = body['diploma_urls'];
+        return urls is List && urls.isNotEmpty;
+      }())
+        'diploma_url': (() {
+          final urls = body['diploma_urls'] as List;
+          return urls.isNotEmpty ? urls.first.toString() : '';
+        }()),
     };
     // Use simple payload structure for trainer/documents endpoint
     final res = await _api.put('trainer/documents', normalized);
@@ -1854,6 +1921,158 @@ class GymiesApi {
     await _api.post('trainer/payouts/request-now', {});
   }
 
+  // ─── Gymies Payout (nieuw model) ─────────────────────────────────
+
+  /// GET payout/balance — saldo + instellingen
+  Future<Map<String, dynamic>> getPayoutBalance() async {
+    return await _api.get('payout/balance');
+  }
+
+  /// GET payout/transactions — transactiegeschiedenis
+  Future<List<Map<String, dynamic>>> getPayoutTransactions({int limit = 50, int offset = 0}) async {
+    // BUG FIX #3: Use queryParams instead of manual query string construction
+    final res = await _api.get('payout/transactions', queryParams: {'limit': '$limit', 'offset': '$offset'});
+    final raw = res['transactions'] ?? [];
+    if (raw is! List) return [];
+    return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
+  }
+
+  /// GET payout/requests — uitbetaalverzoeken
+  Future<List<Map<String, dynamic>>> getPayoutRequests() async {
+    final res = await _api.get('payout/requests');
+    final raw = res['requests'] ?? [];
+    if (raw is! List) return [];
+    return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
+  }
+
+  /// GET payout/fees — fee-overzicht
+  Future<Map<String, dynamic>> getPayoutFees() async {
+    return await _api.get('payout/fees');
+  }
+
+  /// POST payout/request — uitbetaling aanvragen
+  Future<Map<String, dynamic>> requestPayout({String? frequency}) async {
+    return await _api.post('payout/request', {
+      if (frequency != null) 'frequency': frequency,
+    });
+  }
+
+  /// PUT payout/settings — IBAN + frequency wijzigen
+  Future<Map<String, dynamic>> updatePayoutSettings({String? iban, String? ibanName, String? frequency}) async {
+    return await _api.put('payout/settings', {
+      if (iban != null) 'iban': iban,
+      if (ibanName != null) 'iban_name': ibanName,
+      if (frequency != null) 'payout_frequency': frequency,
+    });
+  }
+
+  /// PUT payout/mode — switch gymies ↔ mollie_connect
+  Future<Map<String, dynamic>> updatePayoutMode(String mode) async {
+    return await _api.put('payout/mode', {'payout_mode': mode});
+  }
+
+  // ─── Admin Payouts ─────────────��──────────────────────────────────
+
+  /// GET admin/payouts — openstaande uitbetalingen
+  Future<Map<String, dynamic>> getAdminPayoutsPending({String? search}) async {
+    final q = search != null && search.isNotEmpty ? '?search=$search' : '';
+    return await _api.get('admin/payouts$q');
+  }
+
+  /// GET admin/payouts/history
+  Future<Map<String, dynamic>> getAdminPayoutsHistory({int limit = 50, int offset = 0}) async {
+    // BUG FIX #4: Use queryParams instead of manual query string construction
+    return await _api.get('admin/payouts/history', queryParams: {'limit': '$limit', 'offset': '$offset'});
+  }
+
+  /// GET admin/payouts/stats
+  Future<Map<String, dynamic>> getAdminPayoutsStats() async {
+    return await _api.get('admin/payouts/stats');
+  }
+
+  /// GET admin/payouts/trainers
+  Future<Map<String, dynamic>> getAdminPayoutsTrainers({String? search}) async {
+    final q = search != null && search.isNotEmpty ? '?search=$search' : '';
+    return await _api.get('admin/payouts/trainers$q');
+  }
+
+  /// POST admin/payouts/{id}/mark-paid
+  Future<Map<String, dynamic>> markPayoutPaid(int id, {String? note}) async {
+    return await _api.post('admin/payouts/$id/mark-paid', {
+      if (note != null) 'admin_note': note,
+    });
+  }
+
+  /// POST admin/payouts/{id}/cancel
+  Future<Map<String, dynamic>> cancelPayout(int id, {String? reason}) async {
+    return await _api.post('admin/payouts/$id/cancel', {
+      if (reason != null) 'reason': reason,
+    });
+  }
+
+  /// GET admin/payouts/invoices — facturen met sequentiële nummering
+  Future<Map<String, dynamic>> getAdminPayoutsInvoices({
+    String? search,
+    int? year,
+    int? month,
+    int? trainerId,
+  }) async {
+    final params = <String>[];
+    if (search != null && search.isNotEmpty) params.add('search=$search');
+    if (year != null) params.add('year=$year');
+    if (month != null) params.add('month=$month');
+    if (trainerId != null) params.add('trainer_id=$trainerId');
+    final q = params.isNotEmpty ? '?${params.join('&')}' : '';
+    return await _api.get('admin/payouts/invoices$q');
+  }
+
+  // ─── Self-billing / Bedrijfsgegevens ─────────────────────────────────
+
+  /// GET payout/business — bedrijfsgegevens ophalen
+  Future<Map<String, dynamic>> getPayoutBusinessInfo() async {
+    return await _api.get('payout/business');
+  }
+
+  /// PUT payout/business — bedrijfsgegevens opslaan
+  Future<Map<String, dynamic>> updatePayoutBusinessInfo({
+    String? kvkNumber,
+    String? btwNumber,
+    String? companyName,
+    String? street,
+    String? postalCode,
+    String? city,
+  }) async {
+    return await _api.put('payout/business', {
+      if (kvkNumber != null) 'kvk_number': kvkNumber,
+      if (btwNumber != null) 'btw_number': btwNumber,
+      if (companyName != null) 'company_name': companyName,
+      if (street != null) 'street': street,
+      if (postalCode != null) 'postal_code': postalCode,
+      if (city != null) 'city': city,
+    });
+  }
+
+  /// POST payout/self-billing-agree — akkoord self-billing
+  Future<Map<String, dynamic>> agreeSelfBilling() async {
+    return await _api.post('payout/self-billing-agree', {});
+  }
+
+  /// GET payout/invoices — trainer eigen facturen
+  Future<Map<String, dynamic>> getPayoutInvoices() async {
+    return await _api.get('payout/invoices');
+  }
+
+  /// GET payout/invoices/{id}/download — factuur PDF download URL (legacy)
+  String getInvoiceDownloadUrl(int invoiceId) {
+    return 'payout/invoices/$invoiceId/download';
+  }
+
+  /// Download payout factuur als bytes (PDF of HTML fallback).
+  /// Retourneert [Uint8List] van de file content + content-type hint.
+  Future<Uint8List> downloadPayoutInvoiceBytes(int invoiceId) async {
+    return await _api.getBytes('payout/invoices/$invoiceId/download');
+  }
+
   /// GET invoices/trainer
   Future<List<Map<String, dynamic>>> getTrainerInvoices() async {
     final res = await _api.get('invoices/trainer');
@@ -1968,18 +2187,24 @@ class GymiesApi {
   }
 
   /// POST group-session-participants/{participantId}/payments/start – betaling starten voor groepsles.
+  /// BUG FIX: Added validation for empty participant IDs
   Future<Map<String, dynamic>> startGroupParticipantPayment(
     String participantId, {
     String? promoCode,
   }) async {
+    final trimmedParticipantId = participantId.trim();
+    if (trimmedParticipantId.isEmpty) {
+      throw ArgumentError('participantId cannot be empty');
+    }
+
     final body = <String, dynamic>{
       // Deep link return URL zodat Mollie na betaling terug naar de app stuurt
-      'return_url': 'gymies://group-payment/complete?participant_id=$participantId',
+      'return_url': 'gymies://group-payment/complete?participant_id=$trimmedParticipantId',
       if (promoCode != null && promoCode.trim().isNotEmpty)
         'promo_code': promoCode.trim(),
     };
     final res = await _api.post(
-      'group-session-participants/$participantId/payments/start',
+      'group-session-participants/$trimmedParticipantId/payments/start',
       body,
     );
     return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
@@ -2391,9 +2616,13 @@ class GymiesApi {
 
   /// POST subscription/start-payment – start Mollie checkout voor abonnement.
   /// Retourneert { payment_url, payment_id, tier }.
+  /// BUG FIX: Added validation for tier and better response parsing
   Future<Map<String, dynamic>> startSubscriptionPayment(String tier) async {
     final t = tier.trim().toLowerCase();
     if (t.isEmpty) throw ArgumentError('tier is verplicht');
+    if (!['starter', 'pro', 'elite'].contains(t)) {
+      throw ArgumentError('Invalid tier: $t. Must be one of: starter, pro, elite');
+    }
     final res = await _api.post('subscription/start-payment', {'tier': t});
     final data = res['data'] ?? res;
     return data is Map<String, dynamic> ? data : _asMap(data) ?? <String, dynamic>{};
@@ -2463,6 +2692,9 @@ class GymiesApi {
 
   // ─── Gym (Studio) ─────────────────────────────────────────────────────────
   static const _gymPrefix = 'gym';
+
+  // TODO: Add Flutter API wrappers for Gym Elite features (group sessions, equipment tracking, member analytics, etc.)
+  // Backend endpoints exist but missing client-side convenience methods.
 
   /// GET gym/dashboard
   Future<Map<String, dynamic>> getGymDashboard() async {
@@ -2561,6 +2793,53 @@ class GymiesApi {
   Future<Map<String, dynamic>> getGymMembership() async {
     final res = await _api.get('$_gymPrefix/membership');
     return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  // ── Gym Mollie & Finance ──
+
+  /// GET gym/mollie-status
+  Future<Map<String, dynamic>> getGymMollieStatus() async {
+    final res = await _api.get('$_gymPrefix/mollie-status');
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// POST gym/mollie-disconnect
+  Future<Map<String, dynamic>> disconnectGymMollie() async {
+    final res = await _api.post('$_gymPrefix/mollie-disconnect', {});
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// GET gym/payout-settings
+  Future<Map<String, dynamic>> getGymPayoutSettings() async {
+    final res = await _api.get('$_gymPrefix/payout-settings');
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// PUT gym/payout-settings
+  Future<Map<String, dynamic>> updateGymPayoutSettings({
+    String? iban,
+    String? ibanName,
+    String? payoutFrequency,
+    String? payoutMode,
+  }) async {
+    final body = <String, dynamic>{};
+    if (iban != null) body['iban'] = iban;
+    if (ibanName != null) body['iban_name'] = ibanName;
+    if (payoutFrequency != null) body['payout_frequency'] = payoutFrequency;
+    if (payoutMode != null) body['payout_mode'] = payoutMode;
+    final res = await _api.put('$_gymPrefix/payout-settings', body);
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// GET gym/settlements
+  Future<Map<String, dynamic>> getGymSettlementsData() async {
+    final res = await _api.get('$_gymPrefix/settlements');
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// GET gym/settlements/{id}/download — bytes
+  Future<Uint8List> downloadGymSettlementInvoice(String settlementId) async {
+    return await _api.getBytes('$_gymPrefix/settlements/$settlementId/download');
   }
 
   // ─── Admin (vault-console) ───────────────────────────────────────────────
@@ -2707,6 +2986,31 @@ class GymiesApi {
   }
 
   /// POST trainer/media – Upload brand logo via media-route met usage 'branding_logo'.
+  /// Upload een story (Pro feature)
+  Future<Map<String, dynamic>> uploadStory(String filePath) async {
+    final file = await http.MultipartFile.fromPath('file', filePath);
+    final res = await _api.postMultipart('trainer/story', fileField: 'file', file: file, fields: {});
+    return _asMap(res) ?? res;
+  }
+
+  /// Haal stories op van een trainer
+  Future<List<Map<String, dynamic>>> getTrainerStories(String trainerId) async {
+    final res = await _api.get('trainers/$trainerId/stories');
+    final raw = res['stories'] ?? res['data'] ?? [];
+    if (raw is! List) return [];
+    return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
+  }
+
+  /// Check of een trainer actieve stories heeft (voor avatar ring)
+  Future<bool> hasActiveStories(String trainerId) async {
+    try {
+      final res = await _api.get('trainer/$trainerId/has-stories');
+      return res['has_stories'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>> uploadProPlusLogo(String filePath) async {
     final res = await _api.postMultipart(
       'trainer/media',
@@ -2732,12 +3036,8 @@ class GymiesApi {
   Future<List<Map<String, dynamic>>> getNewsletters() async {
     final res = await _api.get('trainer/pro-plus/newsletters');
     final raw = res['data'] ?? res['newsletters'] ?? res;
-    if (raw is List) {
-      return raw
-          .map((e) => e is Map<String, dynamic> ? e : <String, dynamic>{})
-          .toList();
-    }
-    return <Map<String, dynamic>>[];
+    if (raw is! List) return [];
+    return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
   }
 
   /// POST trainer/pro-plus/newsletter – Verstuur nieuwsbrief naar actieve klanten.
@@ -2757,13 +3057,9 @@ class GymiesApi {
   /// Response: List of { subject, sent_at, recipient_count, open_rate, click_rate }
   Future<List<Map<String, dynamic>>> getTrainerNewsletterHistory() async {
     final res = await _api.get('trainer/pro-plus/newsletters');
-    final data = res['data'] ?? res;
-    if (data is List) {
-      return data
-          .map((e) => e is Map<String, dynamic> ? e : <String, dynamic>{})
-          .toList();
-    }
-    return <Map<String, dynamic>>[];
+    final raw = res['data'] ?? res;
+    if (raw is! List) return [];
+    return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
   }
 
   /// POST trainer/pro-plus/newsletters/schedule – Plan een nieuwsbrief in voor toekomstig versturen.
@@ -2864,12 +3160,8 @@ class GymiesApi {
   Future<List<Map<String, dynamic>>> getGroupClasses() async {
     final res = await _api.get('trainer/group-sessions');
     final raw = res['data'] ?? res['group_sessions'] ?? res;
-    if (raw is List) {
-      return raw
-          .map((e) => e is Map<String, dynamic> ? e : <String, dynamic>{})
-          .toList();
-    }
-    return <Map<String, dynamic>>[];
+    if (raw is! List) return [];
+    return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
   }
 
   /// POST trainer/group-sessions – Maak een nieuwe groepsles aan.
@@ -3117,5 +3409,795 @@ class GymiesApi {
     final thursday = date.add(Duration(days: DateTime.thursday - date.weekday));
     final jan1 = DateTime(thursday.year, 1, 1);
     return ((thursday.difference(jan1).inDays) / 7).ceil() + 1;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // ── FASE C: Nieuwe Onboarding + Staff Dashboard endpoints ────
+  // ═══════════════════════════════════════════════════════════════
+
+  // ── Onboarding Flow ──────────────────────────────────────────
+
+  /// POST onboarding/submit — dien onboarding in voor staff review.
+  Future<Map<String, dynamic>> submitOnboarding() async {
+    final res = await _api.post('onboarding/submit', {});
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// PUT onboarding/billing-cycle — kies maandelijks of jaarlijks.
+  Future<Map<String, dynamic>> selectBillingCycle(String cycle) async {
+    final res = await _api.put('onboarding/billing-cycle', {'billing_cycle': cycle});
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// PUT onboarding/plan-selection — sla plan + billing cycle + promo op.
+  Future<Map<String, dynamic>> savePlanSelection({
+    required String planSlug,
+    required String billingCycle,
+    String? promoCode,
+  }) async {
+    final body = <String, dynamic>{
+      'plan_slug': planSlug,
+      'billing_cycle': billingCycle,
+    };
+    if (promoCode != null) body['promo_code'] = promoCode;
+    final res = await _api.put('onboarding/plan-selection', body);
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// POST onboarding/validate-code — valideer uitnodigingscode.
+  Future<Map<String, dynamic>> validateInvitationCode(String code) async {
+    final res = await _api.post('onboarding/validate-code', {'code': code});
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// POST onboarding/initiate-mandaat — start €0,01 SEPA mandaat betaling.
+  Future<Map<String, dynamic>> initiateMandaat() async {
+    final res = await _api.post('onboarding/initiate-mandaat', {});
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// GET onboarding/pricing-preview — prijs preview voor plan + cycle.
+  Future<Map<String, dynamic>> getPricingPreview({
+    String plan = 'starter',
+    String cycle = 'monthly',
+  }) async {
+    final res = await _api.get('onboarding/pricing-preview', queryParams: {
+      'plan': plan,
+      'cycle': cycle,
+    });
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// POST onboarding/referral-code — genereer referral code voor trainer.
+  Future<Map<String, dynamic>> generateReferralCode() async {
+    final res = await _api.post('onboarding/referral-code', {});
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  // ── Staff Dashboard ──────────────────────────────────────────
+
+  /// GET staff/dashboard — dashboard statistieken.
+  Future<Map<String, dynamic>> getStaffDashboard() async {
+    final res = await _api.get('staff/dashboard');
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// GET staff/pending-reviews — trainers wachtend op review.
+  Future<Map<String, dynamic>> getStaffPendingReviews({int page = 1}) async {
+    final res = await _api.get('staff/pending-reviews', queryParams: {'page': '$page'});
+    return _asMap(res) ?? <String, dynamic>{};
+  }
+
+  /// POST staff/review/{trainerId} — trainer goedkeuren of afwijzen.
+  Future<Map<String, dynamic>> reviewTrainer({
+    required int trainerId,
+    required String action,
+    String? reason,
+  }) async {
+    final body = <String, dynamic>{'action': action};
+    if (reason != null && reason.isNotEmpty) body['reason'] = reason;
+    final res = await _api.post('staff/review/$trainerId', body);
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// POST staff/suspend/{trainerId} — trainer schorsen.
+  Future<Map<String, dynamic>> suspendTrainer({
+    required int trainerId,
+    required String reason,
+  }) async {
+    final res = await _api.post('staff/suspend/$trainerId', {'reason': reason});
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// POST staff/reactivate/{trainerId} — trainer heractiveren.
+  Future<Map<String, dynamic>> reactivateTrainer({
+    required int trainerId,
+    String? reason,
+  }) async {
+    final body = <String, dynamic>{};
+    if (reason != null) body['reason'] = reason;
+    final res = await _api.post('staff/reactivate/$trainerId', body);
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// GET staff/trials — trial overzicht.
+  Future<Map<String, dynamic>> getStaffTrialOverview({int page = 1}) async {
+    final res = await _api.get('staff/trials', queryParams: {'page': '$page'});
+    return _asMap(res) ?? <String, dynamic>{};
+  }
+
+  /// POST staff/trials/{trainerId}/extend — trial verlengen.
+  Future<Map<String, dynamic>> extendTrial({
+    required int trainerId,
+    required int days,
+    String? reason,
+  }) async {
+    final body = <String, dynamic>{'days': days};
+    if (reason != null) body['reason'] = reason;
+    final res = await _api.post('staff/trials/$trainerId/extend', body);
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// GET staff/trials/{trainerId}/extendability — check of trial verlengd kan worden.
+  Future<Map<String, dynamic>> getTrialExtendability(int trainerId) async {
+    final res = await _api.get('staff/trials/$trainerId/extendability');
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// GET staff/audit-log — audit trail.
+  Future<Map<String, dynamic>> getStaffAuditLog({
+    int page = 1,
+    String? action,
+  }) async {
+    final params = <String, String>{'page': '$page'};
+    if (action != null) params['action'] = action;
+    final res = await _api.get('staff/audit-log', queryParams: params);
+    return _asMap(res) ?? <String, dynamic>{};
+  }
+
+  /// GET staff/invitation-codes — codes overzicht.
+  Future<Map<String, dynamic>> getStaffInvitationCodes({
+    int page = 1,
+    String? source,
+  }) async {
+    final params = <String, String>{'page': '$page'};
+    if (source != null) params['source'] = source;
+    final res = await _api.get('staff/invitation-codes', queryParams: params);
+    return _asMap(res) ?? <String, dynamic>{};
+  }
+
+  /// POST staff/invitation-codes — nieuwe code aanmaken.
+  Future<Map<String, dynamic>> createInvitationCode({
+    String source = 'staff',
+    int maxUses = 1,
+    int? expiryDays,
+  }) async {
+    final body = <String, dynamic>{
+      'source': source,
+      'max_uses': maxUses,
+    };
+    if (expiryDays != null) body['expiry_days'] = expiryDays;
+    final res = await _api.post('staff/invitation-codes', body);
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// DELETE staff/invitation-codes/{id} — code deactiveren.
+  Future<void> deactivateInvitationCode(int codeId) async {
+    await _api.delete('staff/invitation-codes/$codeId');
+  }
+
+  // ─── Staff Feature Flags (Fase E) ─────────────────────────────
+
+  /// GET staff/feature-flags — alle feature flags ophalen.
+  Future<Map<String, dynamic>> getStaffFeatureFlags() async {
+    final res = await _api.get('staff/feature-flags');
+    return _asMap(res) ?? <String, dynamic>{};
+  }
+
+  /// GET staff/fraud-check/{trainerId} — fraud check uitvoeren.
+  Future<Map<String, dynamic>> getStaffFraudCheck(int trainerId) async {
+    final res = await _api.get('staff/fraud-check/$trainerId');
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// PUT staff/feature-flags/{key} — feature flag updaten.
+  Future<Map<String, dynamic>> updateFeatureFlag(
+    String key, {
+    bool? enabled,
+    String? value,
+    double? rolloutPercentage,
+  }) async {
+    final body = <String, dynamic>{};
+    if (enabled != null) body['enabled'] = enabled;
+    if (value != null) body['value'] = value;
+    if (rolloutPercentage != null) body['rollout_percentage'] = rolloutPercentage;
+    final res = await _api.put('staff/feature-flags/$key', body);
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  // ── Staff Support Tickets ──────────────────────────────────────
+
+  /// GET staff/tickets — support tickets lijst met filters.
+  Future<Map<String, dynamic>> getStaffTickets({
+    String? status,
+    String? priority,
+    String? category,
+    String? q,
+    bool? assignedToMe,
+    String? sort,
+    int page = 1,
+    int perPage = 25,
+  }) async {
+    // BUG FIX #2: Use queryParams instead of manual query string construction
+    final params = <String, String>{
+      'page': '$page',
+      'per_page': '$perPage',
+    };
+    if (status != null && status.isNotEmpty) params['status'] = status;
+    if (priority != null && priority.isNotEmpty) params['priority'] = priority;
+    if (category != null && category.isNotEmpty) params['category'] = category;
+    if (q != null && q.isNotEmpty) params['q'] = q;
+    if (assignedToMe == true) params['assigned_to_me'] = '1';
+    if (sort != null && sort.isNotEmpty) params['sort'] = sort;
+    final res = await _api.get('staff/tickets', queryParams: params);
+    return _asMap(res) ?? <String, dynamic>{};
+  }
+
+  /// GET staff/tickets/stats — support ticket statistieken.
+  Future<Map<String, dynamic>> getStaffTicketStats() async {
+    final res = await _api.get('staff/tickets/stats');
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// GET staff/tickets/{id} — ticket detail met berichten.
+  Future<Map<String, dynamic>> getStaffTicketDetail(int ticketId) async {
+    final res = await _api.get('staff/tickets/$ticketId');
+    return _asMap(res) ?? <String, dynamic>{};
+  }
+
+  /// PUT staff/tickets/{id} — ticket bijwerken.
+  Future<Map<String, dynamic>> updateStaffTicket(int ticketId, Map<String, dynamic> updates) async {
+    final res = await _api.put('staff/tickets/$ticketId', updates);
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// POST staff/tickets/{id}/messages — bericht toevoegen.
+  Future<Map<String, dynamic>> addStaffTicketMessage(
+    int ticketId, {
+    required String message,
+    bool isInternal = true,
+  }) async {
+    final res = await _api.post('staff/tickets/$ticketId/messages', {
+      'message': message,
+      'is_internal': isInternal,
+    });
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  // ── Staff Chat (Intern) ────────────────────────────────────────
+
+  /// GET staff/chat/messages — chat berichten ophalen.
+  Future<Map<String, dynamic>> getStaffChatMessages({
+    String channel = 'general',
+    int? before,
+    int limit = 50,
+  }) async {
+    // BUG FIX #5: Use queryParams instead of manual query string construction
+    final params = <String, String>{
+      'channel': channel,
+      'limit': '$limit',
+    };
+    if (before != null) params['before'] = '$before';
+    final res = await _api.get('staff/chat/messages', queryParams: params);
+    return _asMap(res) ?? <String, dynamic>{};
+  }
+
+  /// POST staff/chat/messages — chat bericht versturen.
+  Future<Map<String, dynamic>> sendStaffChatMessage({
+    required String message,
+    String channel = 'general',
+  }) async {
+    final res = await _api.post('staff/chat/messages', {
+      'message': message,
+      'channel': channel,
+    });
+    return _asMap(res['data'] ?? res) ?? <String, dynamic>{};
+  }
+
+  /// GET staff/chat/channels — beschikbare kanalen.
+  Future<List<Map<String, dynamic>>> getStaffChatChannels() async {
+    final res = await _api.get('staff/chat/channels');
+    final raw = res['data'] ?? res['channels'] ?? res;
+    if (raw is List) {
+      return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  // ─── Fase H: Uitgebreide Staff Dashboard Features ──────────────
+
+  /// H.1: Trainer detail (profiel, docs, subscription, activity)
+  Future<Map<String, dynamic>> getStaffTrainerDetail(int trainerId) async {
+    return await _api.get('staff/trainer-detail/$trainerId');
+  }
+
+  /// H.2: Alle trainers zoeken & filteren
+  Future<Map<String, dynamic>> getStaffTrainers({
+    String? search,
+    String? status,
+    int page = 1,
+    int perPage = 25,
+  }) async {
+    final params = <String, String>{'page': '$page', 'per_page': '$perPage'};
+    if (search != null && search.isNotEmpty) params['search'] = search;
+    if (status != null && status.isNotEmpty) params['status'] = status;
+    return await _api.get('staff/trainers', queryParams: params);
+  }
+
+  /// H.3: Bookings monitor (vandaag/morgen, no-shows, cancellations)
+  Future<Map<String, dynamic>> getStaffBookingsMonitor() async {
+    return await _api.get('staff/bookings-monitor');
+  }
+
+  /// H.4: Onboarding pipeline (trainers per status)
+  Future<Map<String, dynamic>> getStaffOnboardingPipeline() async {
+    return await _api.get('staff/onboarding-pipeline');
+  }
+
+  /// H.5: Canned responses ophalen
+  Future<List<Map<String, dynamic>>> getStaffCannedResponses() async {
+    final res = await _api.get('staff/canned-responses');
+    final raw = res['data'] ?? res;
+    if (raw is List) {
+      return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  /// H.5: Canned response aanmaken
+  Future<Map<String, dynamic>> createStaffCannedResponse({
+    required String title,
+    required String body,
+    String? category,
+  }) async {
+    return await _api.post('staff/canned-responses', {
+      'title': title,
+      'body': body,
+      if (category != null) 'category': category,
+    });
+  }
+
+  /// H.5: Canned response verwijderen
+  Future<Map<String, dynamic>> deleteStaffCannedResponse(int id) async {
+    return await _api.delete('staff/canned-responses/$id');
+  }
+
+  /// H.6: Geschillen overzicht
+  Future<Map<String, dynamic>> getStaffDisputes({int page = 1, String? status}) async {
+    final params = <String, String>{'page': '$page'};
+    if (status != null && status.isNotEmpty) params['status'] = status;
+    return await _api.get('staff/disputes', queryParams: params);
+  }
+
+  /// H.7: Auto-assign unassigned tickets
+  Future<Map<String, dynamic>> staffAutoAssignTickets() async {
+    return await _api.post('staff/auto-assign-tickets', {});
+  }
+
+  /// H.8: Trial extension history voor trainer
+  Future<List<Map<String, dynamic>>> getStaffTrialExtensions(int trainerId) async {
+    final res = await _api.get('staff/trial-extensions/$trainerId');
+    final raw = res['data'] ?? res;
+    if (raw is List) {
+      return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  /// H.9: Chat mark-read
+  Future<Map<String, dynamic>> staffChatMarkRead(String channel) async {
+    return await _api.post('staff/chat/mark-read', {'channel': channel});
+  }
+
+  /// H.9: Chat unread counts
+  Future<Map<String, dynamic>> getStaffChatUnreadCounts() async {
+    return await _api.get('staff/chat/unread-counts');
+  }
+
+  /// H.10: Dashboard extended (dagstats + warnings)
+  Future<Map<String, dynamic>> getStaffDashboardExtended() async {
+    return await _api.get('staff/dashboard-extended');
+  }
+
+  /// H.11: Audit export als CSV (returns raw response)
+  Future<Map<String, dynamic>> getStaffAuditExport({
+    String? action,
+    String? staffId,
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    final params = <String, String>{};
+    if (action != null && action.isNotEmpty) params['action'] = action;
+    if (staffId != null && staffId.isNotEmpty) params['staff_id'] = staffId;
+    if (dateFrom != null && dateFrom.isNotEmpty) params['date_from'] = dateFrom;
+    if (dateTo != null && dateTo.isNotEmpty) params['date_to'] = dateTo;
+    return await _api.get('staff/audit-export', queryParams: params);
+  }
+
+  /// H.12: Feature flags extended (met wijzigingshistorie)
+  Future<List<Map<String, dynamic>>> getStaffFeatureFlagsExtended() async {
+    final res = await _api.get('staff/feature-flags-extended');
+    final raw = res['data'] ?? res;
+    if (raw is List) {
+      return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FASE I — VOLLEDIGE STAFF OPERATIES
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// I.1: Geschil detail ophalen
+  Future<Map<String, dynamic>> getStaffDisputeDetail(int disputeId) async {
+    return await _api.get('staff/disputes/$disputeId');
+  }
+
+  /// I.1: Geschil oplossen
+  Future<Map<String, dynamic>> staffResolveDispute(int disputeId, {
+    required String resolutionType,
+    required String resolutionNote,
+  }) async {
+    return await _api.post('staff/disputes/$disputeId/resolve', {
+      'resolution_type': resolutionType,
+      'resolution_note': resolutionNote,
+    });
+  }
+
+  /// I.1: Bericht toevoegen aan geschil
+  Future<Map<String, dynamic>> staffAddDisputeMessage(int disputeId, {
+    required String message,
+  }) async {
+    return await _api.post('staff/disputes/$disputeId/message', {
+      'message': message,
+    });
+  }
+
+  /// I.2: Ticket aanmaken namens klant/trainer
+  Future<Map<String, dynamic>> staffCreateTicket({
+    required int userId,
+    required String subject,
+    required String description,
+    String priority = 'normal',
+    String? category,
+  }) async {
+    final body = <String, dynamic>{
+      'user_id': userId,
+      'subject': subject,
+      'description': description,
+      'priority': priority,
+    };
+    if (category != null) body['category'] = category;
+    return await _api.post('staff/tickets', body);
+  }
+
+  /// I.3: Booking detail ophalen
+  Future<Map<String, dynamic>> getStaffBookingDetail(int bookingId) async {
+    return await _api.get('staff/bookings/$bookingId');
+  }
+
+  /// I.3: Booking annuleren
+  Future<Map<String, dynamic>> staffCancelBooking(int bookingId, {
+    required String reason,
+  }) async {
+    return await _api.post('staff/bookings/$bookingId/cancel', {
+      'reason': reason,
+    });
+  }
+
+  /// I.3: Booking herschikken
+  Future<Map<String, dynamic>> staffRescheduleBooking(int bookingId, {
+    required String scheduledAt,
+    required String reason,
+  }) async {
+    return await _api.post('staff/bookings/$bookingId/reschedule', {
+      'scheduled_at': scheduledAt,
+      'reason': reason,
+    });
+  }
+
+  /// I.4: Refund/credit toekennen (max €50)
+  Future<Map<String, dynamic>> staffRefundOrCredit(int bookingId, {
+    required String type,
+    required int amountCents,
+    required String reason,
+  }) async {
+    return await _api.post('staff/bookings/$bookingId/refund', {
+      'type': type,
+      'amount_cents': amountCents,
+      'reason': reason,
+    });
+  }
+
+  /// I.5: Trainer document goedkeuren/afkeuren
+  Future<Map<String, dynamic>> staffReviewDocument(int documentId, {
+    required String decision,
+    String? rejectionReason,
+  }) async {
+    final body = <String, dynamic>{'decision': decision};
+    if (rejectionReason != null) body['rejection_reason'] = rejectionReason;
+    return await _api.post('staff/documents/$documentId/review', body);
+  }
+
+  /// I.6: Trainer notities ophalen
+  Future<List<Map<String, dynamic>>> getStaffTrainerNotes(int userId) async {
+    final res = await _api.get('staff/notes/$userId');
+    final raw = res['data'] ?? res['notes'] ?? res;
+    if (raw is List) {
+      return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  /// I.6: Trainer notitie toevoegen
+  Future<Map<String, dynamic>> staffAddTrainerNote(int userId, {
+    required String note,
+    String category = 'general',
+  }) async {
+    return await _api.post('staff/notes/$userId', {
+      'note': note,
+      'category': category,
+    });
+  }
+
+  /// I.7: Nudge push notificatie sturen
+  Future<Map<String, dynamic>> staffSendNudge({
+    required int userId,
+    required String type,
+    String? customMessage,
+  }) async {
+    final body = <String, dynamic>{
+      'user_id': userId,
+      'type': type,
+    };
+    if (customMessage != null) body['custom_message'] = customMessage;
+    return await _api.post('staff/nudge', body);
+  }
+
+  /// I.8: Trainer-klant conversatie inzien (read-only)
+  Future<Map<String, dynamic>> getStaffConversation(int conversationId) async {
+    return await _api.get('staff/conversations/$conversationId');
+  }
+
+  /// I.8: Alle conversaties van een gebruiker
+  Future<List<Map<String, dynamic>>> getStaffUserConversations(int userId) async {
+    final res = await _api.get('staff/user-conversations/$userId');
+    final raw = res['data'] ?? res['conversations'] ?? res;
+    if (raw is List) {
+      return raw.map((e) => _asMap(e) ?? <String, dynamic>{}).toList();
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  /// I.9: Groepslessen overzicht
+  Future<Map<String, dynamic>> getStaffGroupSessions() async {
+    return await _api.get('staff/group-sessions');
+  }
+
+  /// I.9: Groepsles detail
+  Future<Map<String, dynamic>> getStaffGroupSessionDetail(int sessionId) async {
+    return await _api.get('staff/group-sessions/$sessionId');
+  }
+
+  /// I.10: Betalingen overzicht
+  Future<Map<String, dynamic>> getStaffPaymentsOverview({int page = 1, String? status}) async {
+    final params = <String, String>{'page': page.toString()};
+    if (status != null && status.isNotEmpty) params['status'] = status;
+    return await _api.get('staff/payments', queryParams: params);
+  }
+
+  /// I.11: Subscription toewijzen aan gebruiker
+  Future<Map<String, dynamic>> staffAssignSubscription(int userId, {
+    required int planId,
+    required String billingCycle,
+  }) async {
+    return await _api.post('staff/subscriptions/$userId/assign', {
+      'plan_id': planId,
+      'billing_cycle': billingCycle,
+    });
+  }
+
+  /// I.11: Subscription pauzeren/hervatten
+  Future<Map<String, dynamic>> staffToggleSubscription(int userId) async {
+    return await _api.post('staff/subscriptions/$userId/toggle', {});
+  }
+
+  /// I.12: Tickets samenvoegen
+  Future<Map<String, dynamic>> staffMergeTickets({
+    required int primaryTicketId,
+    required int secondaryTicketId,
+  }) async {
+    return await _api.post('staff/tickets/merge', {
+      'primary_ticket_id': primaryTicketId,
+      'secondary_ticket_id': secondaryTicketId,
+    });
+  }
+
+  /// I.12: Ticket escaleren naar admin
+  Future<Map<String, dynamic>> staffEscalateTicket(int ticketId, {
+    required String reason,
+  }) async {
+    return await _api.post('staff/tickets/$ticketId/escalate', {
+      'reason': reason,
+    });
+  }
+
+  /// I.13: Gym/studio overzicht
+  Future<Map<String, dynamic>> getStaffGymsOverview({int page = 1, String? search}) async {
+    final params = <String, String>{'page': page.toString()};
+    if (search != null && search.isNotEmpty) params['search'] = search;
+    return await _api.get('staff/gyms', queryParams: params);
+  }
+
+  // ─── Ambassador Dashboard ──────────────────────────────────
+
+  Future<Map<String, dynamic>> getAmbassadorStats() async =>
+      _api.get('me/ambassador/stats');
+
+  Future<Map<String, dynamic>> getAmbassadorReferrals({String? status}) async {
+    final params = <String, String>{};
+    if (status != null) params['status'] = status;
+    return _api.get('me/ambassador/referrals', queryParams: params);
+  }
+
+  Future<Map<String, dynamic>> getAmbassadorPayouts() async =>
+      _api.get('me/ambassador/payouts');
+
+  Future<Map<String, dynamic>> requestAmbassadorPayout() async =>
+      _api.post('me/ambassador/request-payout', {});
+
+  // ─── Trainer Community Chat ────────────────────────────────
+
+  Future<Map<String, dynamic>> getMyGymChats() async =>
+      _api.get('me/gym-chats');
+
+  Future<Map<String, dynamic>> getGymChatMessages(String chatId) async =>
+      _api.get('me/gym-chats/$chatId/messages');
+
+  Future<Map<String, dynamic>> sendGymChatMessage(String chatId, String message) async =>
+      _api.post('me/gym-chats/$chatId/messages', {'message': message});
+
+  Future<Map<String, dynamic>> toggleGymChatMute(String chatId) async =>
+      _api.post('me/gym-chats/$chatId/mute', {});
+
+  Future<Map<String, dynamic>> getMyGymTrainers() async =>
+      _api.get('me/gym-trainers');
+
+  // ─── Churn Prediction ──────────────────────────────────────
+
+  Future<Map<String, dynamic>> getGymChurnReport(String gymId, {bool recalculate = false}) async {
+    final params = <String, String>{};
+    if (recalculate) params['recalculate'] = 'true';
+    return _api.get('staff/gyms/$gymId/churn-report', queryParams: params);
+  }
+
+  // ─── Multi-locatie ─────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getGymLocations(String orgId) async =>
+      _api.get('staff/gyms/$orgId/locations');
+
+  Future<Map<String, dynamic>> getGymLocationStats(String orgId, String locId) async =>
+      _api.get('staff/gyms/$orgId/locations/$locId/stats');
+
+  Future<Map<String, dynamic>> transferTrainer(String orgId, String userId, Map<String, dynamic> body) async =>
+      _api.post('staff/gyms/$orgId/trainers/$userId/transfer', body);
+
+  Future<Map<String, dynamic>> duplicateGroupSession(String orgId, String sessionId, Map<String, dynamic> body) async =>
+      _api.post('staff/gyms/$orgId/group-sessions/$sessionId/duplicate', body);
+
+  // ─── Waitlist claim ────────────────────────────────────────
+
+  Future<Map<String, dynamic>> claimGroupSessionWaitlist(String waitlistId) async =>
+      _api.post('waitlist/group-session/$waitlistId/claim', {});
+
+  // ─── Gym Registratie (token-gebaseerd) ─────────────────────
+
+  /// Valideer een gym invite token (publiek, geen auth nodig).
+  /// Retourneert pre-filled data (gym_name, contact_name, email, etc.)
+  Future<Map<String, dynamic>> validateGymInviteToken(String token) async =>
+      _api.get('gym/validate-invite-token', queryParams: {'token': token});
+
+  /// Registreer gym-eigenaar met invite token (publiek, geen auth nodig).
+  /// Maakt user + organisatie aan en retourneert session token.
+  Future<Map<String, dynamic>> registerGymWithToken(Map<String, dynamic> body) async =>
+      _api.post('gym/register-with-token', body);
+
+  /// Gym onboarding stappen (auth required — na registerWithToken).
+  /// Stappen: basics (logo, openingstijden), location, invite trainer, complete.
+  Future<Map<String, dynamic>> gymOnboarding(Map<String, dynamic> body) async =>
+      _api.post('gym/onboarding', body);
+
+  // ─── Launch Gate / Exclusiviteit ───────────────────────────
+
+  /// POST invite-codes/generate — genereer invite codes voor trainer/gym.
+  Future<Map<String, dynamic>> generateInviteCodes({int count = 5, int maxUses = 1}) async =>
+      _api.post('invite-codes/generate', {'count': count, 'max_uses': maxUses});
+
+  /// GET invite-codes/mine — haal alle eigen invite codes op.
+  Future<List<Map<String, dynamic>>> getMyInviteCodes() async {
+    final res = await _api.get('invite-codes/mine');
+    final raw = res['codes'] ?? res['data'] ?? [];
+    if (raw is List) return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    return [];
+  }
+
+  /// POST invite-codes/validate — valideer een invite code (publiek).
+  Future<Map<String, dynamic>> validateInviteCode(String code) async =>
+      _api.post('invite-codes/validate', {'code': code});
+
+  /// GET waitlist/status — wachtlijststatus voor ingelogde gebruiker.
+  Future<Map<String, dynamic>> getWaitlistStatus() async =>
+      _api.get('waitlist/status');
+
+  /// POST waitlist/activate-with-code — activeer vanaf wachtlijst met code.
+  Future<Map<String, dynamic>> activateWithInviteCode(String code) async =>
+      _api.post('waitlist/activate-with-code', {'code': code});
+
+  // ─── Launch Gate (booking-time check) ─────────────────────────
+
+  /// GET launch-gate/check/{trainerUserId} — check of klant mag boeken bij trainer.
+  /// Returns {can_book: true} of {can_book: false, region_slug, region_name, region_status, progress, already_on_notify_list}.
+  Future<Map<String, dynamic>> launchGateCheck(String trainerUserId) async =>
+      _api.get('launch-gate/check/$trainerUserId');
+
+  /// POST launch-gate/notify-me — klant meldt zich aan voor "houd me op de hoogte" bij regio.
+  Future<Map<String, dynamic>> launchGateNotifyMe(String regionSlug, {String? trainerUserId}) async {
+    final body = <String, dynamic>{'region_slug': regionSlug};
+    if (trainerUserId != null && trainerUserId.isNotEmpty) {
+      body['trainer_user_id'] = int.tryParse(trainerUserId) ?? trainerUserId;
+    }
+    return _api.post('launch-gate/notify-me', body);
+  }
+
+  /// POST launch-gate/activate-with-code — activeer met invite code vanuit bottom sheet.
+  Future<Map<String, dynamic>> launchGateActivateCode(String code, {String? regionSlug}) async {
+    final body = <String, dynamic>{'code': code};
+    if (regionSlug != null && regionSlug.isNotEmpty) {
+      body['region_slug'] = regionSlug;
+    }
+    return _api.post('launch-gate/activate-with-code', body);
+  }
+
+  // ─── Staff Regio Dashboard ─────────────────────────────────
+
+  /// GET staff/regions — alle regio's met status, counters, readiness.
+  Future<List<Map<String, dynamic>>> getStaffRegions() async {
+    final res = await _api.get('staff/regions');
+    final raw = res['data'] ?? res['regions'] ?? [];
+    if (raw is List) return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    return [];
+  }
+
+  /// GET staff/regions/{slug} — detail van een regio.
+  Future<Map<String, dynamic>> getStaffRegionDetail(String slug) async {
+    final res = await _api.get('staff/regions/$slug');
+    return _asMap(res['data'] ?? res) ?? {};
+  }
+
+  /// PUT staff/regions/{slug} — status/settings wijzigen.
+  Future<Map<String, dynamic>> updateStaffRegion(String slug, Map<String, dynamic> body) async =>
+      _api.put('staff/regions/$slug', body);
+
+  /// POST staff/regions — nieuwe regio aanmaken.
+  Future<Map<String, dynamic>> createStaffRegion(Map<String, dynamic> body) async =>
+      _api.post('staff/regions', body);
+
+  // ─── Activity Heatmap ─────────────────────────────────────
+
+  /// GET staff/activity-heatmap?date=YYYY-MM-DD — per-regio activiteitsscores voor live kaart.
+  Future<Map<String, dynamic>> getActivityHeatmap({String? date}) async {
+    final query = date != null ? '?date=$date' : '';
+    final res = await _api.get('staff/activity-heatmap$query');
+    return Map<String, dynamic>.from(res);
   }
 }

@@ -1,20 +1,20 @@
+
+
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../utils/haptics.dart';
-
 import '../services/auth_service.dart';
 import '../services/gymies_api.dart';
-import '../services/api_client.dart';
 import '../services/notification_realtime_service.dart';
 import '../theme/gymies_theme.dart';
 import '../models/booking.dart';
-import '../models/trainer.dart';
+import 'dart:async';
 import 'client_check_in_qr_screen.dart';
 import 'client_favorites_standalone_screen.dart';
 import 'client_invoices_screen.dart';
@@ -24,7 +24,6 @@ import 'client_support_screen.dart';
 import 'client_group_sessions_screen.dart';
 import 'client_dossier_screen.dart';
 import 'shells/client_shell.dart';
-
 class ClientHomeScreen extends StatefulWidget {
   const ClientHomeScreen({super.key});
 
@@ -52,7 +51,11 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
     _initializeAnimation();
     _loadStats();
     _countdownTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {
+          // Trigger rebuild for countdown updates (no state change needed)
+        });
+      }
     });
   }
 
@@ -78,12 +81,13 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
   }
 
   /// Dynamische begroeting op basis van tijdstip
-  String _greeting() {
+  String _greeting(BuildContext context) {
+    final s = S.of(context);
     final hour = DateTime.now().hour;
-    if (hour < 6) return 'Goedenacht';
-    if (hour < 12) return 'Goedemorgen';
-    if (hour < 18) return 'Goedemiddag';
-    return 'Goedenavond';
+    if (hour < 6) return s.greetingNight;
+    if (hour < 12) return s.greetingMorning;
+    if (hour < 18) return s.greetingAfternoon;
+    return s.greetingEvening;
   }
 
   /// Bereken trainingsstreak (opeenvolgende weken met minstens 1 sessie)
@@ -134,14 +138,15 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
   }
 
   /// Persoonlijke tip op basis van trainingsdata
-  String _smartTip() {
+  String _smartTip(BuildContext context) {
+    final s = S.of(context);
     final thisWeek = _stats?['this_week'] ?? 0;
     final weekGoal = _stats?['week_goal'] ?? 3;
     final streak = _stats?['streak'] ?? 0;
     final total = _stats?['total'] ?? 0;
 
     if (total == 0) {
-      return 'Welkom bij Gymies! Boek je eerste sessie en begin je fitnessreis.';
+      return S.of(context).welcomeTip;
     }
 
     // Near milestone: if total > 0 and (total % 10) >= 8
@@ -180,33 +185,36 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
     if (streak > 0) {
       return 'Je hebt een streak van $streak ${streak == 1 ? 'week' : 'weken'}. Plan een sessie om hem vast te houden!';
     }
-    return 'Train minstens 3x per week voor optimaal resultaat. Plan je eerste sessie van de week!';
+    return S.of(context).trainMinstens3xPerWeekVoor;
   }
 
   Future<void> _loadStats() async {
     try {
       final api = context.read<GymiesApi>();
-      final bookings = await api.getBookings();
+      // Parallel laden: bookings + intake + prefs tegelijk (was sequentieel)
+      final results = await Future.wait([
+        api.getBookings(),
+        api.getIntake().catchError((_) => <String, dynamic>{}),
+        SharedPreferences.getInstance(),
+      ]);
+      final bookings = results[0] as List<Booking>;
+      final intake = results[1] as Map<String, dynamic>;
+      final prefs = results[2] as SharedPreferences;
       final now = DateTime.now();
       final thisWeekStart = DateTime(now.year, now.month, now.day)
           .subtract(Duration(days: now.weekday - 1));
       final thisWeekEnd = thisWeekStart.add(const Duration(days: 7));
 
       // Load week goal: server intake → local fallback
-      final prefs = await SharedPreferences.getInstance();
       int weekGoal = prefs.getInt('gymies_week_goal') ?? 3;
-      try {
-        final api = context.read<GymiesApi>();
-        final intake = await api.getIntake();
-        final serverVal = intake['training_frequency_preferred'];
-        if (serverVal != null) {
-          final parsed = int.tryParse(serverVal.toString());
-          if (parsed != null && parsed > 0) {
-            weekGoal = parsed;
-            await prefs.setInt('gymies_week_goal', weekGoal);
-          }
+      final serverVal = intake['training_frequency_preferred'];
+      if (serverVal != null) {
+        final parsed = int.tryParse(serverVal.toString());
+        if (parsed != null && parsed > 0) {
+          weekGoal = parsed;
+          await prefs.setInt('gymies_week_goal', weekGoal);
         }
-      } catch (_) {}
+      }
 
       // Weekkalender: status per dag berekenen
       final dayStatus = <int, _DayStatus>{};
@@ -368,6 +376,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
   @override
   void dispose() {
     _countdownTimer?.cancel();
+    _countdownTimer = null;
     _animationController.dispose();
     super.dispose();
   }
@@ -418,7 +427,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: Text(
-                          '${_greeting()}, $firstName',
+                          '${_greeting(context)}, $firstName',
                           style: GoogleFonts.sora(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
@@ -435,7 +444,10 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                 Padding(
                   padding: const EdgeInsets.only(right: 16),
                   child: Center(
-                    child: _NotificationBell(onTap: _openNotifications),
+                    child: Tooltip(
+                      message: S.of(context).meldingen,
+                      child: _NotificationBell(onTap: _openNotifications),
+                    ),
                   ),
                 ),
               ],
@@ -445,34 +457,100 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
             SliverToBoxAdapter(
               child: _loadingStats
                 ? _buildLoadingSkeleton()
-                : Column(
-                    children: [
-                      const SizedBox(height: 16),
+                : (_stats == null
+                    ? _buildErrorState()
+                    : Column(
+                        children: [
+                          const SizedBox(height: 16),
 
-                      // ── 1. Volgende sessie ──
-                      _buildNextSessionCard(),
+                          // ── 1. Volgende sessie ──
+                          _buildNextSessionCard(),
 
-                      // ── 1b. Mijn trainers ──
-                      _buildMyTrainersCard(),
+                          // ── 1b. Mijn trainers ──
+                          _buildMyTrainersCard(),
 
-                      // ── 2. Stats row (inclusief streak) ──
-                      _buildStatsRow(),
+                          // ── 2. Stats row (inclusief streak) ──
+                          _buildStatsRow(),
 
-                      // ── 3. Weekkalender ──
-                      _buildWeekCalendarCard(),
+                          // ── 3. Weekkalender ──
+                          _buildWeekCalendarCard(),
 
-                      // ── 4. Snel naar (quick actions) ──
-                      _buildQuickActions(),
+                          // ── 4. Snel naar (quick actions) ──
+                          _buildQuickActions(),
 
-                      // ── 5. Slimme tip (contextual) ──
-                      _buildSmartTip(),
+                          // ── 5. Slimme tip (contextual) ──
+                          _buildSmartTip(),
 
-                      const SizedBox(height: 32),
-                    ],
-                  ),
+                          const SizedBox(height: 32),
+                        ],
+                      )),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // ERROR STATE
+  // ═══════════════════════════════════════════════════════════════
+
+  Widget _buildErrorState() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 32, 16, 32),
+      child: Column(
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.error_outline_rounded,
+              size: 40,
+              color: Colors.red.shade700,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            S.of(context).konGegevensNietLaden,
+            style: GoogleFonts.sora(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: GymiesColors.darkBlue,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Probeer later opnieuw of neem contact op met support.',
+            style: GoogleFonts.sora(
+              fontSize: 14,
+              color: Colors.grey.shade600,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                setState(() => _loadingStats = true);
+                _loadStats();
+              },
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(S.of(context).probeerOpnieuw),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: GymiesColors.primary,
+                foregroundColor: GymiesColors.darkBlue,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -521,7 +599,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
     if (diff.inHours < 24) {
       final h = diff.inHours;
       final m = diff.inMinutes % 60;
-      return m > 0 ? 'Over ${h}u ${m}m' : 'Over ${h} uur';
+      return m > 0 ? 'Over ${h}u ${m}m' : 'Over $h uur';
     }
     if (diff.inDays == 1) return 'Morgen';
     if (diff.inDays < 7) return 'Over ${diff.inDays} dagen';
@@ -535,7 +613,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
   Widget _buildNextSessionCard() {
     final next = _nextSession();
 
-    if (next == null) {
+    if (next == null && !_noSessionDismissed) {
       // Geen aankomende sessie → subtiele hint
       return FadeSlideTransition(
         animation: _staggeredAnimations[0],
@@ -543,10 +621,10 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Container(
             decoration: BoxDecoration(
-              color: GymiesColors.darkBlue.withValues(alpha:0.06),
+              color: GymiesColors.darkBlue.withOpacity(0.06),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: GymiesColors.darkBlue.withValues(alpha:0.1),
+                color: GymiesColors.darkBlue.withOpacity(0.1),
                 width: 1,
               ),
             ),
@@ -559,13 +637,13 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: GymiesColors.darkBlue.withValues(alpha:0.08),
+                        color: GymiesColors.darkBlue.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       alignment: Alignment.center,
                       child: Icon(
                         Icons.calendar_today_rounded,
-                        color: GymiesColors.darkBlue.withValues(alpha:0.5),
+                        color: GymiesColors.darkBlue.withOpacity(0.5),
                         size: 22,
                       ),
                     ),
@@ -575,7 +653,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Geen sessies gepland',
+                            S.of(context).noUpcomingSessions,
                             style: GoogleFonts.sora(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
@@ -584,27 +662,34 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Ga naar Ontdekken om een trainer te boeken',
+                            S.of(context).gaNaarOntdekkenOmEenTrainerTeBoeken,
                             style: GoogleFonts.sora(
                               fontSize: 12,
                               color: Colors.grey.shade600,
                             ),
                           ),
-                    GestureDetector(
-                      onTap: () {
-                        Haptics.selection();
-                        setState(() => _noSessionDismissed = true);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: Colors.grey.shade400,
-                        ),
+                        ],
                       ),
                     ),
-                        ],
+                    // ✕ Sluit-knop
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () {
+                          Haptics.selection();
+                          setState(() => _noSessionDismissed = true);
+                        },
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: GymiesColors.darkBlue.withOpacity(0.08),
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(Icons.close_rounded, size: 18, color: GymiesColors.darkBlue.withOpacity(0.5)),
+                        ),
                       ),
                     ),
                   ],
@@ -622,7 +707,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      'Ontdek trainers',
+                      S.of(context).ontdekTrainers,
                       style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue),
                     ),
                   ),
@@ -659,7 +744,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
             gradient: LinearGradient(
               colors: [
                 GymiesColors.darkBlue,
-                GymiesColors.darkBlue.withValues(alpha:0.88),
+                GymiesColors.darkBlue.withOpacity(0.88),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -667,7 +752,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: GymiesColors.darkBlue.withValues(alpha:0.2),
+                color: GymiesColors.darkBlue.withOpacity(0.2),
                 blurRadius: 16,
                 offset: const Offset(0, 6),
               ),
@@ -684,11 +769,11 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha:0.2),
+                      color: GymiesColors.primary.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      isToday ? 'VANDAAG' : 'VOLGENDE SESSIE',
+                      isToday ? 'VANDAAG' : S.of(context).nextSession,
                       style: GoogleFonts.sora(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -733,7 +818,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.15),
+                      color: GymiesColors.primary.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -801,7 +886,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                'Check in',
+                                S.of(context).checkIn,
                                 style: GoogleFonts.sora(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
@@ -829,7 +914,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                           borderRadius: BorderRadius.circular(10),
                           border: _isWithinCheckInWindow(next)
                               ? Border.all(
-                                  color: Colors.white.withValues(alpha: 0.3),
+                                  color: Colors.white.withOpacity(0.3),
                                   width: 1,
                                 )
                               : null,
@@ -839,7 +924,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          'Bekijk trainer',
+                          S.of(context).bekijkTrainer,
                           style: GoogleFonts.sora(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -857,7 +942,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
               if (next.sessionsRemaining != null && next.packageSessionsTotal != null) ...[
                 const SizedBox(height: 14),
                 // Separator
-                Container(height: 0.5, color: Colors.white.withValues(alpha: 0.15)),
+                Container(height: 0.5, color: Colors.white.withOpacity(0.15)),
                 const SizedBox(height: 12),
                 // Package progress
                 Row(
@@ -865,7 +950,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                     Icon(Icons.inventory_2_outlined, color: Colors.white60, size: 14),
                     const SizedBox(width: 6),
                     Text(
-                      '${next.packageName ?? "Pakket"}',
+                      next.packageName ?? "Pakket",
                       style: GoogleFonts.sora(fontSize: 12, color: Colors.white60),
                     ),
                     const Spacer(),
@@ -883,7 +968,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                     value: next.packageSessionsTotal! > 0
                         ? (next.packageSessionsTotal! - next.sessionsRemaining!) / next.packageSessionsTotal!
                         : 0,
-                    backgroundColor: Colors.white.withValues(alpha: 0.12),
+                    backgroundColor: Colors.white.withOpacity(0.12),
                     valueColor: AlwaysStoppedAnimation<Color>(GymiesColors.primary),
                     minHeight: 6,
                   ),
@@ -909,7 +994,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
       final name = b.trainerName.trim();
       if (id.isEmpty || seen.contains(id)) continue;
       seen.add(id);
-      result.add({'id': id, 'name': name.isNotEmpty ? name : 'Trainer'});
+      result.add({'id': id, 'name': name.isNotEmpty ? name : S.of(context).trainer});
     }
     return result;
   }
@@ -930,7 +1015,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
+                color: Colors.black.withOpacity(0.05),
                 blurRadius: 12,
                 offset: const Offset(0, 3),
               ),
@@ -945,7 +1030,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.12),
+                      color: GymiesColors.primary.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(Icons.people_rounded, size: 18, color: GymiesColors.primary),
@@ -953,7 +1038,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      trainers.length == 1 ? 'Mijn trainer' : 'Mijn trainers',
+                      trainers.length == 1 ? S.of(context).mijnTrainer : S.of(context).mijnTrainers,
                       style: GoogleFonts.sora(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -971,18 +1056,23 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                   itemCount: trainers.length,
                   itemBuilder: (_, i) {
                     final info = trainers[i];
-                    final name = info['name'] ?? 'Trainer';
+                    final name = info['name'] ?? S.of(context).trainer;
                     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+                    final trainerId = info['id'] ?? '';
                     return Padding(
+                      key: ValueKey<String>(trainerId.isNotEmpty ? trainerId : 'trainer_$i'),
                       padding: EdgeInsets.only(right: i < trainers.length - 1 ? 12 : 0),
                       child: GestureDetector(
                         onTap: () {
                           Haptics.selection();
                           // Vind een booking met deze trainer om _openTrainerProfile te gebruiken
-                          final match = _allBookings.cast<Booking?>().firstWhere(
-                            (b) => b?.trainerUserId == info['id'],
-                            orElse: () => null,
-                          );
+                          Booking? match;
+                          for (final b in _allBookings) {
+                            if (b.trainerUserId == info['id']) {
+                              match = b;
+                              break;
+                            }
+                          }
                           final booking = match ?? (_allBookings.isNotEmpty ? _allBookings.first : null);
                           if (booking == null) return;
                           _openTrainerProfile(booking);
@@ -990,53 +1080,59 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                         child: Column(
                           children: [
                             Container(
-                              width: 52,
-                              height: 52,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    GymiesColors.darkBlue,
-                                    GymiesColors.darkBlue.withValues(alpha: 0.8),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: GymiesColors.primary.withValues(alpha: 0.4),
-                                  width: 2,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: GymiesColors.darkBlue.withValues(alpha: 0.15),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
+                              width: 64,
+                              child: Column(
+                                children: [
+                                  Container(
+                                    width: 52,
+                                    height: 52,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          GymiesColors.darkBlue,
+                                          GymiesColors.darkBlue.withOpacity(0.8),
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: GymiesColors.primary.withOpacity(0.4),
+                                        width: 2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: GymiesColors.darkBlue.withOpacity(0.15),
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      initial,
+                                      style: GoogleFonts.sora(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w700,
+                                        color: GymiesColors.primary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Expanded(
+                                    child: Text(
+                                      name.split(' ').first,
+                                      style: GoogleFonts.sora(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                        color: GymiesColors.darkBlue,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                    ),
                                   ),
                                 ],
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                initial,
-                                style: GoogleFonts.sora(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
-                                  color: GymiesColors.primary,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            SizedBox(
-                              width: 64,
-                              child: Text(
-                                name.split(' ').first,
-                                style: GoogleFonts.sora(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                  color: GymiesColors.darkBlue,
-                                ),
-                                textAlign: TextAlign.center,
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
                               ),
                             ),
                           ],
@@ -1068,7 +1164,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha:0.05),
+                color: Colors.black.withOpacity(0.05),
                 blurRadius: 12,
                 offset: const Offset(0, 3),
               ),
@@ -1083,7 +1179,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Deze week',
+                    S.of(context).dezeWeek,
                     style: GoogleFonts.sora(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -1110,7 +1206,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                     _legendItem(
                       color: const Color(0xFF4CAF50),
                       filled: true,
-                      label: 'Voltooid',
+                      label: S.of(context).voltooid,
                     ),
                     const SizedBox(width: 16),
                     _legendItem(
@@ -1295,7 +1391,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: GymiesColors.darkBlue.withValues(alpha:0.15),
+                      color: GymiesColors.darkBlue.withOpacity(0.15),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -1320,7 +1416,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Streak',
+                      S.of(context).streak,
                       style: GoogleFonts.sora(
                         fontSize: 11,
                         fontWeight: FontWeight.w500,
@@ -1350,10 +1446,14 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                     });
                     // Sync naar server
                     try {
+                      // ignore: use_build_context_synchronously
                       await context.read<GymiesApi>().updateIntake({
                         'training_frequency_preferred': result,
                       });
-                    } catch (_) {}
+                    } catch (e) {
+                      // Fail-open: Intake preference update optional
+                      if (kDebugMode) debugPrint('[ClientHome] Update intake failed: $e');
+                    }
                   }
                 },
                 child: Container(
@@ -1362,7 +1462,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                     borderRadius: BorderRadius.circular(14),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha:0.04),
+                        color: Colors.black.withOpacity(0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -1387,7 +1487,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Deze week',
+                        S.of(context).dezeWeek,
                         style: GoogleFonts.sora(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
@@ -1409,7 +1509,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha:0.04),
+                      color: Colors.black.withOpacity(0.04),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -1434,7 +1534,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Totaal',
+                      S.of(context).totaal,
                       style: GoogleFonts.sora(
                         fontSize: 11,
                         fontWeight: FontWeight.w500,
@@ -1486,7 +1586,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'TIP',
+                      S.of(context).tip,
                       style: GoogleFonts.sora(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -1496,7 +1596,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _smartTip(),
+                      _smartTip(context),
                       style: GoogleFonts.sora(
                         fontSize: 13,
                         color: const Color(0xFF78350F),
@@ -1538,7 +1638,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Snel naar',
+              S.of(context).snelNaar,
               style: GoogleFonts.sora(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
@@ -1551,7 +1651,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
               children: [
                 _quickActionTile(
                   icon: Icons.search_rounded,
-                  label: 'Zoek trainer',
+                  label: S.of(context).zoekTrainer,
                   onTap: () {
                     Haptics.selection();
                     context.clientShell?.jumpToTab(1);
@@ -1604,7 +1704,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
                 const SizedBox(width: 10),
                 _quickActionTile(
                   icon: Icons.groups_rounded,
-                  label: 'Groepslessen',
+                  label: S.of(context).groepslessen,
                   onTap: () {
                     Haptics.selection();
                     Navigator.of(context).push(
@@ -1644,13 +1744,14 @@ class _ClientHomeScreenState extends State<ClientHomeScreen>
       child: GestureDetector(
         onTap: onTap,
         child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
+                color: Colors.black.withOpacity(0.04),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -1709,9 +1810,9 @@ class _WeekGoalDialogState extends State<_WeekGoalDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Weekdoel instellen', style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.bold, color: GymiesColors.darkBlue)),
+            Text(S.of(context).weekdoelInstellen, style: GoogleFonts.sora(fontSize: 18, fontWeight: FontWeight.bold, color: GymiesColors.darkBlue)),
             const SizedBox(height: 4),
-            Text('Hoeveel sessies per week?', style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade600)),
+            Text(S.of(context).hoeveelSessiesPerWeek, style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade600)),
             const SizedBox(height: 20),
             Wrap(
               spacing: 8,
@@ -1745,7 +1846,7 @@ class _WeekGoalDialogState extends State<_WeekGoalDialog> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: Text('Opslaan', style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700)),
+                child: Text(S.of(context).save, style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w700)),
               ),
             ),
           ],
@@ -1794,7 +1895,7 @@ class _SkeletonBoxState extends State<_SkeletonBox>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _shimmer,
-      builder: (_, __) {
+      builder: (_, _) {
         final t = _shimmer.value;
         return Container(
           height: widget.height,
@@ -1832,8 +1933,8 @@ class _NotificationBell extends StatelessWidget {
         onTap();
       },
       child: SizedBox(
-        width: 40,
-        height: 40,
+        width: 44,
+        height: 44,
         child: Stack(
           alignment: Alignment.center,
           children: [
@@ -1875,10 +1976,10 @@ class _NotificationBell extends StatelessWidget {
 /// Fade + slide animatie wrapper
 class FadeSlideTransition extends StatelessWidget {
   const FadeSlideTransition({
-    Key? key,
+    super.key,
     required this.animation,
     required this.child,
-  }) : super(key: key);
+  });
 
   final Animation<double> animation;
   final Widget child;
@@ -1901,10 +2002,10 @@ class FadeSlideTransition extends StatelessWidget {
 /// Animated count-up tekst
 class AnimatedCountText extends StatefulWidget {
   const AnimatedCountText({
-    Key? key,
+    super.key,
     required this.targetValue,
     required this.style,
-  }) : super(key: key);
+  });
 
   final int targetValue;
   final TextStyle style;

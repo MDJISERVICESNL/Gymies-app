@@ -11,6 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -39,11 +40,14 @@ final class GymiesBookingController extends Controller
         try {
             return $this->doIndex($request);
         } catch (\Throwable $e) {
-            \Log::error('GymiesBookingController@index FAILED', [
+            Log::error('GymiesBookingController@index FAILED', [
                 'error' => $e->getMessage(),
                 'file'  => $e->getFile() . ':' . $e->getLine(),
                 'trace' => array_slice($e->getTrace(), 0, 5),
             ]);
+            if (app()->bound('sentry')) {
+                \Sentry\captureException($e);
+            }
             return response()->json([
                 'message' => 'Server Error',
                 'debug'   => config('app.debug') ? $e->getMessage() : null,
@@ -142,7 +146,7 @@ final class GymiesBookingController extends Controller
             $query->where('b.client_user_id', $userId);
         }
 
-        $rows = $query->orderBy('b.scheduled_at', 'desc')->get();
+        $rows = $query->orderBy('b.scheduled_at', 'desc')->limit(500)->get();
 
         foreach ($rows as $r) {
             if (property_exists($r, 'proposed_scheduled_at') && $r->proposed_scheduled_at !== null
@@ -153,7 +157,7 @@ final class GymiesBookingController extends Controller
                 }
             }
         }
-        $rows = $query->orderBy('b.scheduled_at', 'desc')->get();
+        $rows = $query->orderBy('b.scheduled_at', 'desc')->limit(500)->get();
 
         $reviewedBookingIds = [];
         if (Schema::hasTable('gymies_booking_reviews')) {
@@ -237,7 +241,7 @@ final class GymiesBookingController extends Controller
 
         $validationRules = [
             'trainer_user_id' => 'required|exists:gymies_users,id',
-            'scheduled_at' => 'required|date',
+            'scheduled_at' => 'required|date|after:now',
             'duration_minutes' => 'nullable|integer',
             'amount_cents' => 'nullable|integer|min:0',
             'package_id' => 'nullable|integer|min:1',
@@ -431,6 +435,16 @@ final class GymiesBookingController extends Controller
             ['trainer_user_id' => $trainerId, 'scheduled_at' => $scheduledAt, 'duration_minutes' => $duration]
         );
 
+        // FCM push notificatie naar trainer bij nieuwe boeking
+        try {
+            $clientName = $user->display_name ?? $user->name ?? 'Klant';
+            (new \App\Services\OnboardingNotificationService())->notifyTrainerNewBooking(
+                $trainerId, $clientName, $scheduledAt, (int) $id
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Push notify failed: booking.new', ['error' => $e->getMessage()]);
+        }
+
         $data = [
             'id' => (string) $row->id,
             'client_user_id' => (string) $row->client_user_id,
@@ -474,12 +488,15 @@ final class GymiesBookingController extends Controller
         try {
             return $this->doStoreDirectBook($request);
         } catch (\Throwable $e) {
-            \Log::error('GymiesBookingController@storeDirectBook FAILED', [
+            Log::error('GymiesBookingController@storeDirectBook FAILED', [
                 'error' => $e->getMessage(),
                 'file'  => $e->getFile() . ':' . $e->getLine(),
                 'trace' => array_slice($e->getTrace(), 0, 8),
                 'input' => $request->except(['password', 'token']),
             ]);
+            if (app()->bound('sentry')) {
+                \Sentry\captureException($e);
+            }
             return response()->json([
                 'message' => 'Server Error bij boeking',
                 'debug'   => config('app.debug') ? $e->getMessage() : null,
@@ -628,7 +645,6 @@ final class GymiesBookingController extends Controller
             }
         }
 
-        $reservedUntil = now()->addMinutes(self::RESERVED_LOCK_MINUTES);
         $insertPayload = [
             'client_user_id' => $user->id,
             'trainer_user_id' => $trainerId,
@@ -640,9 +656,7 @@ final class GymiesBookingController extends Controller
         if (Schema::hasColumn('gymies_bookings', 'payment_method')) {
             $insertPayload['payment_method'] = $paymentMethod === 'cash' ? 'cash' : 'mollie_connect';
         }
-        if (DB::getSchemaBuilder()->hasColumn('gymies_bookings', 'reserved_until')) {
-            $insertPayload['reserved_until'] = $reservedUntil;
-        }
+        // Note: reserved_until is set inside transaction scope
         if (DB::getSchemaBuilder()->hasColumn('gymies_bookings', 'organisation_id')) {
             $insertPayload['organisation_id'] = $organisationId;
         }
@@ -678,8 +692,12 @@ final class GymiesBookingController extends Controller
         }
 
         $id = null;
+        $reservedUntil = null;
         DB::beginTransaction();
         try {
+            // Set reserved_until inside transaction scope for consistency
+            $reservedUntil = now()->addMinutes(self::RESERVED_LOCK_MINUTES);
+
             // lockForUpdate=true: vergrendelt overlappende rijen en laat gelijktijdige transacties wachten.
             // Voorkomt race-condition waarbij twee klanten tegelijk hetzelfde slot boeken.
             if ($this->hasPendingConfirmedOrReservedOverlap($trainerId, $scheduledAt, $duration, 0, lockForUpdate: true)) {
@@ -687,6 +705,10 @@ final class GymiesBookingController extends Controller
                 return response()->json([
                     'message' => 'Dit tijdslot is net door iemand anders gekozen. Kies een ander tijdstip.',
                 ], 409);
+            }
+            // Update insertPayload with transaction-scoped reservedUntil
+            if (DB::getSchemaBuilder()->hasColumn('gymies_bookings', 'reserved_until')) {
+                $insertPayload['reserved_until'] = $reservedUntil;
             }
             $id = DB::table('gymies_bookings')->insertGetId($insertPayload);
             DB::commit();
@@ -722,7 +744,9 @@ final class GymiesBookingController extends Controller
                     'scheduled_for' => now(),
                     'created_at' => now(),
                 ]);
-            } catch (\Throwable) {}
+            } catch (\Throwable $e) {
+                Log::warning('Booking notification failed: ' . $e->getMessage());
+            }
         }
 
         $data = [
@@ -1139,11 +1163,11 @@ final class GymiesBookingController extends Controller
         if (!$booking) {
             return response()->json(['message' => 'Boeking niet gevonden.'], 404);
         }
+        if ($booking->client_user_id != $user->id && $booking->trainer_user_id != $user->id) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
         $isTrainer = (int) $booking->trainer_user_id === (int) $user->id;
         $isClient = (int) $booking->client_user_id === (int) $user->id;
-        if (!$isTrainer && !$isClient) {
-            return response()->json(['message' => 'Je kunt alleen voor je eigen boekingen een verplaatsingsverzoek indienen.'], 403);
-        }
         if (!in_array($booking->status, ['pending', 'confirmed'], true)) {
             return response()->json(['message' => 'Deze boeking kan niet meer verplaatst worden.'], 422);
         }
@@ -1232,11 +1256,11 @@ final class GymiesBookingController extends Controller
         if (!$booking) {
             return response()->json(['message' => 'Boeking niet gevonden.'], 404);
         }
+        if ($booking->client_user_id != $user->id && $booking->trainer_user_id != $user->id) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
         $isTrainer = (int) $booking->trainer_user_id === (int) $user->id;
         $isClient = (int) $booking->client_user_id === (int) $user->id;
-        if (!$isTrainer && !$isClient) {
-            return response()->json(['message' => 'Je kunt alleen op verzoeken voor je eigen boekingen reageren.'], 403);
-        }
         if (!Schema::hasColumn('gymies_bookings', 'proposed_scheduled_at') || empty($booking->proposed_scheduled_at)) {
             return response()->json(['message' => 'Er staat geen verplaatsingsverzoek open voor deze boeking.'], 422);
         }
@@ -1615,9 +1639,15 @@ final class GymiesBookingController extends Controller
 
             if ($refundPercent > 0 && $amountCents > 0) {
                 if ($refundMethod === 'wallet' && Schema::hasTable('gymies_wallet_transactions') && Schema::hasColumn('gymies_users', 'wallet_balance_cents')) {
-                    // Atomische increment voorkomt race condition bij gelijktijdige refunds.
-                    DB::table('gymies_users')->where('id', $clientUserId)->increment('wallet_balance_cents', $amountCents);
-                    $newBalance = (int) (DB::table('gymies_users')->where('id', $clientUserId)->value('wallet_balance_cents') ?? 0);
+                    // Use lockForUpdate to prevent TOCTOU race condition
+                    $user = DB::table('gymies_users')->where('id', $clientUserId)->lockForUpdate()->first(['id', 'wallet_balance_cents']);
+                    if ($user) {
+                        $newBalance = (int) $user->wallet_balance_cents + $amountCents;
+                        DB::table('gymies_users')->where('id', $clientUserId)->update(['wallet_balance_cents' => $newBalance]);
+                    } else {
+                        $newBalance = (int) $amountCents;
+                        // Create user record if needed or skip
+                    }
                     $walletInsert = [
                         'user_id' => $clientUserId,
                         'amount_cents' => $amountCents,
@@ -3110,6 +3140,64 @@ final class GymiesBookingController extends Controller
                 'hold_id'    => (int) $holdId,
                 'expires_in' => $expiresIn,
             ],
+        ]);
+    }
+
+    // ─── Fix 74: Client Booking Export ──────────────────────────
+
+    /**
+     * Export client bookings as CSV.
+     * Route: GET me/bookings/export
+     */
+    public function exportClientBookings(Request $request): \Symfony\Component\HttpFoundation\Response
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        if (!Schema::hasTable('gymies_bookings')) {
+            return response()->json(['message' => 'Bookings table not found'], 503);
+        }
+
+        $userId = (int) $user->id;
+
+        $bookings = DB::table('gymies_bookings')
+            ->where('client_user_id', $userId)
+            ->join('gymies_users as trainer', 'gymies_bookings.trainer_user_id', '=', 'trainer.id')
+            ->select(
+                'gymies_bookings.scheduled_at',
+                'trainer.display_name as trainer_name',
+                'gymies_bookings.duration_minutes',
+                'gymies_bookings.status',
+                'gymies_bookings.amount_cents'
+            )
+            ->orderBy('gymies_bookings.scheduled_at', 'desc')
+            ->limit(5000)
+            ->get();
+
+        $filename = 'bookings_' . date('Y-m-d_H-i-s') . '.csv';
+        $handle = fopen('php://memory', 'w');
+
+        fputcsv($handle, ['Date', 'Trainer', 'Duration (min)', 'Status', 'Amount (EUR)']);
+
+        foreach ($bookings as $booking) {
+            fputcsv($handle, [
+                date('Y-m-d H:i', strtotime($booking->scheduled_at)),
+                $booking->trainer_name,
+                (int) $booking->duration_minutes,
+                $booking->status,
+                number_format((int) $booking->amount_cents / 100, 2, ',', ''),
+            ]);
+        }
+
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ]);
     }
 }

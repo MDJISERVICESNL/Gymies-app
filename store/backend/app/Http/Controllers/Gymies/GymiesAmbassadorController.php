@@ -461,6 +461,288 @@ final class GymiesAmbassadorController extends Controller
     }
 
     // =========================================================================
+    // FLUTTER APP ENDPOINTS (me/ambassador/*)
+    // Unified: gebruikt dezelfde tabellen als het primaire systeem.
+    // =========================================================================
+
+    /**
+     * GET me/ambassador/stats — persoonlijke stats voor Flutter dashboard.
+     * Leest uit gymies_ambassadors + gymies_ambassador_conversions (Systeem A).
+     */
+    public function myStats(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $userId = (int) $user->id;
+        GymiesSchemaEnsure::ambassadorTables();
+
+        if (!Schema::hasTable('gymies_ambassadors')) {
+            return response()->json([
+                'tier' => 'starter',
+                'total_earnings' => 0,
+                'pending_payout' => 0,
+                'total_referrals' => 0,
+                'conversion_rate' => 0,
+                'trainer_signups' => 0,
+                'sporter_bookings' => 0,
+            ]);
+        }
+
+        $amb = DB::table('gymies_ambassadors')
+            ->where('user_id', $userId)
+            ->where('is_active', 1)
+            ->first();
+
+        if (!$amb) {
+            return response()->json([
+                'tier' => 'starter',
+                'total_earnings' => 0,
+                'pending_payout' => 0,
+                'total_referrals' => 0,
+                'conversion_rate' => 0,
+                'trainer_signups' => 0,
+                'sporter_bookings' => 0,
+            ]);
+        }
+
+        $trainerConversions = (int) ($amb->trainer_conversions ?? 0);
+        $sporterConversions = (int) ($amb->sporter_conversions ?? 0);
+        $totalReferrals = $trainerConversions + $sporterConversions;
+        $totalEarnedCents = (int) ($amb->total_earned_cents ?? 0);
+        $pendingPayoutCents = (int) ($amb->pending_payout_cents ?? 0);
+
+        // Conversie rate: verhouding succesvolle conversies vs niet-verdachte+niet-reversed
+        $conversionRate = 0;
+        if (Schema::hasTable('gymies_ambassador_conversions')) {
+            $totalConversions = DB::table('gymies_ambassador_conversions')
+                ->where('ambassador_id', (int) $amb->id)
+                ->where('suspicious', 0)
+                ->count();
+            $successfulConversions = DB::table('gymies_ambassador_conversions')
+                ->where('ambassador_id', (int) $amb->id)
+                ->where('suspicious', 0)
+                ->whereNull('reversed_at')
+                ->count();
+            $conversionRate = $totalConversions > 0
+                ? round(($successfulConversions / $totalConversions) * 100, 1)
+                : 0;
+        }
+
+        return response()->json([
+            'tier'             => $amb->tier ?? 'starter',
+            'total_earnings'   => round($totalEarnedCents / 100, 2),
+            'pending_payout'   => round($pendingPayoutCents / 100, 2),
+            'total_referrals'  => $totalReferrals,
+            'conversion_rate'  => $conversionRate,
+            'trainer_signups'  => $trainerConversions,
+            'sporter_bookings' => $sporterConversions,
+            'discount_code'    => $amb->discount_code ?? '',
+            'share_url'        => 'https://www.gymies.nl?amb=' . urlencode($amb->discount_code ?? ''),
+            'has_iban'         => ($amb->iban ?? '') !== '',
+            'member_since'     => $amb->created_at,
+        ]);
+    }
+
+    /**
+     * GET me/ambassador/referrals — conversie-lijst voor Flutter dashboard.
+     * Mapt gymies_ambassador_conversions naar het referral-format dat Flutter verwacht.
+     */
+    public function myReferrals(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $userId = (int) $user->id;
+        GymiesSchemaEnsure::ambassadorTables();
+
+        if (!Schema::hasTable('gymies_ambassadors') || !Schema::hasTable('gymies_ambassador_conversions')) {
+            return response()->json(['referrals' => []]);
+        }
+
+        $amb = DB::table('gymies_ambassadors')
+            ->where('user_id', $userId)
+            ->where('is_active', 1)
+            ->first(['id']);
+
+        if (!$amb) {
+            return response()->json(['referrals' => []]);
+        }
+
+        $status = $request->input('status');
+
+        $query = DB::table('gymies_ambassador_conversions as c')
+            ->leftJoin('gymies_users as u', 'u.id', '=', 'c.referred_user_id')
+            ->where('c.ambassador_id', (int) $amb->id)
+            ->where('c.suspicious', 0);
+
+        // Filter op type (trainers/sporters)
+        if ($status === 'trainers' || $status === 'trainer') {
+            $query->where('c.conversion_type', 'trainer_signup');
+        } elseif ($status === 'sporters' || $status === 'sporter') {
+            $query->where('c.conversion_type', 'sporter_booking');
+        }
+
+        $conversions = $query->orderByDesc('c.created_at')
+            ->limit(100)
+            ->get([
+                'c.id', 'c.referred_user_id', 'c.conversion_type', 'c.reward_cents',
+                'c.reversed_at', 'c.paid_at', 'c.created_at',
+                'u.display_name', 'u.avatar_url',
+            ]);
+
+        $referrals = $conversions->map(function ($c) {
+            $type = ($c->conversion_type === 'trainer_signup') ? 'trainer' : 'sporter';
+            $status = 'active';
+            if ($c->reversed_at !== null) {
+                $status = 'expired';
+            } elseif ($c->paid_at !== null) {
+                $status = 'completed';
+            }
+
+            return [
+                'id'            => (string) $c->id,
+                'user_id'       => (string) ($c->referred_user_id ?? ''),
+                'name'          => $c->display_name ?? 'Onbekend',
+                'avatar_url'    => $c->avatar_url ?? null,
+                'type'          => $type,
+                'status'        => $status,
+                'earned_amount' => round((int) ($c->reward_cents ?? 0) / 100, 2),
+                'created_at'    => $c->created_at,
+            ];
+        })->values()->all();
+
+        return response()->json(['referrals' => $referrals]);
+    }
+
+    /**
+     * GET me/ambassador/payouts — uitbetalingshistorie voor Flutter.
+     * Leest betaalde conversies gegroepeerd als "payouts" uit gymies_ambassador_conversions.
+     */
+    public function myPayouts(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $userId = (int) $user->id;
+        GymiesSchemaEnsure::ambassadorTables();
+
+        if (!Schema::hasTable('gymies_ambassadors') || !Schema::hasTable('gymies_ambassador_conversions')) {
+            return response()->json(['payouts' => []]);
+        }
+
+        $amb = DB::table('gymies_ambassadors')
+            ->where('user_id', $userId)
+            ->where('is_active', 1)
+            ->first(['id', 'pending_payout_cents']);
+
+        if (!$amb) {
+            return response()->json(['payouts' => []]);
+        }
+
+        // Groepeer betaalde conversies per paid_at datum als "payouts"
+        $paidBatches = DB::table('gymies_ambassador_conversions')
+            ->selectRaw('DATE(paid_at) as paid_date, SUM(reward_cents) as total_cents, COUNT(*) as cnt, MAX(paid_at) as paid_at')
+            ->where('ambassador_id', (int) $amb->id)
+            ->where('suspicious', 0)
+            ->whereNull('reversed_at')
+            ->whereNotNull('paid_at')
+            ->groupByRaw('DATE(paid_at)')
+            ->orderByDesc('paid_date')
+            ->limit(50)
+            ->get();
+
+        $payouts = $paidBatches->map(fn ($b) => [
+            'id'           => 'payout_' . $b->paid_date,
+            'amount'       => round((int) $b->total_cents / 100, 2),
+            'status'       => 'paid',
+            'requested_at' => $b->paid_date,
+            'paid_at'      => $b->paid_at,
+        ])->values()->all();
+
+        // Als er pending payout is, toon als eerste item
+        $pendingCents = (int) ($amb->pending_payout_cents ?? 0);
+        if ($pendingCents > 0) {
+            array_unshift($payouts, [
+                'id'           => 'pending',
+                'amount'       => round($pendingCents / 100, 2),
+                'status'       => 'pending',
+                'requested_at' => now()->toDateString(),
+                'paid_at'      => null,
+            ]);
+        }
+
+        return response()->json(['payouts' => $payouts]);
+    }
+
+    /**
+     * POST me/ambassador/request-payout — uitbetaling aanvragen.
+     * Checkt drempel (€50), IBAN, en IBAN verificatie.
+     */
+    public function myRequestPayout(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('gymies_user');
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $userId = (int) $user->id;
+        GymiesSchemaEnsure::ambassadorTables();
+
+        if (!Schema::hasTable('gymies_ambassadors')) {
+            return response()->json(['message' => 'Uitbetalingen niet beschikbaar.'], 503);
+        }
+
+        $amb = DB::table('gymies_ambassadors')
+            ->where('user_id', $userId)
+            ->where('is_active', 1)
+            ->first();
+
+        if (!$amb) {
+            return response()->json(['message' => 'Je bent geen actieve ambassadeur.'], 404);
+        }
+
+        $pendingCents = (int) ($amb->pending_payout_cents ?? 0);
+
+        if ($pendingCents < self::PAYOUT_THRESHOLD_CENTS) {
+            $threshold = number_format(self::PAYOUT_THRESHOLD_CENTS / 100, 2, ',', '.');
+            return response()->json(['message' => "Minimum uitbetaling is €{$threshold}."], 422);
+        }
+
+        // Check IBAN
+        $iban = $amb->iban ?? '';
+        if (empty($iban)) {
+            return response()->json(['message' => 'Sla eerst je IBAN op via je profiel.'], 422);
+        }
+
+        // Check IBAN verificatie
+        if (Schema::hasColumn('gymies_ambassadors', 'iban_verified_at')) {
+            if (empty($amb->iban_verified_at)) {
+                return response()->json(['message' => 'Je IBAN is nog niet geverifieerd door ons team.'], 422);
+            }
+        }
+
+        // Log de payout request (markeer niet meteen als betaald — admin doet dat)
+        Log::info('Ambassador payout requested', [
+            'ambassador_id' => (int) $amb->id,
+            'user_id'       => $userId,
+            'amount_cents'  => $pendingCents,
+        ]);
+
+        return response()->json([
+            'success'      => true,
+            'message'      => 'Uitbetaling aangevraagd. Ons team verwerkt dit binnen 5 werkdagen.',
+            'amount_cents' => $pendingCents,
+        ]);
+    }
+
+    // =========================================================================
     // ADMIN
     // =========================================================================
 
@@ -955,6 +1237,7 @@ final class GymiesAmbassadorController extends Controller
             ]);
 
             if (!$suspicious) {
+                $reward = (int) $reward; // Ensure integer before use in DB::raw()
                 DB::table('gymies_ambassadors')->where('id', (int) $amb->id)->update([
                     'sporter_conversions'  => DB::raw('sporter_conversions + 1'),
                     'total_earned_cents'   => DB::raw("total_earned_cents + {$reward}"),
@@ -1016,6 +1299,7 @@ final class GymiesAmbassadorController extends Controller
                 'created_at'       => now(),
             ]);
 
+            $reward = (int) $reward; // Ensure integer before use in DB::raw()
             DB::table('gymies_ambassadors')->where('id', (int) $amb->id)->update([
                 'trainer_conversions'  => DB::raw('trainer_conversions + 1'),
                 'total_earned_cents'   => DB::raw("total_earned_cents + {$reward}"),
@@ -1060,6 +1344,7 @@ final class GymiesAmbassadorController extends Controller
 
             $reward = (int) $conv->reward_cents;
             if ($reward > 0) {
+                $reward = (int) $reward; // Ensure integer before use in DB::raw()
                 DB::table('gymies_ambassadors')
                     ->where('id', (int) $conv->ambassador_id)
                     ->update([
@@ -1156,7 +1441,9 @@ final class GymiesAmbassadorController extends Controller
                         if ($lastEval->diffInDays(now()) < 20) {
                             continue;
                         }
-                    } catch (\Throwable) {}
+                    } catch (\Throwable $e) {
+                        Log::warning('Ambassador conversion count failed: ' . $e->getMessage());
+                    }
                 }
 
                 // Tel conversies van afgelopen 30 dagen (exclusief suspicious en reversed)

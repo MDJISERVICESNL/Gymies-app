@@ -75,9 +75,9 @@ class SearchRepository {
     try {
       await _api.post('search-log', {
         'query': query,
-        if (city != null) 'city': city,
-        if (lat != null) 'lat': lat,
-        if (lng != null) 'lng': lng,
+        'city': ?city,
+        'lat': ?lat,
+        'lng': ?lng,
         'result_count': resultCount,
       });
     } catch (_) {

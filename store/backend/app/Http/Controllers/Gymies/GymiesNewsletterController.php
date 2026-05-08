@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -67,8 +68,9 @@ class GymiesNewsletterController
                             ->whereNotNull('opened_at')
                             ->count();
                         $openRate = round($opened / $recipientCount, 2);
-                    } catch (\Throwable) {
+                    } catch (\Throwable $e) {
                         // open_rate blijft null als recipients-tabel problemen geeft
+                        Log::warning('Newsletter open_rate calculation failed: ' . $e->getMessage());
                     }
                 }
 
@@ -114,18 +116,14 @@ class GymiesNewsletterController
             return response()->json(['message' => 'Niet ingelogd.'], 401);
         }
 
+        // Validate required fields
+        $request->validate([
+            'subject' => 'required|string|max:200',
+            'body' => 'required|string|max:10000',
+        ]);
+
         $subject = trim($request->input('subject', ''));
         $body = trim($request->input('body', ''));
-
-        if (empty($subject)) {
-            return response()->json(['message' => 'Onderwerp is verplicht.'], 422);
-        }
-        if (empty($body)) {
-            return response()->json(['message' => 'Inhoud is verplicht.'], 422);
-        }
-        if (mb_strlen($subject) > 200) {
-            return response()->json(['message' => 'Onderwerp mag max. 200 tekens zijn.'], 422);
-        }
 
         $trainerId = (int) $trainer->id;
         $trainerName = $trainer->display_name ?? $trainer->name ?? 'Trainer';
@@ -140,40 +138,43 @@ class GymiesNewsletterController
             ], 422);
         }
 
-        // Opslaan in database
+        // Opslaan in database (wrapped in transaction)
         $table = $this->resolveNewslettersTable();
         $recipientsTable = $this->resolveRecipientsTable();
         $newsletterId = null;
 
         if ($table) {
             try {
-                $newsletterId = DB::table($table)->insertGetId([
-                    'trainer_user_id' => $trainerId,
-                    'subject' => $subject,
-                    'body' => $body,
-                    'recipient_count' => count($recipients),
-                    'sent_at' => now(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                $newsletterId = DB::transaction(function() use ($table, $recipientsTable, $trainerId, $subject, $body, $recipients) {
+                    $nid = DB::table($table)->insertGetId([
+                        'trainer_user_id' => $trainerId,
+                        'subject' => $subject,
+                        'body' => $body,
+                        'recipient_count' => count($recipients),
+                        'sent_at' => now(),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
 
-                // Sla individuele recipients op voor open-tracking
-                if ($recipientsTable && $newsletterId) {
-                    $inserts = [];
-                    foreach ($recipients as $r) {
-                        $inserts[] = [
-                            'newsletter_id' => $newsletterId,
-                            'client_user_id' => $r['user_id'],
-                            'email' => $r['email'],
-                            'opened_at' => null,
-                            'created_at' => now(),
-                        ];
+                    // Sla individuele recipients op voor open-tracking
+                    if ($recipientsTable && $nid) {
+                        $inserts = [];
+                        foreach ($recipients as $r) {
+                            $inserts[] = [
+                                'newsletter_id' => $nid,
+                                'client_user_id' => $r['user_id'],
+                                'email' => $r['email'],
+                                'opened_at' => null,
+                                'created_at' => now(),
+                            ];
+                        }
+                        // Bulk insert in chunks van 100
+                        foreach (array_chunk($inserts, 100) as $chunk) {
+                            DB::table($recipientsTable)->insert($chunk);
+                        }
                     }
-                    // Bulk insert in chunks van 100
-                    foreach (array_chunk($inserts, 100) as $chunk) {
-                        DB::table($recipientsTable)->insert($chunk);
-                    }
-                }
+                    return $nid;
+                });
             } catch (\Throwable $e) {
                 // Log maar ga door met versturen
                 report($e);
@@ -192,8 +193,9 @@ class GymiesNewsletterController
                     }
                 });
                 $sentCount++;
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
                 // Skip mislukte verzending, ga door met volgende
+                Log::warning('Newsletter email send failed for ' . $recipient['email'] . ': ' . $e->getMessage());
                 continue;
             }
         }
@@ -259,7 +261,8 @@ class GymiesNewsletterController
                 'user_id' => (int) $r->user_id,
                 'email' => $r->email,
             ])->all();
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            Log::warning('Failed to fetch active client emails for trainer ' . $trainerId . ': ' . $e->getMessage());
             return [];
         }
     }

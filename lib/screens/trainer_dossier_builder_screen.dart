@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
@@ -47,7 +48,7 @@ class _TrainerDossierBuilderScreenState
         if (id.isEmpty) continue;
         clientsById[id] = _DossierClientRef(
           id: id,
-          name: c.clientName.trim().isEmpty ? 'Klant' : c.clientName.trim(),
+          name: c.clientName.trim().isEmpty ? S.of(context).clientSingle : c.clientName.trim(),
           email: null,
         );
       }
@@ -60,7 +61,7 @@ class _TrainerDossierBuilderScreenState
           clientsById[id] = _DossierClientRef(
             id: id,
             name: mapStr(s, ['name', 'full_name']).trim().isEmpty
-                ? (clientsById[id]?.name ?? 'Klant')
+                ? (clientsById[id]?.name ?? S.of(context).clientSingle)
                 : mapStr(s, ['name', 'full_name']).trim(),
             email: mapStr(s, ['email', 'email_address']).trim().isEmpty
                 ? clientsById[id]?.email
@@ -79,7 +80,7 @@ class _TrainerDossierBuilderScreenState
           clientsById[id] = _DossierClientRef(
             id: id,
             name: mapStr(h, ['client_name', 'name', 'full_name']).trim().isEmpty
-                ? (clientsById[id]?.name ?? 'Klant')
+                ? (clientsById[id]?.name ?? S.of(context).clientSingle)
                 : mapStr(h, ['client_name', 'name', 'full_name']).trim(),
             email: clientsById[id]?.email,
           );
@@ -153,14 +154,14 @@ class _TrainerDossierBuilderScreenState
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon dossier data niet laden.';
+        _error = S.of(context).konDossierDataNietLaden;
         _loading = false;
       });
     }
   }
 
   String _dateLabel(DateTime? dt) {
-    if (dt == null) return 'Onbekende datum';
+    if (dt == null) return S.of(context).onbekendeDatum;
     return '${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year}';
   }
 
@@ -220,7 +221,7 @@ class _TrainerDossierBuilderScreenState
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
-      appBar: const GymiesAppBar(title: 'Dossier opstellen'),
+      appBar: const GymiesAppBar(title: S.of(context).dossierOpstellen),
       body: _error != null
           ? Center(child: Text(_error!))
           : _loading
@@ -235,7 +236,7 @@ class _TrainerDossierBuilderScreenState
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(12),
@@ -245,7 +246,7 @@ class _TrainerDossierBuilderScreenState
                         children: [
                           _stateChip(
                             icon: Icons.people_alt_outlined,
-                            label: 'Klanten: ${_clients.length}',
+                            label: S.of(context).klantenCount(_clients.length.toString()),
                             bg: Colors.indigo.shade50,
                             fg: Colors.indigo.shade800,
                           ),
@@ -257,7 +258,7 @@ class _TrainerDossierBuilderScreenState
                           ),
                           _stateChip(
                             icon: Icons.add_chart_rounded,
-                            label: 'Nieuwe opzet klaar',
+                            label: S.of(context).nieuweOpzetKlaar,
                             bg: Colors.blue.shade50,
                             fg: Colors.blue.shade800,
                           ),
@@ -269,7 +270,7 @@ class _TrainerDossierBuilderScreenState
                   TextField(
                     onChanged: (v) => setState(() => _query = v),
                     decoration: InputDecoration(
-                      hintText: 'Zoek klant op naam of e-mail',
+                      hintText: S.of(context).zoekKlantOpNaamOfEmail,
                       prefixIcon: const Icon(Icons.search_rounded),
                       filled: true,
                       fillColor: Colors.white,
@@ -285,7 +286,7 @@ class _TrainerDossierBuilderScreenState
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    'Kies klant voor dossier',
+                    S.of(context).kiesKlantVoorDossier,
                     style: GoogleFonts.sora(
                       fontSize: 18,
                       color: GymiesColors.darkBlue,
@@ -297,12 +298,12 @@ class _TrainerDossierBuilderScreenState
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                       ),
                       child: ListTile(
-                        title: Text('Geen klanten gevonden'),
+                        title: Text(S.of(context).geenKlantenGevonden),
                         subtitle: Text(
-                          'Start eerst een chat of sessie met een klant.',
+                          S.of(context).startEerstEenChatOfSessieMetEenKlant,
                         ),
                       ),
                     )
@@ -313,14 +314,14 @@ class _TrainerDossierBuilderScreenState
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(14),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                         ),
                         child: ListTile(
                           leading: Container(
                             width: 40,
                             height: 40,
                             decoration: BoxDecoration(
-                              color: GymiesColors.darkBlue.withValues(alpha: 0.1),
+                              color: GymiesColors.darkBlue.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Center(
@@ -333,7 +334,7 @@ class _TrainerDossierBuilderScreenState
                           title: Text(c.name),
                           subtitle: Text(
                             existing == null
-                                ? 'Nog geen dossier'
+                                ? S.of(context).nogGeenDossier
                                 : 'Dossier bestaat sinds ${_dateLabel(existing.createdAt)}',
                           ),
                           trailing: existing == null
@@ -355,7 +356,7 @@ class _TrainerDossierBuilderScreenState
                     }),
                   const SizedBox(height: 18),
                   Text(
-                    'Opgestelde dossiers',
+                    S.of(context).opgesteldeDossiers,
                     style: GoogleFonts.sora(
                       fontSize: 18,
                       color: GymiesColors.darkBlue,
@@ -367,12 +368,12 @@ class _TrainerDossierBuilderScreenState
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                       ),
                       child: ListTile(
-                        title: Text('Nog geen dossiers'),
+                        title: Text(S.of(context).nogGeenDossiers),
                         subtitle: Text(
-                          'Open een klant en maak de eerste sessie-entry/progress aan.',
+                          S.of(context).openEenKlantEnMaakDeEersteSessieentryprogressAan,
                         ),
                       ),
                     )
@@ -382,14 +383,14 @@ class _TrainerDossierBuilderScreenState
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(14),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                         ),
                         child: ListTile(
                           leading: Container(
                             width: 40,
                             height: 40,
                             decoration: BoxDecoration(
-                              color: GymiesColors.primary.withValues(alpha: 0.12),
+                              color: GymiesColors.primary.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: const Icon(Icons.folder_open_rounded, color: GymiesColors.darkBlue, size: 20),

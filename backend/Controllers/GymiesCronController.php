@@ -430,7 +430,7 @@ final class GymiesCronController extends Controller
                 ->whereIn('id', $inactiveTrainers)
                 ->get(['id', 'email', 'display_name']);
 
-        $appName = config('app.name', 'Gymies');
+        $appName = \App\Helpers\GymiesNotificationEmail::mailBrandName();
         $mailed = 0;
         foreach ($users as $u) {
             $email = trim((string) ($u->email ?? ''));
@@ -468,7 +468,10 @@ final class GymiesCronController extends Controller
     {
         $key = config('gymies.cron_key') ?: (getenv('GYMIES_CRON_KEY') ?: '');
         if ($key === '' || strlen($key) < 16) {
-            \Log::error('GYMIES_CRON_KEY ontbreekt of is te kort (min 16 tekens). Alle cron jobs geblokkeerd.');
+            \Log::error('GYMIES_CRON_KEY ontbreekt of is te kort (min 16 tekens). Alle cron jobs geblokkeerd.', [
+                'configured_length' => strlen($key),
+                'minimum_required' => 16,
+            ]);
             return false;
         }
         $provided = $request->input('key') ?: $request->header('X-Cron-Key');
@@ -476,6 +479,7 @@ final class GymiesCronController extends Controller
             \Log::warning('Cron request zonder key', [
                 'ip' => $request->ip(),
                 'uri' => $request->getRequestUri(),
+                'method' => $request->method(),
             ]);
             return false;
         }
@@ -484,6 +488,8 @@ final class GymiesCronController extends Controller
             \Log::warning('Cron request met ongeldige key', [
                 'ip' => $request->ip(),
                 'uri' => $request->getRequestUri(),
+                'method' => $request->method(),
+                'key_length' => strlen((string) $provided),
             ]);
         }
         return $valid;
@@ -1581,10 +1587,14 @@ final class GymiesCronController extends Controller
     /**
      * Cron: herbereken quality_score voor alle trainers.
      * Formule: reviews (40%) + voltooide sessies (25%) + responssnelheid (20%) + profielvolledigheid (15%)
-     * Draai dagelijks: POST cron/recalculate-quality-scores
+     * Draai dagelijks: POST cron/recalculate-quality-scores?key=...
      */
     public function recalculateQualityScores(Request $request): JsonResponse
     {
+        if (!$this->validateCronKey($request)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
         if (!Schema::hasTable('gymies_trainer_profiles') || !Schema::hasColumn('gymies_trainer_profiles', 'quality_score')) {
             return response()->json(['message' => 'quality_score kolom niet beschikbaar.'], 404);
         }
@@ -1702,9 +1712,14 @@ final class GymiesCronController extends Controller
     /**
      * POST /api/gymies/cron/evaluate-ambassador-tiers
      * Maandelijkse tier-evaluatie voor ambassadeurs.
+     * Vereist: ?key=... of X-Cron-Key header
      */
     public function evaluateAmbassadorTiers(Request $request): JsonResponse
     {
+        if (!$this->validateCronKey($request)) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
         $results = \App\Http\Controllers\Gymies\GymiesAmbassadorController::runTierEvaluation();
 
         return response()->json([

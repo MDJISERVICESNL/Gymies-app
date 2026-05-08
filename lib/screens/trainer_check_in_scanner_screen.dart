@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/action_retry_queue_service.dart';
 import '../services/gymies_api.dart';
@@ -42,7 +42,7 @@ class _TrainerCheckInScannerScreenState
   bool _torchOn = false;
   String? _lastValue;
   bool _showSuccess = false;
-  String _successName = '';
+  final String _successName = '';
   String? _statusMessage;
 
   // ── Animations ────────────────────────────────────────────────
@@ -146,7 +146,7 @@ class _TrainerCheckInScannerScreenState
     required String bookingId,
     String? token,
     String? payload,
-    String source = 'trainer_scan',
+    String source = S.of(context).trainerscan,
   }) async {
     if (_processing) return;
     setState(() {
@@ -165,14 +165,14 @@ class _TrainerCheckInScannerScreenState
       );
 
       await ActionRetryQueueService.log(
-        actionType: 'trainer_check_in',
+        actionType: S.of(context).trainercheckin,
         status: 'sent',
         payload: {
           'booking_id': bookingId,
-          if (token != null) 'token': token,
+          'token': ?token,
           'source': source,
         },
-        detail: 'Check-in direct gelukt',
+        detail: S.of(context).checkinDirectGelukt,
       );
 
       if (!mounted) return;
@@ -195,10 +195,10 @@ class _TrainerCheckInScannerScreenState
     } on ApiException catch (e) {
       // Offline → retry queue
       await ActionRetryQueueService.enqueue(
-        actionType: 'trainer_check_in',
+        actionType: S.of(context).trainercheckin,
         payload: {
           'booking_id': bookingId,
-          if (token != null) 'token': token,
+          'token': ?token,
           'source': source,
         },
         reason: e.message,
@@ -216,9 +216,9 @@ class _TrainerCheckInScannerScreenState
       });
 
       _showErrorSheet(
-        title: 'Check-in offline opgeslagen',
-        message: 'Geen verbinding. De check-in is opgeslagen en wordt '
-            'automatisch verstuurd zodra je weer online bent.',
+        title: S.of(context).checkinOfflineOpgeslagen,
+        message: S.of(context).geenVerbindingDeCheckinIsOpgeslagen
+            S.of(context).automatischVerstuurdZodraJeWeerOnline,
         icon: Icons.cloud_off_rounded,
         iconColor: Colors.orange,
       );
@@ -233,8 +233,8 @@ class _TrainerCheckInScannerScreenState
       });
 
       _showErrorSheet(
-        title: 'Check-in mislukt',
-        message: 'Er ging iets mis. Probeer opnieuw te scannen of '
+        title: S.of(context).checkinMislukt,
+        message: S.of(context).erGingIetsMisProbeerOpnieuw2
             'gebruik de handmatige check-in.',
         icon: Icons.error_outline_rounded,
         iconColor: Colors.red,
@@ -260,8 +260,8 @@ class _TrainerCheckInScannerScreenState
       _showErrorSheet(
         title: 'Ongeldige QR-code',
         message:
-            'Deze QR-code bevat geen geldige check-in data. '
-            'Vraag de klant om een nieuwe QR-code te genereren in de app.',
+            S.of(context).dezeQrcodeBevatGeenGeldigeCheckin
+            S.of(context).vraagDeKlantOmEenNieuwe,
         icon: Icons.qr_code_scanner_rounded,
         iconColor: Colors.orange,
       );
@@ -294,7 +294,7 @@ class _TrainerCheckInScannerScreenState
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.15),
+                      color: GymiesColors.primary.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
@@ -306,7 +306,7 @@ class _TrainerCheckInScannerScreenState
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Handmatige check-in',
+                      S.of(context).handmatigeCheckin,
                       style: GoogleFonts.sora(
                         fontSize: 18,
                         color: GymiesColors.darkBlue,
@@ -321,7 +321,7 @@ class _TrainerCheckInScannerScreenState
               ),
               const SizedBox(height: 12),
               Text(
-                'Voer de 6-cijferige backup code in die de klant op het scherm heeft staan.',
+                S.of(context).voerDe6cijferigeBackupCodeInDieDeKlantOpHetSchermHeeftStaan,
                 style: GoogleFonts.sora(
                   color: Colors.grey.shade600,
                   fontSize: 13,
@@ -377,7 +377,7 @@ class _TrainerCheckInScannerScreenState
                   Expanded(
                     child: TextButton(
                       onPressed: () => Navigator.of(ctx).pop(),
-                      child: const Text('Annuleren'),
+                      child: const Text(S.of(context).annuleren),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -395,7 +395,7 @@ class _TrainerCheckInScannerScreenState
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: Text(
-                        'Inchecken',
+                        S.of(context).inchecken,
                         style: GoogleFonts.sora(fontSize: 14),
                       ),
                     ),
@@ -447,8 +447,8 @@ class _TrainerCheckInScannerScreenState
         title: 'Code ongeldig',
         message: e.message.isNotEmpty
             ? e.message
-            : 'De backup code is ongeldig of verlopen. '
-                'Vraag de klant een nieuwe code op te vragen.',
+            : S.of(context).deBackupCodeIsOngeldigOf
+                S.of(context).vraagDeKlantEenNieuweCode,
         icon: Icons.error_outline_rounded,
         iconColor: Colors.red,
       );
@@ -459,8 +459,8 @@ class _TrainerCheckInScannerScreenState
         _statusMessage = null;
       });
       _showErrorSheet(
-        title: 'Fout',
-        message: 'Er ging iets mis. Probeer het opnieuw.',
+        title: S.of(context).fout,
+        message: S.of(context).erGingIetsMisProbeerHet,
         icon: Icons.error_outline_rounded,
         iconColor: Colors.red,
       );
@@ -471,7 +471,7 @@ class _TrainerCheckInScannerScreenState
   Future<void> _showRecentScans() async {
     final allHistory = await ActionRetryQueueService.getHistory();
     final logs = allHistory
-        .where((l) => l['action_type']?.toString() == 'trainer_check_in')
+        .where((l) => l['action_type']?.toString() == S.of(context).trainercheckin)
         .take(10)
         .toList();
     if (!mounted) return;
@@ -504,7 +504,7 @@ class _TrainerCheckInScannerScreenState
                   width: 34,
                   height: 34,
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.12),
+                    color: GymiesColors.primary.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
@@ -515,7 +515,7 @@ class _TrainerCheckInScannerScreenState
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  'Recente scans',
+                  S.of(context).recenteScans,
                   style: GoogleFonts.sora(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -539,7 +539,7 @@ class _TrainerCheckInScannerScreenState
                         size: 40, color: Colors.grey.shade300),
                     const SizedBox(height: 8),
                     Text(
-                      'Nog geen scans',
+                      S.of(context).nogGeenScans,
                       style: GoogleFonts.sora(
                         color: Colors.grey.shade500,
                         fontSize: 13,
@@ -575,8 +575,8 @@ class _TrainerCheckInScannerScreenState
                         height: 28,
                         decoration: BoxDecoration(
                           color: isOk
-                              ? Colors.green.withValues(alpha: 0.1)
-                              : Colors.orange.withValues(alpha: 0.1),
+                              ? Colors.green.withOpacity(0.1)
+                              : Colors.orange.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
@@ -651,7 +651,7 @@ class _TrainerCheckInScannerScreenState
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.1),
+                  color: iconColor.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(icon, color: iconColor, size: 40),
@@ -684,7 +684,7 @@ class _TrainerCheckInScannerScreenState
                     foregroundColor: GymiesColors.darkBlue,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: const Text('Begrepen'),
+                  child: const Text(S.of(context).begrepen),
                 ),
               ),
             ],
@@ -735,7 +735,7 @@ class _TrainerCheckInScannerScreenState
                         width: 88,
                         height: 88,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(24),
                         ),
                         child: const Icon(
@@ -746,7 +746,7 @@ class _TrainerCheckInScannerScreenState
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        'Ingecheckt!',
+                        S.of(context).ingecheckt,
                         style: GoogleFonts.sora(
                           fontSize: 26,
                           fontWeight: FontWeight.w600,
@@ -758,7 +758,7 @@ class _TrainerCheckInScannerScreenState
                         Text(
                           _successName,
                           style: GoogleFonts.sora(
-                            color: Colors.white.withValues(alpha: 0.7),
+                            color: Colors.white.withOpacity(0.7),
                             fontSize: 15,
                           ),
                         ),
@@ -784,7 +784,7 @@ class _TrainerCheckInScannerScreenState
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.7),
+                      Colors.black.withOpacity(0.7),
                       Colors.transparent,
                     ],
                   ),
@@ -803,7 +803,7 @@ class _TrainerCheckInScannerScreenState
                             width: 38,
                             height: 38,
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.12),
+                              color: Colors.white.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: const Icon(
@@ -819,7 +819,7 @@ class _TrainerCheckInScannerScreenState
                           child: Column(
                             children: [
                               Text(
-                                'Check-in scanner',
+                                S.of(context).checkinScanner,
                                 style: GoogleFonts.sora(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
@@ -828,10 +828,10 @@ class _TrainerCheckInScannerScreenState
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Scan de QR-code van je klant',
+                                S.of(context).scanDeQrcodeVanJeKlant,
                                 style: GoogleFonts.sora(
                                   fontSize: 11,
-                                  color: Colors.white.withValues(alpha: 0.5),
+                                  color: Colors.white.withOpacity(0.5),
                                 ),
                               ),
                             ],
@@ -850,7 +850,7 @@ class _TrainerCheckInScannerScreenState
                             width: 38,
                             height: 38,
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.12),
+                              color: Colors.white.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Icon(
@@ -859,7 +859,7 @@ class _TrainerCheckInScannerScreenState
                                   : Icons.flash_off_rounded,
                               color: _torchOn
                                   ? GymiesColors.primary
-                                  : Colors.white.withValues(alpha: 0.7),
+                                  : Colors.white.withOpacity(0.7),
                               size: 20,
                             ),
                           ),
@@ -884,10 +884,10 @@ class _TrainerCheckInScannerScreenState
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
+                      color: Colors.white.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: Colors.white.withOpacity(0.1),
                       ),
                     ),
                     child: Column(
@@ -900,7 +900,7 @@ class _TrainerCheckInScannerScreenState
                               width: 34,
                               height: 34,
                               decoration: BoxDecoration(
-                                color: GymiesColors.primary.withValues(alpha: 0.15),
+                                color: GymiesColors.primary.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Icon(
@@ -917,7 +917,7 @@ class _TrainerCheckInScannerScreenState
                                   Text(
                                     _processing
                                         ? 'Verwerken...'
-                                        : 'Klaar om te scannen',
+                                        : S.of(context).klaarOmTeScannen,
                                     style: GoogleFonts.sora(
                                       color: Colors.white,
                                       fontSize: 13,
@@ -929,7 +929,7 @@ class _TrainerCheckInScannerScreenState
                                     _statusMessage ??
                                         'Richt camera op QR-code',
                                     style: GoogleFonts.sora(
-                                      color: Colors.white.withValues(alpha: 0.5),
+                                      color: Colors.white.withOpacity(0.5),
                                       fontSize: 11,
                                     ),
                                   ),
@@ -957,21 +957,21 @@ class _TrainerCheckInScannerScreenState
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 12),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.08),
+                                    color: Colors.white.withOpacity(0.08),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Column(
                                     children: [
                                       Icon(
                                         Icons.dialpad_rounded,
-                                        color: Colors.white.withValues(alpha: 0.7),
+                                        color: Colors.white.withOpacity(0.7),
                                         size: 18,
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        'Backup code',
+                                        S.of(context).backupCode,
                                         style: GoogleFonts.sora(
-                                          color: Colors.white.withValues(alpha: 0.7),
+                                          color: Colors.white.withOpacity(0.7),
                                           fontSize: 11,
                                         ),
                                       ),
@@ -987,21 +987,21 @@ class _TrainerCheckInScannerScreenState
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 12),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.08),
+                                    color: Colors.white.withOpacity(0.08),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Column(
                                     children: [
                                       Icon(
                                         Icons.history_rounded,
-                                        color: Colors.white.withValues(alpha: 0.7),
+                                        color: Colors.white.withOpacity(0.7),
                                         size: 18,
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        'Recente scans',
+                                        S.of(context).recenteScans,
                                         style: GoogleFonts.sora(
-                                          color: Colors.white.withValues(alpha: 0.7),
+                                          color: Colors.white.withOpacity(0.7),
                                           fontSize: 11,
                                         ),
                                       ),
@@ -1075,16 +1075,16 @@ class _TrainerCheckInScannerScreenState
                       gradient: LinearGradient(
                         colors: [
                           Colors.transparent,
-                          GymiesColors.primary.withValues(alpha: 0.8),
+                          GymiesColors.primary.withOpacity(0.8),
                           GymiesColors.primary,
-                          GymiesColors.primary.withValues(alpha: 0.8),
+                          GymiesColors.primary.withOpacity(0.8),
                           Colors.transparent,
                         ],
                       ),
                       boxShadow: [
                         BoxShadow(
                           color:
-                              GymiesColors.primary.withValues(alpha: 0.4),
+                              GymiesColors.primary.withOpacity(0.4),
                           blurRadius: 12,
                           spreadRadius: 2,
                         ),
@@ -1104,7 +1104,7 @@ class _TrainerCheckInScannerScreenState
                   width: scanSize,
                   height: scanSize,
                   decoration: BoxDecoration(
-                    color: GymiesColors.darkBlue.withValues(alpha: 0.5),
+                    color: GymiesColors.darkBlue.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Center(
@@ -1155,7 +1155,7 @@ class _ViewfinderPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.black.withValues(alpha: 0.55);
+    final paint = Paint()..color = Colors.black.withOpacity(0.55);
     final scanRect = RRect.fromRectAndRadius(
       Rect.fromCenter(
         center: Offset(centerX, centerY),
@@ -1189,7 +1189,7 @@ class _CornerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = color.withValues(alpha: opacity)
+      ..color = color.withOpacity(opacity)
       ..strokeWidth = 4
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;

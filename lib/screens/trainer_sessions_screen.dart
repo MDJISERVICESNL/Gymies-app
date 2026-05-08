@@ -12,6 +12,8 @@ import '../services/gymies_api.dart';
 import '../services/api_client.dart';
 import '../services/action_retry_queue_service.dart';
 import '../services/subscription_entitlements_service.dart';
+import '../utils/currency_format.dart';
+import '../l10n/generated/app_localizations.dart';
 import 'trainer_agenda_screen.dart';
 import 'trainer_documents_screen.dart';
 import 'widgets/gymies_app_bar.dart';
@@ -64,12 +66,12 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
 
   Future<void> _load() async {
     if (!mounted) return;
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
       final list = await api.getTrainerBookings();
       Map<String, Map<String, dynamic>> invoicesByBooking = {};
       try {
@@ -104,7 +106,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       if (kDebugMode) debugPrint('[TrainerSessions] Sessies laden fout: $e');
       if (mounted) {
         setState(() {
-          _error = 'Kon sessies niet laden.';
+          _error = S.of(context).errorLoadFailed;
           _loading = false;
         });
       }
@@ -114,12 +116,13 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
   Future<void> _confirm(Booking b) async {
     if (_actionBusyBookingIds.contains(b.id)) return;
     Haptics.light();
+    final api = context.read<GymiesApi>();
     setState(() => _actionBusyBookingIds.add(b.id));
     try {
-      await context.read<GymiesApi>().confirmTrainerBooking(b.id);
+      await api.confirmTrainerBooking(b.id);
       if (mounted) {
         await _load();
-        _showSuccess('Sessie bevestigd');
+        _showSuccess(S.of(context).sessionConfirmed);
       }
     } on ApiException catch (e) {
       if (mounted) {
@@ -135,20 +138,21 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
   Future<void> _reject(Booking b) async {
     if (_actionBusyBookingIds.contains(b.id)) return;
     Haptics.light();
+    final api = context.read<GymiesApi>();
     final confirmed = await GymiesDialog.destructive(
       context,
-      title: 'Sessie afwijzen',
-      message: 'Weet je zeker dat je deze aanvraag wilt afwijzen?',
+      title: S.of(context).rejectSession,
+      message: S.of(context).rejectSessionConfirm,
       icon: Icons.block_rounded,
-      confirmLabel: 'Afwijzen',
+      confirmLabel: S.of(context).reject,
     );
     if (confirmed != true || !mounted) return;
     setState(() => _actionBusyBookingIds.add(b.id));
     try {
-      await context.read<GymiesApi>().rejectTrainerBooking(b.id);
+      await api.rejectTrainerBooking(b.id);
       if (mounted) {
         await _load();
-        _showSuccess('Sessie afgewezen');
+        _showSuccess(S.of(context).sessionRejected);
       }
     } on ApiException catch (e) {
       if (mounted) {
@@ -172,28 +176,28 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
         builder: (_, setModalState) => GymiesDialog(
           headerIcon: Icons.event_busy_rounded,
           headerIconColor: UiConstants.errorRed,
-          headerIconBgColor: UiConstants.errorRed.withValues(alpha: 0.1),
-          title: 'Sessie annuleren',
-          subtitle: 'Weet je zeker dat je deze sessie wilt annuleren?',
+          headerIconBgColor: UiConstants.errorRed.withOpacity(0.1),
+          title: S.of(context).cancelSession,
+          subtitle: S.of(context).cancelSessionConfirm,
           content: CheckboxListTile(
             value: notifyStandby,
             contentPadding: EdgeInsets.zero,
-            title: const Text('Stuur direct standby push'),
-            subtitle: const Text(
-              'Geinteresseerde klanten krijgen meteen een boekkans.',
+            title: Text(S.of(context).sendStandbyPush),
+            subtitle: Text(
+              S.of(context).standbyPushSubtitle,
             ),
             onChanged: (v) =>
                 setModalState(() => notifyStandby = v ?? true),
           ),
           actions: [
             GymiesDialogAction(
-              label: 'Ja, annuleren',
+              label: S.of(context).yesCancelSession,
               isPrimary: true,
               isDestructive: true,
               returnValue: true,
             ),
             GymiesDialogAction(
-              label: 'Nee',
+              label: S.of(context).no,
               returnValue: false,
             ),
           ],
@@ -201,6 +205,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       ),
     );
     if (confirm != true) return;
+    if (!mounted) return;
     setState(() => _actionBusyBookingIds.add(b.id));
     try {
       await api.cancelTrainerBooking(b.id);
@@ -216,8 +221,8 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
         await _load();
         _showSuccess(
           notifyStandby
-              ? 'Sessie geannuleerd en standby-push verstuurd'
-              : 'Sessie geannuleerd',
+              ? S.of(context).sessionCancelledStandbyPushSent
+              : S.of(context).sessionCancelled,
         );
       }
     } on ApiException catch (e) {
@@ -233,12 +238,13 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
   Future<void> _complete(Booking b) async {
     if (_actionBusyBookingIds.contains(b.id)) return;
     Haptics.light();
+    final api = context.read<GymiesApi>();
     setState(() => _actionBusyBookingIds.add(b.id));
     try {
-      await context.read<GymiesApi>().completeTrainerBooking(b.id);
+      await api.completeTrainerBooking(b.id);
       if (mounted) {
         await _load();
-        _showSuccess('Sessie voltooid');
+        _showSuccess(S.of(context).sessionCompleted);
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -271,7 +277,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
+                  color: Colors.green.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(
@@ -282,7 +288,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
               ),
               const SizedBox(height: 14),
               Text(
-                'Safe session activeren?',
+                S.of(context).safeSessionActive,
                 style: GoogleFonts.sora(
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
@@ -291,8 +297,8 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
               ),
               const SizedBox(height: 6),
               Text(
-                'Het systeem stuurt elke 2 minuten een heartbeat. '
-                'Als er geen reactie komt, wordt er een noodmelding verstuurd.',
+                S.of(context).hetSysteemStuurtElke2Minuten
+                S.of(context).ifNoResponseEmergencyNotificationSent,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.sora(
                   fontSize: 12,
@@ -312,7 +318,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                 child: Row(
                   children: [
                     Text(
-                      'Sessie',
+                      S.of(context).sessie,
                       style: GoogleFonts.sora(
                         fontSize: 11,
                         color: Colors.grey.shade500,
@@ -321,7 +327,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                     const Spacer(),
                     Flexible(
                       child: Text(
-                        '${b.clientName ?? 'Klant'} · '
+                        '${b.clientName ?? S.of(context).clientSingle} · '
                         '${b.scheduledAt.hour.toString().padLeft(2, '0')}:'
                         '${b.scheduledAt.minute.toString().padLeft(2, '0')}–'
                         '${b.scheduledAt.add(Duration(minutes: b.durationMinutes)).hour.toString().padLeft(2, '0')}:'
@@ -348,7 +354,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                   controller: noteController,
                   style: GoogleFonts.sora(fontSize: 12, color: GymiesColors.darkBlue),
                   decoration: InputDecoration(
-                    hintText: 'Optionele notitie...',
+                    hintText: S.of(context).optioneleNotitie,
                     hintStyle: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade400),
                     contentPadding: const EdgeInsets.all(12),
                     border: InputBorder.none,
@@ -370,7 +376,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                         side: BorderSide(color: Colors.grey.shade200),
                       ),
                       child: Text(
-                        'Annuleren',
+                        S.of(context).cancel,
                         style: GoogleFonts.sora(
                           fontSize: 13,
                           color: Colors.grey.shade600,
@@ -391,7 +397,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                         ),
                       ),
                       child: Text(
-                        'Activeren',
+                        S.of(context).confirm,
                         style: GoogleFonts.sora(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -414,7 +420,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       await context.read<GymiesApi>().startSafeSession(bookingId: b.id);
       if (mounted) {
         await _load();
-        _showSuccess('Safe session gestart');
+        _showSuccess(S.of(context).safeSessionStarted);
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -456,7 +462,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
+                  color: Colors.green.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(
@@ -467,7 +473,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
               ),
               const SizedBox(height: 14),
               Text(
-                'Sessie beëindigen?',
+                S.of(context).sessieBeindigen,
                 style: GoogleFonts.sora(
                   fontSize: 17,
                   fontWeight: FontWeight.w600,
@@ -477,9 +483,9 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
               const SizedBox(height: 6),
               Text(
                 isSafe
-                    ? 'De safe session monitoring wordt gestopt en '
-                      'de klant wordt automatisch uitgecheckt.'
-                    : 'De klant wordt uitgecheckt en de sessie wordt voltooid.',
+                    ? S.of(context).deSafeSessionMonitoringWordtGestopt
+                      S.of(context).clientAutoCheckedOut
+                    : S.of(context).clientCheckedOutSessionCompleted,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.sora(
                   fontSize: 12,
@@ -499,16 +505,16 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                   ),
                   child: Column(
                     children: [
-                      _SummaryRow(label: 'Duur', value: '$durationMin min'),
+                      _SummaryRow(label: S.of(context).duur, value: '$durationMin min'),
                       const SizedBox(height: 8),
                       _SummaryRow(
-                        label: 'Heartbeats',
+                        label: S.of(context).heartbeatsLabel,
                         value: '$heartbeats succesvol',
                       ),
                       const SizedBox(height: 8),
                       _SummaryRow(
-                        label: 'Escalaties',
-                        value: 'Geen',
+                        label: S.of(context).escalationsLabel,
+                        value: S.of(context).no,
                         valueColor: Colors.green.shade700,
                       ),
                     ],
@@ -530,7 +536,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                         side: BorderSide(color: Colors.grey.shade200),
                       ),
                       child: Text(
-                        'Terug',
+                        S.of(context).back,
                         style: GoogleFonts.sora(
                           fontSize: 13,
                           color: Colors.grey.shade600,
@@ -551,7 +557,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                         ),
                       ),
                       child: Text(
-                        'Beëindigen',
+                        S.of(context).beindigen,
                         style: GoogleFonts.sora(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -573,7 +579,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       await context.read<GymiesApi>().checkoutBooking(b.id);
       if (mounted) {
         await _load();
-        _showSuccess('Sessie beëindigd');
+        _showSuccess(S.of(context).sessionEnded);
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -589,11 +595,11 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
     Haptics.heavy();
     final ok = await GymiesDialog.destructive(
       context,
-      title: 'SOS-alert',
-      message: 'Weet je zeker dat je een noodalert wilt versturen? '
-          'Admin wordt direct op de hoogte gesteld.',
+      title: S.of(context).sosAlert,
+      message: S.of(context).weetJeZekerDatJeEen2
+          S.of(context).adminNotifiedImmediately,
       icon: Icons.sos_rounded,
-      confirmLabel: 'Verstuur SOS',
+      confirmLabel: S.of(context).sendSos,
     );
     if (ok != true || !mounted) return;
 
@@ -616,7 +622,10 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
         lat = pos.latitude;
         lng = pos.longitude;
       }
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Current location optional, use default location
+      if (kDebugMode) debugPrint('[TrainerSessions] Get location failed: $e');
+    }
 
     if (!mounted) return;
 
@@ -627,8 +636,8 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('SOS-alert verstuurd. Hulp is onderweg.'),
+          SnackBar(
+            content: Text(S.of(context).iAmSafe),
             backgroundColor: GymiesColors.darkBlue,
           ),
         );
@@ -649,18 +658,18 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
     try {
       await api.markBookingCheckedIn(bookingId: b.id);
       await ActionRetryQueueService.log(
-        actionType: 'trainer_check_in',
+        actionType: S.of(context).trainercheckin,
         status: 'sent',
         payload: {'booking_id': b.id},
-        detail: 'Direct gelukt',
+        detail: S.of(context).directSuccess,
       );
       if (mounted) {
         await _load();
-        _showSuccess('Check-in geregistreerd');
+        _showSuccess(S.of(context).checkInRegistered);
       }
     } on ApiException catch (e) {
       await ActionRetryQueueService.enqueue(
-        actionType: 'trainer_check_in',
+        actionType: S.of(context).trainercheckin,
         payload: {'booking_id': b.id},
         reason: e.message,
       );
@@ -668,7 +677,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Check-in in wachtrij geplaatst. Wordt opnieuw verstuurd.',
+            S.of(context).checkinInWachtrijGeplaatstWordtOpnieuwVerstuurd,
           ),
           backgroundColor: Colors.orange,
         ),
@@ -690,8 +699,8 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       builder: (ctx) => GymiesDialog(
         headerIcon: Icons.person_off_rounded,
         headerIconColor: UiConstants.errorRed,
-        headerIconBgColor: UiConstants.errorRed.withValues(alpha: 0.1),
-        title: 'No-show registreren',
+        headerIconBgColor: UiConstants.errorRed.withOpacity(0.1),
+        title: S.of(context).noshowRegistreren,
         content: Form(
           key: formKey,
           child: SingleChildScrollView(
@@ -701,11 +710,11 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                 TextFormField(
                   controller: reasonController,
                   decoration: const InputDecoration(
-                    labelText: 'Reden',
-                    hintText: 'Bijv. klant niet verschenen',
+                    labelText: S.of(context).reden,
+                    hintText: S.of(context).bijvKlantNietVerschenen,
                   ),
                   validator: (v) => (v == null || v.trim().length < 3)
-                      ? 'Vul een reden in'
+                      ? S.of(context).fillInReason
                       : null,
                 ),
                 const SizedBox(height: 8),
@@ -713,15 +722,15 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                   controller: noteController,
                   maxLines: 3,
                   decoration: const InputDecoration(
-                    labelText: 'Notitie (optioneel)',
+                    labelText: S.of(context).notitieoptioneel,
                   ),
                 ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: evidenceController,
                   decoration: const InputDecoration(
-                    labelText: 'Bewijs URL (optioneel)',
-                    hintText: 'https://...',
+                    labelText: S.of(context).bewijsUrloptioneel,
+                    hintText: S.of(context).https,
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -738,7 +747,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: Text('No-show registreren',
+                    child: Text(S.of(context).noshowRegistreren,
                         style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14)),
                   ),
                 ),
@@ -747,7 +756,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                   width: double.maxFinite,
                   child: TextButton(
                     onPressed: () => Navigator.of(ctx).pop(false),
-                    child: Text('Annuleren',
+                    child: Text(S.of(context).cancel,
                         style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14)),
                   ),
                 ),
@@ -771,18 +780,18 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
         evidenceUrl: evidenceUrl,
       );
       await ActionRetryQueueService.log(
-        actionType: 'trainer_no_show',
+        actionType: S.of(context).trainernoshow,
         status: 'sent',
         payload: {'booking_id': b.id, 'reason': reason},
-        detail: 'Direct gelukt',
+        detail: S.of(context).directSuccess,
       );
       if (mounted) {
         await _load();
-        _showSuccess('No-show geregistreerd');
+        _showSuccess(S.of(context).noShowRegistered);
       }
     } on ApiException catch (e) {
       await ActionRetryQueueService.enqueue(
-        actionType: 'trainer_no_show',
+        actionType: S.of(context).trainernoshow,
         payload: {
           'booking_id': b.id,
           'reason': reason,
@@ -795,7 +804,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'No-show in wachtrij geplaatst. Wordt opnieuw verstuurd.',
+            S.of(context).noshowInWachtrijGeplaatstWordtOpnieuwVerstuurd,
           ),
           backgroundColor: Colors.orange,
         ),
@@ -836,7 +845,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       if (mounted) {
         await _load();
         _showSuccess(
-          'Verplaatsverzoek verstuurd naar de klant. De klant kan reageren in hun berichten.',
+          S.of(context).rescheduleRequestSentToClient,
         );
       }
     } on ApiException catch (e) {
@@ -905,7 +914,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'PDF ontbreekt op server. Eerst PDF laten genereren, daarna versturen.',
+              S.of(context).pdfOntbreektOpServerEerstPdfLatenGenererenDaarnaVersturen,
             ),
             backgroundColor: Colors.orange,
           ),
@@ -918,7 +927,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
         serviceType:
             (existingInvoice?['service_type'] ??
                     existingInvoice?['serviceType'] ??
-                    'Personal training sessie')
+                    S.of(context).personalTrainingSession)
                 .toString(),
         serviceDate: _extractInvoiceDate(existingInvoice, booking.scheduledAt),
         dueDate: _extractInvoiceDate(
@@ -938,7 +947,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
           invoiceId: existingInvoiceId,
         );
         await _load();
-        _showSuccess('Factuur verstuurd naar klant');
+        _showSuccess(S.of(context).invoiceSentToClient);
       } on ApiException catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -953,7 +962,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
     final defaultEuro = (defaultCents / 100).toStringAsFixed(2);
     final amountCtrl = TextEditingController(text: defaultEuro);
     final serviceTypeCtrl = TextEditingController(
-      text: 'Personal training sessie',
+      text: S.of(context).personalTrainingSession,
     );
     final now = DateTime.now();
     DateTime serviceDate = DateTime(
@@ -969,8 +978,8 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
         builder: (context, setModalState) => GymiesDialog(
           headerIcon: Icons.receipt_long_rounded,
           headerIconColor: GymiesColors.primary,
-          headerIconBgColor: GymiesColors.primary.withValues(alpha: 0.1),
-          title: 'Factuur opstellen',
+          headerIconBgColor: GymiesColors.primary.withOpacity(0.1),
+          title: S.of(context).factuurOpstellen,
           content: Form(
             key: formKey,
             child: SingleChildScrollView(
@@ -983,13 +992,13 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                       decimal: true,
                     ),
                     decoration: const InputDecoration(
-                      labelText: 'Prijs incl. BTW (EUR)',
+                      labelText: S.of(context).prijsInclBtweur,
                     ),
                     validator: (v) {
                       final raw = (v ?? '').replaceAll(',', '.').trim();
                       final parsed = double.tryParse(raw);
                       if (parsed == null || parsed <= 0) {
-                        return 'Vul een geldig bedrag in';
+                        return S.of(context).vulEenGeldigBedragIn;
                       }
                       return null;
                     },
@@ -997,15 +1006,15 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: serviceTypeCtrl,
-                    decoration: const InputDecoration(labelText: 'Dienst'),
+                    decoration: const InputDecoration(labelText: S.of(context).dienst),
                     validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Vul een dienstnaam in'
+                        ? S.of(context).vulEenDienstnaamIn
                         : null,
                   ),
                   const SizedBox(height: 8),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Service datum'),
+                    title: const Text(S.of(context).serviceDatum),
                     subtitle: Text(
                       '${serviceDate.day.toString().padLeft(2, '0')}-${serviceDate.month.toString().padLeft(2, '0')}-${serviceDate.year}',
                     ),
@@ -1022,7 +1031,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                   ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Vervaldatum'),
+                    title: const Text(S.of(context).vervaldatum),
                     subtitle: Text(
                       '${dueDate.day.toString().padLeft(2, '0')}-${dueDate.month.toString().padLeft(2, '0')}-${dueDate.year}',
                     ),
@@ -1053,7 +1062,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
-                      child: Text('Opstellen & versturen',
+                      child: Text(S.of(context).opstellenVersturen,
                           style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14)),
                     ),
                   ),
@@ -1062,7 +1071,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                     width: double.maxFinite,
                     child: TextButton(
                       onPressed: () => Navigator.of(ctx).pop(false),
-                      child: Text('Annuleren',
+                      child: Text(S.of(context).annuleren,
                           style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14)),
                     ),
                   ),
@@ -1080,7 +1089,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
     if (amountCents <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Factuurbedrag moet groter zijn dan 0'),
+          content: Text(S.of(context).factuurbedragMoetGroterZijnDan0),
           backgroundColor: Colors.red,
         ),
       );
@@ -1141,7 +1150,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Factuur is aangemaakt maar PDF-link ontbreekt. Versturen is geblokkeerd tot PDF beschikbaar is.',
+              S.of(context).factuurIsAangemaaktMaarPdflinkOntbreektVersturenIsGeblokkeerdTotPdfBeschikbaarIs,
             ),
             backgroundColor: Colors.orange,
           ),
@@ -1162,7 +1171,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       if (confirmSend != true) {
         await _load();
         _showSuccess(
-          'Factuur is opgesteld. Je kunt later reviewen en versturen.',
+          S.of(context).factuurIsOpgesteldJeKuntLater,
         );
         return;
       }
@@ -1171,7 +1180,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
         await api.sendTrainerInvoice(invoiceId: invoiceId);
       }
       await _load();
-      _showSuccess('Factuur opgesteld en verstuurd naar klant');
+      _showSuccess(S.of(context).factuurOpgesteldEnVerstuurdNaarKlant);
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1192,30 +1201,30 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
     String? existingInvoiceId,
     required bool resend,
   }) {
-    final amountEur = (amountCents / 100).toStringAsFixed(2);
+    final amountEur = formatEuroAlways(amountCents);
     final name = (booking.clientName ?? booking.trainerName).isNotEmpty
         ? (booking.clientName ?? booking.trainerName)
-        : 'Klant';
+        : S.of(context).clientSingle;
     return showDialog<bool>(
       context: context,
       builder: (ctx) => GymiesDialog(
         headerIcon: Icons.receipt_long_rounded,
         headerIconColor: GymiesColors.primary,
-        headerIconBgColor: GymiesColors.primary.withValues(alpha: 0.1),
-        title: resend ? 'Factuur review (opnieuw versturen)' : 'Factuur review',
+        headerIconBgColor: GymiesColors.primary.withOpacity(0.1),
+        title: resend ? S.of(context).factuurReviewOpnieuwVersturen : S.of(context).factuurReview,
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _reviewRow('Klant', name),
-              _reviewRow('Boeking', booking.id),
+              _reviewRow(S.of(context).clientSingle, name),
+              _reviewRow(S.of(context).booking, booking.id),
               if ((existingInvoiceId ?? '').isNotEmpty)
-                _reviewRow('Factuur-ID', existingInvoiceId!),
-              _reviewRow('Dienst', serviceType),
-              _reviewRow('Service datum', _formatDate(serviceDate)),
-              _reviewRow('Vervaldatum', _formatDate(dueDate)),
-              _reviewRow('Bedrag incl. BTW', 'EUR $amountEur'),
+                _reviewRow(S.of(context).factuurid, existingInvoiceId!),
+              _reviewRow(S.of(context).dienst, serviceType),
+              _reviewRow(S.of(context).serviceDatum, _formatDate(serviceDate)),
+              _reviewRow(S.of(context).vervaldatum, _formatDate(dueDate)),
+              _reviewRow('Bedrag incl. BTW', amountEur),
               if ((pdfUrl ?? '').trim().isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Align(
@@ -1223,20 +1232,20 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                   child: OutlinedButton.icon(
                     onPressed: () => _openPdfLink(pdfUrl!),
                     icon: const Icon(Icons.picture_as_pdf_rounded),
-                    label: const Text('Bekijk de PDF'),
+                    label: const Text(S.of(context).bekijkDePdf),
                   ),
                 ),
               ],
               const SizedBox(height: 8),
               Text(
                 resend
-                    ? 'Deze factuur wordt opnieuw naar de klant gestuurd voor deze boeking.'
-                    : 'Controleer de factuurgegevens voordat je verstuurt.',
+                    ? S.of(context).dezeFactuurWordtOpnieuwNaarDe
+                    : S.of(context).controleerDeFactuurgegevensVoordatJeVerstuurt,
                 style: GoogleFonts.sora(color: Colors.grey.shade700, fontSize: 12),
               ),
               const SizedBox(height: 6),
               Text(
-                'Na versturen moet de klant de PDF direct downloaden.',
+                S.of(context).naVersturenMoetDeKlantDePdfDirectDownloaden,
                 style: GoogleFonts.sora(
                   color: Colors.orange.shade800,
                   fontSize: 12,
@@ -1254,7 +1263,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: Text(resend ? 'Opnieuw versturen' : 'Verstuur naar klant',
+                  child: Text(resend ? S.of(context).opnieuwVersturen : S.of(context).verstuurNaarKlant,
                       style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14)),
                 ),
               ),
@@ -1263,7 +1272,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                 width: double.maxFinite,
                 child: TextButton(
                   onPressed: () => Navigator.of(ctx).pop(false),
-                  child: Text(resend ? 'Annuleren' : 'Terug bewerken',
+                  child: Text(resend ? S.of(context).annuleren : 'Terug bewerken',
                       style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14)),
                 ),
               ),
@@ -1363,7 +1372,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('PDF link is ongeldig.'),
+          content: Text(S.of(context).pdfLinkIsOngeldig),
           backgroundColor: Colors.red,
         ),
       );
@@ -1373,7 +1382,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
     if (opened || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Kon PDF niet openen.'),
+        content: Text(S.of(context).konPdfNietOpenen),
         backgroundColor: Colors.red,
       ),
     );
@@ -1398,7 +1407,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
 
     final goToDocs = await GymiesDialog.confirm(
       context,
-      title: 'Factuurgegevens ontbreken',
+      title: S.of(context).factuurgegevensOntbreken,
       message: 'Vul eerst je factuurdocumenten in:\n- ${missing.join('\n- ')}',
       icon: Icons.description_outlined,
       confirmLabel: 'Naar documenten',
@@ -1417,7 +1426,7 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Documenten nog niet compleet opgeslagen. Vul verplichte velden in.',
+            S.of(context).documentenNogNietCompleetOpgeslagenVulVerplichteVeldenIn,
           ),
           backgroundColor: Colors.orange,
         ),
@@ -1448,16 +1457,16 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
     if (!hasAny(const ['kvk_number', 'kvk'])) {
       missing.add('KVK-nummer');
     }
-    if (!hasAny(const ['trainer_address_line1', 'address_line1', 'address'])) {
+    if (!hasAny(const [S.of(context).traineraddressline1, 'address_line1', 'address'])) {
       missing.add('Adresregel 1');
     }
-    if (!hasAny(const ['trainer_postcode', 'postcode'])) {
+    if (!hasAny(const [S.of(context).trainerpostcode, 'postcode'])) {
       missing.add('Postcode');
     }
-    if (!hasAny(const ['trainer_city', 'city'])) {
+    if (!hasAny(const [S.of(context).trainercity, 'city'])) {
       missing.add('Stad');
     }
-    if (!hasAny(const ['trainer_country', 'country', 'country_code'])) {
+    if (!hasAny(const [S.of(context).trainercountry, 'country', 'country_code'])) {
       missing.add('Land');
     }
     return missing;
@@ -1515,11 +1524,11 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: GymiesAppBar(
-        title: 'Mijn sessies',
+        title: S.of(context).mijnSessies,
         actions: [
           GymiesAppBarAction(
             icon: Icons.calendar_month_rounded,
-            tooltip: 'Agenda',
+            tooltip: S.of(context).agenda,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
                   builder: (_) => const TrainerAgendaScreen()),
@@ -1557,9 +1566,9 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                     invoiceSentForBooking: _invoiceAlreadySentFor,
                     busyBookingIds: _actionBusyBookingIds,
                     emptyIcon: Icons.mark_chat_read_rounded,
-                    emptyText: 'Geen nieuwe aanvragen',
+                    emptyText: S.of(context).geenNieuweAanvragen,
                     emptySubtitle:
-                        'Wanneer een klant een sessie aanvraagt, zie je het hier direct.',
+                        S.of(context).wanneerEenKlantEenSessieAanvraagt,
                   ),
                   _SessionList(
                     bookings: _upcoming,
@@ -1575,10 +1584,10 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                     invoiceSentForBooking: _invoiceAlreadySentFor,
                     busyBookingIds: _actionBusyBookingIds,
                     emptyIcon: Icons.calendar_today_rounded,
-                    emptyText: 'Agenda is leeg',
+                    emptyText: S.of(context).agendaIsLeeg,
                     emptySubtitle:
-                        'Klanten boeken via jouw profiel. Zorg dat je beschikbaarheid klopt zodat ze je kunnen vinden.',
-                    emptyActionLabel: 'Beschikbaarheid instellen',
+                        S.of(context).klantenBoekenViaJouwProfielZorg,
+                    emptyActionLabel: S.of(context).setAvailability,
                     emptyActionIcon: Icons.schedule_rounded,
                     onEmptyAction: () => Navigator.of(context).push(
                       MaterialPageRoute(
@@ -1597,9 +1606,9 @@ class _TrainerSessionsScreenState extends State<TrainerSessionsScreen>
                     invoiceSentForBooking: _invoiceAlreadySentFor,
                     busyBookingIds: _actionBusyBookingIds,
                     emptyIcon: Icons.history_rounded,
-                    emptyText: 'Nog geen voltooide sessies',
+                    emptyText: S.of(context).nogGeenVoltooideSessies,
                     emptySubtitle:
-                        'Afgeronde sessies verschijnen hier als historie.',
+                        S.of(context).afgerondeSessiesVerschijnenHierAlsHistorie,
                   ),
                   // ── Tab 3: Groepslessen (Pro+) ──
                   _GroupClassesTab(),
@@ -1770,6 +1779,7 @@ class _SessionCard extends StatelessWidget {
   final bool isUpcomingTab;
 
   static const _weekdays = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
+  // ignore: unused_field
   static const _months = [
     'jan', 'feb', 'mrt', 'apr', 'mei', 'jun',
     'jul', 'aug', 'sep', 'okt', 'nov', 'dec',
@@ -1783,9 +1793,9 @@ class _SessionCard extends StatelessWidget {
         return 'Personal training';
       case 'group':
       case 'group_class':
-        return 'Groepsles';
+        return S.of(context).groepsles;
       case 'online':
-        return 'Online sessie';
+        return S.of(context).onlineSessie;
       case 'assessment':
         return 'Assessment';
       case 'intro':
@@ -1800,8 +1810,8 @@ class _SessionCard extends StatelessWidget {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final date = DateTime(d.year, d.month, d.day);
-    if (date == today) return 'vandaag';
-    if (date == today.add(const Duration(days: 1))) return 'morgen';
+    if (date == today) return S.of(context).vandaagLower;
+    if (date == today.add(const Duration(days: 1))) return S.of(context).morgenLower;
     return _weekdays[d.weekday - 1];
   }
 
@@ -1809,7 +1819,7 @@ class _SessionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final d = booking.scheduledAt;
     final name = booking.clientName ?? booking.trainerName;
-    final displayName = name.isNotEmpty ? name : 'Klant';
+    final displayName = name.isNotEmpty ? name : S.of(context).clientSingle;
     final invoiceEligible =
         booking.isPast ||
         booking.status == 'completed' ||
@@ -1823,7 +1833,7 @@ class _SessionCard extends StatelessWidget {
     final hasLocation = (booking.locationName ?? '').isNotEmpty;
     final hasAmount = (booking.amountCents ?? 0) > 0;
     final amountLabel = hasAmount
-        ? '€${((booking.amountCents ?? 0) / 100).toStringAsFixed(2).replaceAll('.', ',')}'
+        ? formatEuro(booking.amountCents ?? 0)
         : null;
 
     return Container(
@@ -1832,12 +1842,12 @@ class _SessionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isToday
-              ? GymiesColors.primary.withValues(alpha: 0.6)
+              ? GymiesColors.primary.withOpacity(0.6)
               : Colors.grey.shade100,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -1856,7 +1866,7 @@ class _SessionCard extends StatelessWidget {
                   height: 46,
                   decoration: BoxDecoration(
                     color: isToday
-                        ? GymiesColors.primary.withValues(alpha: 0.12)
+                        ? GymiesColors.primary.withOpacity(0.12)
                         : const Color(0xFFF7F8FA),
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -1944,7 +1954,7 @@ class _SessionCard extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: _statusColor(booking.status).withValues(alpha: 0.08),
+                    color: _statusColor(booking.status).withOpacity(0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -1993,40 +2003,40 @@ class _SessionCard extends StatelessWidget {
                           booking.checkInAt == null)
                         const PopupMenuItem(
                           value: 'checkin',
-                          child: Text('Check-in registreren'),
+                          child: Text(S.of(context).checkinRegistreren),
                         ),
                       const PopupMenuItem(
                         value: 'reschedule',
-                        child: Text('Verplaatsen'),
+                        child: Text(S.of(context).verplaatsen),
                       ),
                       const PopupMenuItem(
                         value: 'cancel',
-                        child: Text('Annuleren'),
+                        child: Text(S.of(context).annuleren),
                       ),
                       const PopupMenuItem(
                         value: 'complete',
-                        child: Text('Voltooien'),
+                        child: Text(S.of(context).voltooien),
                       ),
                       if (onStartSafeSession != null &&
                           (booking.status == 'checked_in' ||
                               booking.checkInAt != null))
                         const PopupMenuItem(
                           value: 'safe_session',
-                          child: Text('Safe session starten'),
+                          child: Text(S.of(context).safeSessionStarten),
                         ),
                       if (onCheckout != null &&
                           (booking.status == 'checked_in' ||
                               booking.checkInAt != null))
                         const PopupMenuItem(
                           value: 'checkout',
-                          child: Text('Beëindig sessie'),
+                          child: Text(S.of(context).beindigSessie),
                         ),
                       if (onNoShow != null &&
                           (booking.status == 'confirmed' ||
                               booking.status == 'checked_in'))
                         const PopupMenuItem(
                           value: 'no_show',
-                          child: Text('No-show registreren'),
+                          child: Text(S.of(context).noshowRegistreren),
                         ),
                       if (onCreateInvoice != null &&
                           (booking.isPast ||
@@ -2037,8 +2047,8 @@ class _SessionCard extends StatelessWidget {
                           value: 'invoice',
                           child: Text(
                             invoiceAlreadySent
-                                ? 'Factuur opnieuw versturen'
-                                : 'Factuur opstellen',
+                                ? S.of(context).factuurOpnieuwVersturen
+                                : S.of(context).factuurOpstellen,
                           ),
                         ),
                     ],
@@ -2063,7 +2073,7 @@ class _SessionCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.08),
+                        color: Colors.green.withOpacity(0.08),
                         borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
                         border: Border(
                           bottom: BorderSide(color: Colors.green.shade200, width: 0.5),
@@ -2083,7 +2093,7 @@ class _SessionCard extends StatelessWidget {
                           Icon(Icons.shield_rounded, color: Colors.green.shade700, size: 16),
                           const SizedBox(width: 6),
                           Text(
-                            'Safe session actief',
+                            S.of(context).safeSessionActief,
                             style: GoogleFonts.sora(
                               color: Colors.green.shade800,
                               fontWeight: FontWeight.w600,
@@ -2134,7 +2144,7 @@ class _SessionCard extends StatelessWidget {
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      'Verstreken tijd',
+                                      S.of(context).verstrekenTijd,
                                       style: GoogleFonts.sora(
                                         fontSize: 11,
                                         color: Colors.grey.shade500,
@@ -2189,7 +2199,7 @@ class _SessionCard extends StatelessWidget {
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                'Heartbeat actief · elke 2 min',
+                                S.of(context).heartbeatActiefElke2Min,
                                 style: GoogleFonts.sora(
                                   fontSize: 11,
                                   color: Colors.grey.shade500,
@@ -2212,7 +2222,7 @@ class _SessionCard extends StatelessWidget {
                                   ),
                                 ),
                                 child: Text(
-                                  'Sessie beëindigen',
+                                  S.of(context).sessieBeindigen,
                                   style: GoogleFonts.sora(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -2236,7 +2246,7 @@ class _SessionCard extends StatelessWidget {
                   if (booking.status == 'pending' && onConfirm != null) ...[
                     Expanded(
                       child: _ActionBtn(
-                        label: 'Bevestig',
+                        label: S.of(context).confirmLabel,
                         icon: Icons.check_rounded,
                         color: Colors.green.shade700,
                         onTap: busy ? null : onConfirm,
@@ -2254,7 +2264,7 @@ class _SessionCard extends StatelessWidget {
                   ] else if (booking.status == 'confirmed' && onComplete != null) ...[
                     Expanded(
                       child: _ActionBtn(
-                        label: 'Voltooien',
+                        label: S.of(context).voltooien,
                         icon: Icons.check_circle_outline_rounded,
                         color: Colors.green.shade700,
                         onTap: busy ? null : onComplete,
@@ -2263,7 +2273,7 @@ class _SessionCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _ActionBtn(
-                        label: 'Verplaatsen',
+                        label: S.of(context).verplaatsen,
                         icon: Icons.schedule_rounded,
                         color: GymiesColors.darkBlue,
                         onTap: busy ? null : onReschedule,
@@ -2272,7 +2282,7 @@ class _SessionCard extends StatelessWidget {
                   ] else if ((booking.status == 'completed' || booking.status == 'done' || booking.status == 'finished') && onCreateInvoice != null) ...[
                     Expanded(
                       child: _ActionBtn(
-                        label: invoiceAlreadySent ? 'Factuur opnieuw' : 'Factuur',
+                        label: invoiceAlreadySent ? S.of(context).factuurOpnieuw : S.of(context).factuur2,
                         icon: Icons.receipt_outlined,
                         color: GymiesColors.darkBlue,
                         onTap: busy ? null : onCreateInvoice,
@@ -2283,31 +2293,27 @@ class _SessionCard extends StatelessWidget {
               ),
             ],
             if (isUpcomingTab && (onCancel != null || onReschedule != null)) ...[
-            if (isUpcomingTab && (onCancel != null || onReschedule != null)) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Spacer(),
-                  if (onReschedule != null)
-                    IconButton(
-                      onPressed: busy ? null : onReschedule,
-                      icon: const Icon(Icons.event_outlined, size: 20),
-                      tooltip: 'Verplaatsen',
-                      style: IconButton.styleFrom(
-                        foregroundColor: GymiesColors.darkBlue,
-                        backgroundColor: GymiesColors.primary.withValues(alpha: 0.15),
+                  if (onCancel != null)
+                    Expanded(
+                      child: _ActionBtn(
+                        label: S.of(context).annuleren,
+                        icon: Icons.cancel_outlined,
+                        color: Colors.red.shade600,
+                        onTap: busy ? null : onCancel,
                       ),
                     ),
-                  if (onReschedule != null && onCancel != null)
+                  if (onCancel != null && onReschedule != null)
                     const SizedBox(width: 8),
-                  if (onCancel != null)
-                    IconButton(
-                      onPressed: busy ? null : onCancel,
-                      icon: const Icon(Icons.close_rounded, size: 20),
-                      tooltip: 'Annuleren',
-                      style: IconButton.styleFrom(
-                        foregroundColor: Colors.red.shade600,
-                        backgroundColor: Colors.red.shade50,
+                  if (onReschedule != null)
+                    Expanded(
+                      child: _ActionBtn(
+                        label: S.of(context).verplaatsen,
+                        icon: Icons.event_outlined,
+                        color: GymiesColors.darkBlue,
+                        onTap: busy ? null : onReschedule,
                       ),
                     ),
                 ],
@@ -2328,8 +2334,8 @@ class _SessionCard extends StatelessWidget {
                 ),
                 child: Text(
                   invoiceAlreadySent
-                      ? 'Factuur verstuurd'
-                      : 'Factuur niet verstuurd',
+                      ? S.of(context).factuurVerstuurd
+                      : S.of(context).factuurNietVerstuurd,
                   style: GoogleFonts.sora(
                     color: invoiceAlreadySent
                         ? Colors.green.shade800
@@ -2352,15 +2358,15 @@ class _SessionCard extends StatelessWidget {
                   children: [
                     Icon(
                       Icons.receipt_long_rounded,
-                      color: GymiesColors.darkBlue.withValues(alpha: 0.8),
+                      color: GymiesColors.darkBlue.withOpacity(0.8),
                       size: 18,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         invoiceAlreadySent
-                            ? 'Factuur sectie: review en opnieuw versturen'
-                            : 'Factuur sectie: opstellen en review',
+                            ? S.of(context).factuurSectieReviewEnOpnieuwVersturen
+                            : S.of(context).factuurSectieOpstellenEnReview,
                         style: GoogleFonts.sora(
                           color: Colors.grey.shade800,
                           fontSize: 12,
@@ -2374,8 +2380,8 @@ class _SessionCard extends StatelessWidget {
                           : onCreateInvoice,
                       child: Text(
                         invoiceAlreadySent
-                            ? 'Review factuur'
-                            : 'Factuur opstellen',
+                            ? S.of(context).reviewFactuur
+                            : S.of(context).factuurOpstellen,
                       ),
                     ),
                   ],
@@ -2424,7 +2430,6 @@ class _SessionCard extends StatelessWidget {
                 ),
               ),
             ],
-            ],
           ],
         ),
       ),
@@ -2454,9 +2459,9 @@ class _SessionCard extends StatelessWidget {
       case 'confirmed':
         return 'Bevestigd';
       case 'pending':
-        return 'Te bevestigen';
+        return S.of(context).teBevestigen;
       case 'cancelled':
-        return 'Geannuleerd';
+        return S.of(context).geannuleerd;
       case 'completed':
         return 'Voltooid';
       case 'checked_in':
@@ -2523,7 +2528,7 @@ class _ActionBtn extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
+          color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
@@ -2531,12 +2536,16 @@ class _ActionBtn extends StatelessWidget {
           children: [
             Icon(icon, size: 16, color: color),
             const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.sora(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: color,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.sora(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
               ),
             ),
           ],
@@ -2586,7 +2595,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
       if (mounted) setState(() { _error = e.message; _loading = false; });
     } catch (e) {
       if (kDebugMode) debugPrint('[GroupClasses] Laden fout: $e');
-      if (mounted) setState(() { _error = 'Kon groepslessen niet laden.'; _loading = false; });
+      if (mounted) setState(() { _error = S.of(context).konGroepslessenNietLaden; _loading = false; });
     }
   }
 
@@ -2605,8 +2614,8 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
         builder: (context, setDialogState) => GymiesDialog(
           headerIcon: Icons.groups_rounded,
           headerIconColor: GymiesColors.primary,
-          headerIconBgColor: GymiesColors.primary.withValues(alpha: 0.1),
-          title: 'Nieuwe groepsles',
+          headerIconBgColor: GymiesColors.primary.withOpacity(0.1),
+          title: S.of(context).nieuweGroepsles,
           content: Form(
             key: formKey,
             child: SingleChildScrollView(
@@ -2616,35 +2625,35 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                 children: [
                   TextFormField(
                     controller: nameCtrl,
-                    decoration: const InputDecoration(labelText: 'Naam'),
+                    decoration: const InputDecoration(labelText: S.of(context).naam),
                     validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Vul een naam in' : null,
+                        (v == null || v.trim().isEmpty) ? S.of(context).vulEenNaamIn : null,
                   ),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: capacityCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Max deelnemers'),
+                    decoration: const InputDecoration(labelText: S.of(context).maxDeelnemers),
                     validator: (v) {
                       final n = int.tryParse(v ?? '');
                       return (n == null || n < 2) ? 'Min. 2 deelnemers' : null;
                     },
                   ),
                   const SizedBox(height: 12),
-                  Text('Duur', style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade700)),
+                  Text(S.of(context).duur, style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade700)),
                   const SizedBox(height: 6),
                   SegmentedButton<int>(
                     segments: const [
-                      ButtonSegment(value: 60, label: Text('60 min')),
-                      ButtonSegment(value: 90, label: Text('90 min')),
-                      ButtonSegment(value: 120, label: Text('120 min')),
+                      ButtonSegment(value: 60, label: Text(S.of(context).60Min)),
+                      ButtonSegment(value: 90, label: Text(S.of(context).90Min)),
+                      ButtonSegment(value: 120, label: Text(S.of(context).120Min)),
                     ],
                     selected: {selectedDuration},
                     onSelectionChanged: (v) =>
                         setDialogState(() => selectedDuration = v.first),
                   ),
                   const SizedBox(height: 12),
-                  Text('Datum & tijd', style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade700)),
+                  Text(S.of(context).datumTijd, style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade700)),
                   const SizedBox(height: 6),
                   InkWell(
                     onTap: () async {
@@ -2657,6 +2666,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                       );
                       if (date == null) return;
                       final time = await showTimePicker(
+                        // ignore: use_build_context_synchronously
                         context: ctx,
                         initialTime: scheduledAt != null
                             ? TimeOfDay.fromDateTime(scheduledAt!)
@@ -2681,7 +2691,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                         scheduledAt != null
                             ? '${scheduledAt!.day}/${scheduledAt!.month}/${scheduledAt!.year} '
                               '${scheduledAt!.hour.toString().padLeft(2, '0')}:${scheduledAt!.minute.toString().padLeft(2, '0')}'
-                            : 'Kies datum en tijd',
+                            : S.of(context).kiesDatumEnTijd,
                         style: GoogleFonts.sora(
                           color: scheduledAt != null ? Colors.black87 : Colors.grey.shade500,
                           fontSize: 15,
@@ -2694,7 +2704,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                     controller: descCtrl,
                     maxLines: 3,
                     decoration: const InputDecoration(
-                      labelText: 'Beschrijving (optioneel)',
+                      labelText: S.of(context).beschrijvingoptioneel,
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -2705,7 +2715,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                         if (!(formKey.currentState?.validate() ?? false)) return;
                         if (scheduledAt == null) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Kies een datum en tijd')),
+                            const SnackBar(content: Text(S.of(context).kiesEenDatumEnTijd)),
                           );
                           return;
                         }
@@ -2717,7 +2727,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
-                      child: Text('Aanmaken',
+                      child: Text(S.of(context).aanmaken,
                           style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14)),
                     ),
                   ),
@@ -2726,7 +2736,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                     width: double.maxFinite,
                     child: TextButton(
                       onPressed: () => Navigator.of(ctx).pop(false),
-                      child: Text('Annuleren',
+                      child: Text(S.of(context).annuleren,
                           style: GoogleFonts.sora(fontWeight: FontWeight.w600, fontSize: 14)),
                     ),
                   ),
@@ -2750,15 +2760,17 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
       );
       if (mounted) {
         await _load();
+        // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Groepsles aangemaakt!'),
+            content: Text(S.of(context).groepslesAangemaakt),
             backgroundColor: GymiesColors.darkBlue,
           ),
         );
       }
     } on ApiException catch (e) {
       if (!mounted) return;
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message), backgroundColor: Colors.red),
       );
@@ -2776,11 +2788,11 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
     if (!isProPlus) {
       return const GymiesUpgradePrompt(
         icon: Icons.groups_rounded,
-        feature: 'Groepslessen',
+        feature: S.of(context).groepslessen,
         tier: 'Pro+',
         description:
-            'Geef groepslessen, beheer capaciteit en laat meerdere klanten '
-            'tegelijk boeken. Verhoog je omzet per uur met groepstraining.',
+            S.of(context).geefGroepslessenBeheerCapaciteitEnLaat
+            S.of(context).tegelijkBoekenVerhoogJeOmzetPer,
       );
     }
 
@@ -2800,7 +2812,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
             OutlinedButton.icon(
               onPressed: _load,
               icon: const Icon(Icons.refresh),
-              label: const Text('Opnieuw proberen'),
+              label: const Text(S.of(context).opnieuwProberen),
             ),
           ],
         ),
@@ -2813,10 +2825,10 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
         children: [
           TrainerEmptyState(
             icon: Icons.groups_rounded,
-            title: 'Nog geen groepslessen',
+            title: S.of(context).nogGeenGroepslessen,
             subtitle:
-                'Maak je eerste groepsles aan en laat meerdere klanten tegelijk boeken.',
-            actionLabel: 'Groepsles aanmaken',
+                S.of(context).maakJeEersteGroepslesAanEn,
+            actionLabel: S.of(context).groepslesAanmaken,
             actionIcon: Icons.add_rounded,
             onAction: _createClass,
             padding: const EdgeInsets.all(32),
@@ -2834,7 +2846,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
             itemCount: _classes.length,
             itemBuilder: (_, i) {
               final cls = _classes[i];
-              final name = (cls['name'] ?? cls['title'] ?? 'Groepsles').toString();
+              final name = (cls['name'] ?? cls['title'] ?? S.of(context).groepsles).toString();
               final capacityRaw = cls['max_participants'] ?? cls['capacity'];
               final enrolledRaw = cls['enrolled_count'] ?? cls['participants'];
               final capacityNum = capacityRaw is num
@@ -2874,7 +2886,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: GymiesColors.darkBlue.withValues(alpha: 0.08),
+                      color: GymiesColors.darkBlue.withOpacity(0.08),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -2891,8 +2903,8 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                           height: 52,
                           decoration: BoxDecoration(
                             color: isClassToday
-                                ? GymiesColors.primary.withValues(alpha: 0.15)
-                                : GymiesColors.darkBlue.withValues(alpha: 0.08),
+                                ? GymiesColors.primary.withOpacity(0.15)
+                                : GymiesColors.darkBlue.withOpacity(0.08),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Column(
@@ -2911,7 +2923,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                                 style: GoogleFonts.sora(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
-                                  color: GymiesColors.darkBlue.withValues(alpha: 0.7),
+                                  color: GymiesColors.darkBlue.withOpacity(0.7),
                                 ),
                               ),
                             ],
@@ -2922,7 +2934,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                           width: 52,
                           height: 52,
                           decoration: BoxDecoration(
-                            color: GymiesColors.primary.withValues(alpha: 0.15),
+                            color: GymiesColors.primary.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: const Icon(Icons.groups_rounded,
@@ -2954,7 +2966,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
                             Text(
                               '$enrolledNum/${capacityNum > 0 ? capacityNum : '?'} deelnemers',
                               style: GoogleFonts.sora(
-                                color: GymiesColors.darkBlue.withValues(alpha: 0.6),
+                                color: GymiesColors.darkBlue.withOpacity(0.6),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -2998,7 +3010,7 @@ class _GroupClassesTabState extends State<_GroupClassesTab> {
             heroTag: 'fab_group_class',
             onPressed: _createClass,
             backgroundColor: GymiesColors.primary,
-            tooltip: 'Nieuwe groepsles',
+            tooltip: S.of(context).nieuweGroepsles,
             child: const Icon(Icons.add_rounded, color: GymiesColors.darkBlue),
           ),
         ),

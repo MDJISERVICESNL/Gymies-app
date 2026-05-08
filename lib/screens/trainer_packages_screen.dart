@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../utils/currency_format.dart';
 
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
@@ -11,6 +12,7 @@ import '../utils/map_utils.dart';
 import 'widgets/gymies_app_bar.dart';
 import 'widgets/gymies_dialog.dart';
 import 'widgets/trainer_state_views.dart';
+import '../l10n/generated/app_localizations.dart';
 
 class TrainerPackagesScreen extends StatefulWidget {
   const TrainerPackagesScreen({super.key});
@@ -36,13 +38,14 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
 
   Future<void> _load() async {
     Haptics.selection();
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
       final list = await api.getTrainerPackages();
+      if (!mounted) return;
       List<Map<String, dynamic>> expiring = [];
       try {
         final expiringRaw = await api.getTrainerPackageExpiringSoon();
@@ -65,7 +68,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon pakketten niet laden.';
+        _error = S.of(context).konPakkettenNietLaden;
         _loading = false;
       });
     }
@@ -96,24 +99,24 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => GymiesDialog(
-          title: item == null ? 'Pakket toevoegen' : 'Pakket bewerken',
+          title: item == null ? S.of(context).pakketToevoegen : 'Pakket bewerken',
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: name,
-                  decoration: const InputDecoration(labelText: 'Naam'),
+                  decoration: const InputDecoration(labelText: S.of(context).naam),
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
-                  value: lessonType,
-                  decoration: const InputDecoration(labelText: 'Lestype'),
+                  initialValue: lessonType,
+                  decoration: const InputDecoration(labelText: S.of(context).lestype),
                   items: const [
-                    DropdownMenuItem(value: 'personal', child: Text('Personal training')),
-                    DropdownMenuItem(value: 'group', child: Text('Groepsles')),
-                    DropdownMenuItem(value: 'online', child: Text('Online sessie')),
-                    DropdownMenuItem(value: 'duo', child: Text('Duo training')),
+                    DropdownMenuItem(value: 'personal', child: Text(S.of(context).personalTraining)),
+                    DropdownMenuItem(value: 'group', child: Text(S.of(context).groepsles)),
+                    DropdownMenuItem(value: 'online', child: Text(S.of(context).onlineSessie)),
+                    DropdownMenuItem(value: 'duo', child: Text(S.of(context).duoTraining)),
                   ],
                   onChanged: (v) {
                     if (v != null) setDialogState(() => lessonType = v);
@@ -123,15 +126,15 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                 TextField(
                   controller: sessions,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Aantal sessies'),
+                  decoration: const InputDecoration(labelText: S.of(context).aantalSessies),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: price,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(
-                    labelText: 'Prijs (EUR)',
-                    hintText: 'bijv. 49.99',
+                    labelText: S.of(context).prijseur,
+                    hintText: S.of(context).bijv4999,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -139,8 +142,8 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                   controller: validityDays,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'Geldigheid (dagen)',
-                    hintText: 'bijv. 30',
+                    labelText: S.of(context).geldigheiddagen,
+                    hintText: S.of(context).bijv30,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -148,7 +151,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                   controller: description,
                   maxLines: 3,
                   decoration: const InputDecoration(
-                    labelText: 'Beschrijving (optioneel)',
+                    labelText: S.of(context).beschrijvingoptioneel,
                   ),
                 ),
               ],
@@ -156,11 +159,11 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
           ),
           actions: [
             GymiesDialogAction(
-              label: 'Annuleren',
+              label: S.of(context).annuleren,
               onPressed: _saving ? null : () => Navigator.of(ctx).pop(),
             ),
             GymiesDialogAction(
-              label: 'Opslaan',
+              label: S.of(context).opslaan,
               isPrimary: true,
               onPressed: _saving
                   ? null
@@ -179,7 +182,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text(
-                              'Vul naam, een geldig aantal sessies en een geldige prijs in (bijv. 49.99)',
+                              S.of(context).vulNaamEenGeldigAantalSessiesEnEenGeldigePrijsInbijv4999,
                             ),
                           ),
                         );
@@ -203,7 +206,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                           final packageId = _resolvePackageId(item);
                           if (packageId == null) {
                             _showError(
-                              'Pakket-ID ontbreekt. Vernieuw de lijst en probeer opnieuw.',
+                              S.of(context).pakketidOntbreektVernieuwDeLijstEn,
                             );
                             return;
                           }
@@ -227,6 +230,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                         );
                       } on ApiException catch (e) {
                         if (!mounted) return;
+                        // ignore: use_build_context_synchronously
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(e.message),
@@ -249,14 +253,14 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
     if (_saving) return;
     final packageId = _resolvePackageId(item);
     if (packageId == null) {
-      _showError('Pakket-ID ontbreekt. Vernieuw de lijst en probeer opnieuw.');
+      _showError(S.of(context).pakketidOntbreektVernieuwDeLijstEn);
       return;
     }
     final confirmed = await GymiesDialog.destructive(
       context,
-      title: 'Pakket verwijderen',
+      title: S.of(context).pakketVerwijderen,
       message: 'Weet je zeker dat je "${mapStr(item, ['name', 'title']).isNotEmpty ? mapStr(item, ['name', 'title']) : 'dit pakket'}" wilt verwijderen? Dit kan niet ongedaan worden.',
-      confirmLabel: 'Verwijderen',
+      confirmLabel: S.of(context).verwijderen,
     );
     if (confirmed != true || !mounted) return;
     setState(() => _saving = true);
@@ -264,7 +268,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
       await context.read<GymiesApi>().deleteTrainerPackage(packageId);
       if (!mounted) return;
       await _load();
-      _showSuccess('Pakket verwijderd');
+      _showSuccess(S.of(context).pakketVerwijderd);
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -289,22 +293,11 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
   }
 
   String _euroFromCents(dynamic centsRaw) {
-    if (centsRaw == null) return '';
-    int? cents;
-    if (centsRaw is int) {
-      cents = centsRaw;
-    } else if (centsRaw is num) {
-      cents = centsRaw.toInt();
-    } else {
-      cents = int.tryParse(centsRaw.toString());
-    }
-    if (cents == null) return '';
-    return (cents / 100).toStringAsFixed(2);
+    return formatEuro(centsRaw, fallback: '').replaceFirst('\u20AC', '');
   }
 
   String _euroDisplay(dynamic centsRaw) {
-    final str = _euroFromCents(centsRaw);
-    return str.isEmpty ? '-' : '\u20AC$str';
+    return formatEuro(centsRaw, fallback: '-');
   }
 
   String? _resolvePackageId(Map<String, dynamic>? map) {
@@ -317,7 +310,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
       case 'personal':
         return 'Personal';
       case 'group':
-        return 'Groepsles';
+        return S.of(context).groepsles;
       case 'online':
         return 'Online';
       case 'duo':
@@ -361,6 +354,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
   // STATS & ANALYTICS
   // ═══════════════════════════════════════════════════════════════════
 
+  // ignore: unused_element
   int _totalSessions() {
     int total = 0;
     for (final p in _packages) {
@@ -400,7 +394,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
     if (highest == null || highestCount == 0) return '-';
     return mapStr(highest, ['name', 'title']).isNotEmpty
         ? mapStr(highest, ['name', 'title'])
-        : 'Pakket';
+        : S.of(context).pakket;
   }
 
   int _totalSoldCount() {
@@ -419,12 +413,20 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
           final aCents = mapPick(a, ['price_cents', 'priceCents', 'price']) ?? 0;
           final bCents = mapPick(b, ['price_cents', 'priceCents', 'price']) ?? 0;
           int aInt = 0, bInt = 0;
-          if (aCents is int) aInt = aCents;
-          else if (aCents is num) aInt = aCents.toInt();
-          else aInt = int.tryParse(aCents?.toString() ?? '') ?? 0;
-          if (bCents is int) bInt = bCents;
-          else if (bCents is num) bInt = bCents.toInt();
-          else bInt = int.tryParse(bCents?.toString() ?? '') ?? 0;
+          if (aCents is int) {
+            aInt = aCents;
+          } else if (aCents is num) {
+            aInt = aCents.toInt();
+          } else {
+            aInt = int.tryParse(aCents?.toString() ?? '') ?? 0;
+          }
+          if (bCents is int) {
+            bInt = bCents;
+          } else if (bCents is num) {
+            bInt = bCents.toInt();
+          } else {
+            bInt = int.tryParse(bCents?.toString() ?? '') ?? 0;
+          }
           return aInt.compareTo(bInt);
         });
         break;
@@ -456,7 +458,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
         backgroundColor: GymiesColors.primary,
         foregroundColor: GymiesColors.darkBlue,
         icon: const Icon(Icons.add),
-        label: const Text('Pakket'),
+        label: const Text(S.of(context).pakket),
       ),
       body: GymiesListBody(
         loading: _loading,
@@ -468,9 +470,9 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                 children: [
                   TrainerEmptyState(
                     icon: Icons.inventory_2_outlined,
-                    title: 'Nog geen pakketten',
+                    title: S.of(context).nogGeenPakketten,
                     subtitle:
-                        'Voeg pakketten toe voor klanten om te boeken.',
+                        S.of(context).voegPakkettenToeVoorKlantenOm,
                     actionLabel: 'Pakket toevoegen',
                     actionIcon: Icons.add,
                     onAction: _showPackageDialog,
@@ -504,14 +506,14 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                                   width: 28,
                                   height: 28,
                                   decoration: BoxDecoration(
-                                    color: GymiesColors.primary.withValues(alpha: 0.12),
+                                    color: GymiesColors.primary.withOpacity(0.12),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: const Icon(Icons.insights_rounded, size: 15, color: GymiesColors.darkBlue),
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Pakket prestaties',
+                                  S.of(context).pakketPrestaties,
                                   style: GoogleFonts.sora(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
@@ -567,7 +569,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
-                                        'Verlopende pakketten',
+                                        S.of(context).verlopendePakketten,
                                         style: GoogleFonts.sora(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600,
@@ -641,7 +643,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                                     ],
                                   ),
                                 );
-                              }).toList(),
+                              }),
                             ],
                           ],
                         ),
@@ -668,7 +670,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                           spacing: 8,
                           children: [
                             _SortChip(
-                              label: 'Naam',
+                              label: S.of(context).naam,
                               selected: _sortBy == 'naam',
                               onTap: () {
                                 Haptics.selection();
@@ -711,7 +713,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                   final validityDays = mapInt(p, ['validity_days', 'validityDays']);
                   final packageName = mapStr(p, ['name', 'title']).isNotEmpty
                       ? mapStr(p, ['name', 'title'])
-                      : 'Pakket';
+                      : S.of(context).pakket;
 
                   return TweenAnimationBuilder<double>(
                     tween: Tween(begin: 0, end: 1),
@@ -730,7 +732,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withOpacity(0.04),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -815,7 +817,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                                 Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
                                   child: Text(
-                                    'Nog geen verkopen',
+                                    S.of(context).nogGeenVerkopen,
                                     style: GoogleFonts.sora(
                                       fontSize: 11,
                                       color: Colors.grey.shade400,
@@ -828,7 +830,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                                 runSpacing: 4,
                                 children: [
                                   _Pill(
-                                    text: '$sessionCount ${sessionCount == 1 ? 'sessie' : 'sessies'}',
+                                    text: '$sessionCount ${sessionCount == 1 ? 'sessie' : S.of(context).sessies}',
                                     bg: Colors.blue.shade50,
                                     fg: Colors.blue.shade700,
                                   ),
@@ -848,7 +850,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
                               // Edit hint
                               const SizedBox(height: 6),
                               Text(
-                                'Tik om te bewerken \u00B7 lang indrukken om te verwijderen',
+                                S.of(context).tikOmTeBewerkenu00b7LangIndrukkenOmTeVerwijderen,
                                 style: GoogleFonts.sora(
                                   fontSize: 10,
                                   color: Colors.grey.shade400,
@@ -871,6 +873,7 @@ class _TrainerPackagesScreenState extends State<TrainerPackagesScreen> {
 // HELPER WIDGETS
 // ═══════════════════════════════════════════════════════════════════════
 
+// ignore: unused_element
 class _StatBox extends StatelessWidget {
   const _StatBox({required this.value, required this.label});
   final String value;
@@ -882,7 +885,7 @@ class _StatBox extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: GymiesColors.primary.withValues(alpha: 0.12),
+          color: GymiesColors.primary.withOpacity(0.12),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Column(
@@ -900,7 +903,7 @@ class _StatBox extends StatelessWidget {
               label,
               style: GoogleFonts.sora(
                 fontSize: 10,
-                color: GymiesColors.darkBlue.withValues(alpha: 0.6),
+                color: GymiesColors.darkBlue.withOpacity(0.6),
               ),
             ),
           ],
@@ -949,7 +952,7 @@ class _AnalyticsCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Row(
         children: [
@@ -957,7 +960,7 @@ class _AnalyticsCard extends StatelessWidget {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.12),
+              color: GymiesColors.primary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, size: 16, color: GymiesColors.darkBlue),

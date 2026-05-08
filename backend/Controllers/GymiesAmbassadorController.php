@@ -997,10 +997,11 @@ final class GymiesAmbassadorController extends Controller
             ]);
 
             if (!$suspicious) {
+                $rewardInt = (int) $reward;
                 DB::table('gymies_ambassadors')->where('id', (int) $amb->id)->update([
                     'sporter_conversions'  => DB::raw('sporter_conversions + 1'),
-                    'total_earned_cents'   => DB::raw("total_earned_cents + {$reward}"),
-                    'pending_payout_cents' => DB::raw("pending_payout_cents + {$reward}"),
+                    'total_earned_cents'   => DB::raw('total_earned_cents + ' . $rewardInt),
+                    'pending_payout_cents' => DB::raw('pending_payout_cents + ' . $rewardInt),
                     'updated_at'           => now(),
                 ]);
             }
@@ -1058,10 +1059,11 @@ final class GymiesAmbassadorController extends Controller
                 'created_at'       => now(),
             ]);
 
+            $rewardInt = (int) $reward;
             DB::table('gymies_ambassadors')->where('id', (int) $amb->id)->update([
                 'trainer_conversions'  => DB::raw('trainer_conversions + 1'),
-                'total_earned_cents'   => DB::raw("total_earned_cents + {$reward}"),
-                'pending_payout_cents' => DB::raw("pending_payout_cents + {$reward}"),
+                'total_earned_cents'   => DB::raw('total_earned_cents + ' . $rewardInt),
+                'pending_payout_cents' => DB::raw('pending_payout_cents + ' . $rewardInt),
                 'updated_at'           => now(),
             ]);
 
@@ -1105,8 +1107,8 @@ final class GymiesAmbassadorController extends Controller
                 DB::table('gymies_ambassadors')
                     ->where('id', (int) $conv->ambassador_id)
                     ->update([
-                        'total_earned_cents'   => DB::raw("GREATEST(0, total_earned_cents - {$reward})"),
-                        'pending_payout_cents' => DB::raw("GREATEST(0, pending_payout_cents - {$reward})"),
+                        'total_earned_cents'   => DB::raw('GREATEST(0, total_earned_cents - ' . $reward . ')'),
+                        'pending_payout_cents' => DB::raw('GREATEST(0, pending_payout_cents - ' . $reward . ')'),
                         'updated_at'           => now(),
                     ]);
             }

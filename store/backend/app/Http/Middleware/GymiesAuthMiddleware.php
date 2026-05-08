@@ -127,24 +127,29 @@ class GymiesAuthMiddleware
         }
 
         $query = DB::table('gymies_sessions')->where('token', $token);
+
+        // Check expiry
         if (Schema::hasColumn('gymies_sessions', 'expires_at')) {
             $query->where(function ($q) {
                 $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
             });
         }
+
+        // Check revocation
         if (Schema::hasColumn('gymies_sessions', 'revoked_at')) {
             $query->whereNull('revoked_at');
         }
+
         $row = $query->first();
         if ($row === null || !isset($row->user_id)) {
             return null;
         }
 
-        // last_activity updaten (optioneel)
+        // Update last_activity (non-critical, use try-catch)
         try {
             DB::table('gymies_sessions')->where('token', $token)->update(['last_activity' => now()]);
         } catch (\Throwable $e) {
-            // negeer
+            // Silently ignore failures in last_activity update — non-critical for auth
         }
 
         return $this->userFromId((int) $row->user_id);

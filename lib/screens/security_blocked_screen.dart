@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../config/ui_constants.dart';
 import '../services/app_security_service.dart';
 
@@ -34,7 +35,7 @@ class SecurityBlockedScreen extends StatelessWidget {
                   width: 100,
                   height: 100,
                   decoration: BoxDecoration(
-                    color: UiConstants.errorRed.withValues(alpha: 0.2),
+                    color: UiConstants.errorRed.withOpacity(0.2),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -47,7 +48,7 @@ class SecurityBlockedScreen extends StatelessWidget {
 
                 // Titel
                 Text(
-                  'Beveiligingswaarschuwing',
+                  S.of(context).securityWarning,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.sora(
                     color: Colors.white,
@@ -59,7 +60,7 @@ class SecurityBlockedScreen extends StatelessWidget {
 
                 // Bericht
                 Text(
-                  result.message ?? 'Er is een beveiligingsprobleem gedetecteerd.',
+                  result.message ?? S.of(context).erIsEenBeveiligingsprobleemGedetecteerd,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.sora(
                     color: Color(0xAAFFFFFF),
@@ -107,9 +108,7 @@ class SecurityBlockedScreen extends StatelessWidget {
 
                 // Informatie
                 Text(
-                  'Gymies beschermt je persoonlijke gegevens en betalingen. '
-                  'Deze app kan niet worden gebruikt op apparaten die niet voldoen '
-                  'aan onze beveiligingseisen.',
+                  S.of(context).gymiesProtects,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.sora(
                     color: Color(0x88FFFFFF),
@@ -127,6 +126,8 @@ class SecurityBlockedScreen extends StatelessWidget {
                       // Sluit de app
                       if (Platform.isAndroid) {
                         SystemNavigator.pop();
+                      } else if (Platform.isIOS) {
+                        exit(0);
                       }
                     },
                     style: ElevatedButton.styleFrom(
@@ -138,7 +139,7 @@ class SecurityBlockedScreen extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      'App sluiten',
+                      S.of(context).closeApp,
                       style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -160,7 +161,7 @@ class SecurityBlockedScreen extends StatelessWidget {
       case SecurityThreat.debuggerAttached:
         return 'Debugger verbonden';
       case SecurityThreat.tamperingDetected:
-        return 'App is gemanipuleerd';
+        return S.of(context).appIsGemanipuleerd;
       case SecurityThreat.hookingDetected:
         return 'Hooking framework gedetecteerd (Frida/Xposed)';
     }

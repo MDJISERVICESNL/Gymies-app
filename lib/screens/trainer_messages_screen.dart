@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../config/timing_constants.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../theme/gymies_theme.dart';
 import '../models/trainer_models.dart';
 import '../services/gymies_api.dart';
@@ -67,6 +68,7 @@ class _TrainerMessagesScreenState extends State<TrainerMessagesScreen>
 
   Future<void> _load({bool background = false}) async {
     if (!mounted) return;
+    final api = context.read<GymiesApi>();
     if (!background) {
       setState(() {
         _loading = true;
@@ -76,8 +78,8 @@ class _TrainerMessagesScreenState extends State<TrainerMessagesScreen>
       setState(() => _error = null);
     }
     try {
-      final api = context.read<GymiesApi>();
       final list = await api.getTrainerConversations();
+      if (!mounted) return;
       list.sort((a, b) {
         final ad =
             DateTime.tryParse(a.lastMessageAt ?? '') ??
@@ -106,7 +108,7 @@ class _TrainerMessagesScreenState extends State<TrainerMessagesScreen>
       if (kDebugMode) debugPrint('[TrainerMessages] Berichten laden fout: $e');
       if (mounted) {
         setState(() {
-          _error = 'Kon berichten niet laden.';
+          _error = S.of(context).konBerichtenNietLaden;
           _loading = false;
         });
       }
@@ -125,7 +127,7 @@ class _TrainerMessagesScreenState extends State<TrainerMessagesScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       appBar: GymiesAppBar(
-        title: 'Berichten',
+        title: S.of(context).messages,
       ),
       body: GymiesListBody(
         loading: _loading,
@@ -137,10 +139,10 @@ class _TrainerMessagesScreenState extends State<TrainerMessagesScreen>
                       children: [
                         TrainerEmptyState(
                           icon: Icons.chat_bubble_outline,
-                          title: 'Geen berichten',
+                          title: S.of(context).noMessages,
                           subtitle:
-                              'Nieuwe chats van klanten verschijnen hier zodra er een bericht binnenkomt.',
-                          actionLabel: 'Ververs berichten',
+                              S.of(context).nieuweChatsVanKlantenVerschijnenHier,
+                          actionLabel: S.of(context).verversBerichten,
                           onAction: _load,
                           padding: const EdgeInsets.all(32),
                         ),
@@ -155,7 +157,7 @@ class _TrainerMessagesScreenState extends State<TrainerMessagesScreen>
                         TextField(
                           onChanged: (v) => setState(() => _query = v),
                           decoration: InputDecoration(
-                            hintText: 'Zoek op klant of laatste bericht',
+                            hintText: S.of(context).zoekOpKlantOfLaatsteBericht,
                             prefixIcon: const Icon(Icons.search_rounded),
                             filled: true,
                             fillColor: Colors.white,
@@ -172,14 +174,14 @@ class _TrainerMessagesScreenState extends State<TrainerMessagesScreen>
                             Haptics.selection();
                             setState(() => _unreadOnly = v);
                           },
-                          label: const Text('Alleen ongelezen'),
+                          label: Text(S.of(context).alleenOngelezen),
                         ),
                         const SizedBox(height: 10),
                         if (filtered.isEmpty)
                           const TrainerEmptyState(
                             icon: Icons.search_off_rounded,
-                            title: 'Geen resultaten',
-                            subtitle: 'Pas je zoekterm of filter aan.',
+                            title: S.of(context).noResults,
+                            subtitle: S.of(context).pasJeZoektermOfFilterAan,
                             padding: EdgeInsets.fromLTRB(0, 24, 0, 8),
                           )
                         else
@@ -215,10 +217,10 @@ class _TrainerMessagesScreenState extends State<TrainerMessagesScreen>
                                     });
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: const Text('Gesprek verwijderd'),
+                                        content: const Text(S.of(context).gesprekVerwijderd),
                                         backgroundColor: GymiesColors.darkBlue,
                                         action: SnackBarAction(
-                                          label: 'Herstellen',
+                                          label: S.of(context).herstellen,
                                           textColor: GymiesColors.primary,
                                           onPressed: () => _load(),
                                         ),
@@ -239,14 +241,14 @@ class _TrainerMessagesScreenState extends State<TrainerMessagesScreen>
                                   decoration: BoxDecoration(
                                     color: Colors.white,
                                     borderRadius: BorderRadius.circular(16),
-                                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                                   ),
                                   child: ListTile(
                                     leading: Container(
                                       width: 40,
                                       height: 40,
                                       decoration: BoxDecoration(
-                                        color: GymiesColors.primary.withValues(alpha: 0.3),
+                                        color: GymiesColors.primary.withOpacity(0.3),
                                         borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: Center(

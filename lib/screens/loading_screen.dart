@@ -19,7 +19,9 @@ import 'shells/client_shell.dart';
 import 'trainer_subscription_screen.dart';
 import 'trainer_onboarding_screen.dart';
 import 'control_tower_screen.dart';
+import 'shells/gym_shell.dart';
 import '../services/deep_link_service.dart';
+import '../l10n/generated/app_localizations.dart';
 
 class LoadingScreen extends StatefulWidget {
   const LoadingScreen({
@@ -29,8 +31,10 @@ class LoadingScreen extends StatefulWidget {
     this.initialBuddyUri,
     this.initialDashboardUri,
     this.initialPasswordResetUri,
+    this.initialGymRegisterUri,
     this.initialSubscriptionTier,
     this.initialMollieConnectSuccess = false,
+    this.initialMandaatComplete = false,
   });
 
   /// Bij cold start via gymies://payment/complete?booking_id=X
@@ -48,11 +52,17 @@ class LoadingScreen extends StatefulWidget {
   /// Bij cold start via gymies://wachtwoord-reset?token=X&email=Y
   final Uri? initialPasswordResetUri;
 
+  /// Bij cold start via gymies://gym/register?token=X
+  final Uri? initialGymRegisterUri;
+
   /// Bij cold start via gymies://subscription/complete?tier=pro
   final String? initialSubscriptionTier;
 
   /// Bij cold start via gymies://mollie-connect/success
   final bool initialMollieConnectSuccess;
+
+  /// Bij cold start via gymies://onboarding/mandaat-complete
+  final bool initialMandaatComplete;
 
   @override
   State<LoadingScreen> createState() => _LoadingScreenState();
@@ -97,14 +107,17 @@ class _LoadingScreenState extends State<LoadingScreen>
     });
   }
 
-  void _startAnimations() async {
+  Future<void> _startAnimations() async {
     await Future.delayed(const Duration(milliseconds: 150));
     if (!mounted) return;
     try {
       if (!_logoController.isAnimating && !_logoController.isCompleted) {
         _logoController.forward();
       }
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Logo animation optional
+      if (kDebugMode) debugPrint('[LoadingScreen] Logo animation failed: $e');
+    }
     for (int i = 0; i < _letterControllers.length; i++) {
       await Future.delayed(const Duration(milliseconds: 200));
       if (!mounted) return;
@@ -113,7 +126,10 @@ class _LoadingScreenState extends State<LoadingScreen>
         if (!c.isAnimating && !c.isCompleted) {
           c.forward();
         }
-      } catch (_) {}
+      } catch (e) {
+        // Fail-open: Letter animation optional
+        if (kDebugMode) debugPrint('[LoadingScreen] Letter animation failed: $e');
+      }
     }
   }
 
@@ -163,7 +179,7 @@ class _LoadingScreenState extends State<LoadingScreen>
         final success = await bio.authenticateForAppOpen();
         if (!success) {
           // Gebruiker heeft biometric geweigerd/geannuleerd → ga naar login
-          if (kDebugMode) debugPrint('[LoadingScreen] Biometric auth mislukt → login scherm');
+          if (kDebugMode) debugPrint(S.of(context).loadingscreenBiometricAuthMisluktLoginScherm);
           if (!mounted) return;
           _hasNavigated = true;
           _navigateTimer?.cancel();
@@ -180,7 +196,7 @@ class _LoadingScreenState extends State<LoadingScreen>
           );
           return;
         }
-        if (kDebugMode) debugPrint('[LoadingScreen] Biometric auth gelukt ✓');
+        if (kDebugMode) debugPrint(S.of(context).loadingscreenBiometricAuthGelukt);
       }
     }
 
@@ -188,14 +204,19 @@ class _LoadingScreenState extends State<LoadingScreen>
     _navigateTimer?.cancel(); // Stop timer — navigatie is gestart
     final Widget destination;
     if (auth.isLoggedIn) {
-      destination = auth.isAdmin
-          ? const ControlTowerScreen()
-          : (auth.isTrainer
-                ? const TrainerShell()
-                : const ClientShell());
+      if (auth.isAdmin) {
+        destination = const ControlTowerScreen();
+      } else if (auth.isTrainer) {
+        destination = const TrainerShell();
+      } else if (auth.isGymMember) {
+        destination = const GymShell();
+      } else {
+        destination = const ClientShell();
+      }
     } else {
       destination = const LoginRegisterScreen();
     }
+    // ignore: use_build_context_synchronously
     await Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => destination,
@@ -266,6 +287,16 @@ class _LoadingScreenState extends State<LoadingScreen>
       return;
     }
 
+    // Cold start via gymies://gym/register?token=X: gym registratie (geen login vereist)
+    final gymRegisterUri = widget.initialGymRegisterUri;
+    if (gymRegisterUri != null && mounted) {
+      final screen = DeepLinkService.screenFromUri(gymRegisterUri);
+      if (screen != null) {
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+      }
+      return;
+    }
+
     // Cold start via gymies://subscription/complete?tier=pro: abonnement-scherm na betaling
     final subscriptionTier = widget.initialSubscriptionTier;
     if (subscriptionTier != null &&
@@ -283,14 +314,27 @@ class _LoadingScreenState extends State<LoadingScreen>
       return;
     }
 
-    // Cold start via gymies://mollie-connect/success: onboarding met success-dialog
-    if (widget.initialMollieConnectSuccess &&
+    // Cold start via gymies://mollie-connect/success: navigeer op basis van rol
+    if (widget.initialMollieConnectSuccess && auth.isLoggedIn && mounted) {
+      if (auth.isTrainer || auth.isGymOwner) {
+        final screen = DeepLinkService.mollieConnectSuccessScreen(auth);
+        if (screen != null) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => screen),
+          );
+          return;
+        }
+      }
+    }
+
+    // Cold start via gymies://onboarding/mandaat-complete: SEPA mandaat afgerond
+    if (widget.initialMandaatComplete &&
         auth.isLoggedIn &&
         auth.isTrainer &&
         mounted) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => const TrainerOnboardingScreen(mollieConnectSuccess: true),
+          builder: (_) => const TrainerOnboardingScreen(mandaatComplete: true),
         ),
       );
       return;
@@ -302,7 +346,7 @@ class _LoadingScreenState extends State<LoadingScreen>
       final screen = DeepLinkService.screenFromUri(dashboardUri);
       if (screen != null) {
         final host = dashboardUri.host.toLowerCase();
-        final isTrainerRoute = host == 'trainer';
+        final isTrainerRoute = host == S.of(context).trainer2;
         final isClientRoute = host == 'client';
         if (isTrainerRoute && auth.isTrainer) {
           Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));

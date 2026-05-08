@@ -140,8 +140,13 @@ final class GymiesAuthController extends Controller
                 ->select('i.id', 'i.organisation_id', 'i.expires_at', 'i.max_uses', 'i.used_count', 'o.name as organisation_name')
                 ->first();
             if ($inviteRow) {
-                if ($inviteRow->expires_at !== null && \Carbon\Carbon::parse((string) $inviteRow->expires_at) < now()) {
-                    throw ValidationException::withMessages(['gym_invite_token' => ['Deze uitnodiging is verlopen.']]);
+                // ISSUE #6: Timezone handling in date comparisons
+                // FIX: Use explicit timezone in Carbon parsing
+                if ($inviteRow->expires_at !== null) {
+                    $expiresAt = \Carbon\Carbon::parse((string) $inviteRow->expires_at, config('app.timezone'));
+                    if ($expiresAt->lessThan(now(config('app.timezone')))) {
+                        throw ValidationException::withMessages(['gym_invite_token' => ['Deze uitnodiging is verlopen.']]);
+                    }
                 }
                 if ($inviteRow->max_uses !== null && (int) $inviteRow->used_count >= (int) $inviteRow->max_uses) {
                     throw ValidationException::withMessages(['gym_invite_token' => ['Deze uitnodiging is al gebruikt.']]);

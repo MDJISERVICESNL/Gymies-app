@@ -34,23 +34,36 @@ class GymiesSentryContextMiddleware
 
         $user = $request->user();
 
-        if ($user) {
+        if ($user && isset($user->id)) {
             \Sentry\configureScope(function (\Sentry\State\Scope $scope) use ($user, $request): void {
-                $scope->setUser([
-                    'id'       => (string) $user->id,
-                    'email'    => $user->email ?? '',
-                    'username' => $user->display_name ?? $user->name ?? '',
-                ]);
+                $userData = [
+                    'id' => (string) $user->id,
+                ];
 
-                // Role als tag voor filtering in Sentry dashboard
-                $role = $user->role ?? $user->user_role ?? 'unknown';
-                $scope->setTag('user.role', (string) $role);
+                // Only add email if present and not empty
+                if (!empty($user->email)) {
+                    $userData['email'] = (string) $user->email;
+                }
 
-                // Extra context: request info
+                // Only add username if present and not empty
+                $username = $user->display_name ?? $user->name ?? null;
+                if (!empty($username)) {
+                    $userData['username'] = (string) $username;
+                }
+
+                $scope->setUser($userData);
+
+                // Role as tag for Sentry dashboard filtering
+                $role = $user->role ?? $user->user_role ?? null;
+                if (!empty($role)) {
+                    $scope->setTag('user.role', (string) $role);
+                }
+
+                // Extra request context
                 $scope->setContext('request', [
-                    'url'        => $request->fullUrl(),
-                    'method'     => $request->method(),
-                    'ip'         => $request->ip(),
+                    'url'    => $request->fullUrl(),
+                    'method' => $request->method(),
+                    'ip'     => $request->ip(),
                     'user_agent' => substr((string) $request->userAgent(), 0, 200),
                 ]);
             });

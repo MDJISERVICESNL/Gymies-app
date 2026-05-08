@@ -1,9 +1,11 @@
+
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../models/trainer.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
@@ -11,8 +13,7 @@ import '../theme/gymies_theme.dart';
 import '../utils/haptics.dart';
 import 'client_trainer_profile_screen.dart';
 import 'widgets/trainer_state_views.dart';
-
-const _kFavoritesKey = 'gymies_favorite_trainer_ids';
+const _kFavoritesKey = S.of(context).gymiesfavoritetrainerids;
 
 /// Zelfstandig favorietenscherm — laadt trainers en favorieten-IDs zelf,
 /// zonder callbacks van een parent widget.
@@ -73,6 +74,7 @@ class _ClientFavoritesStandaloneScreenState
       if (cleanedIds.length != ids.length) {
         await prefs.setStringList(_kFavoritesKey, cleanedIds.toList());
       }
+      if (!mounted) return;
       setState(() {
         _trainers = trainers;
         _favoriteIds = cleanedIds;
@@ -87,7 +89,7 @@ class _ClientFavoritesStandaloneScreenState
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon favorieten niet laden.';
+        _error = S.of(context).konFavorietenNietLaden;
         _loading = false;
       });
     }
@@ -96,12 +98,13 @@ class _ClientFavoritesStandaloneScreenState
   Future<void> _toggleFavorite(Trainer trainer) async {
     final api = context.read<GymiesApi>();
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     final adding = !_favoriteIds.contains(trainer.userId);
     setState(() {
       if (adding) {
-        _favoriteIds.add(trainer.userId);
+        _favoriteIds = {..._favoriteIds, trainer.userId};
       } else {
-        _favoriteIds.remove(trainer.userId);
+        _favoriteIds = _favoriteIds.where((id) => id != trainer.userId).toSet();
       }
     });
     // Local cache bijwerken
@@ -180,7 +183,7 @@ class _ClientFavoritesStandaloneScreenState
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Favorieten',
+                        S.of(context).favorieten,
                         style: GoogleFonts.sora(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -207,9 +210,9 @@ class _ClientFavoritesStandaloneScreenState
                 children: const [
                   TrainerEmptyState(
                     icon: Icons.favorite_outline_rounded,
-                    title: 'Nog geen favorieten',
+                    title: S.of(context).noFavorites,
                     subtitle:
-                        'Voeg trainers toe aan je favorieten via hun profiel.',
+                        S.of(context).voegTrainersToeAanJeFavorieten,
                     padding: EdgeInsets.all(32),
                   ),
                 ],
@@ -224,7 +227,7 @@ class _ClientFavoritesStandaloneScreenState
                   controller: _searchCtrl,
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
-                    hintText: 'Zoek op naam, specialiteit of regio',
+                    hintText: S.of(context).zoekOpNaamSpecialiteitOfRegio,
                     prefixIcon: const Icon(Icons.search_rounded),
                     filled: true,
                     fillColor: Colors.white,
@@ -244,7 +247,7 @@ class _ClientFavoritesStandaloneScreenState
                         return Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: FilterChip(
-                            label: Text(s == 'all' ? 'Alles' : s),
+                            label: Text(s == 'all' ? S.of(context).allLabel : s),
                             selected: selected,
                             onSelected: (_) {
                               Haptics.selection();
@@ -260,8 +263,8 @@ class _ClientFavoritesStandaloneScreenState
                 if (visible.isEmpty)
                   const TrainerEmptyState(
                     icon: Icons.search_off_rounded,
-                    title: 'Geen resultaten',
-                    subtitle: 'Pas je zoekterm of filter aan.',
+                    title: S.of(context).noResults,
+                    subtitle: S.of(context).pasJeZoektermOfFilterAan,
                     padding: EdgeInsets.symmetric(vertical: 36),
                   )
                 else
@@ -317,7 +320,7 @@ class _TrainerCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
+                  color: Colors.black.withOpacity(0.05),
                   blurRadius: 12,
                   offset: const Offset(0, 3),
                 ),
@@ -390,7 +393,7 @@ class _Avatar extends StatelessWidget {
       return CircleAvatar(
         radius: 26,
         backgroundImage: CachedNetworkImageProvider(url, errorListener: (_) {}),
-        backgroundColor: GymiesColors.primary.withValues(alpha: 0.2),
+        backgroundColor: GymiesColors.primary.withOpacity(0.2),
       );
     }
     final initial = trainer.nameOrEmail.isNotEmpty
@@ -398,7 +401,7 @@ class _Avatar extends StatelessWidget {
         : '?';
     return CircleAvatar(
       radius: 26,
-      backgroundColor: GymiesColors.primary.withValues(alpha: 0.2),
+      backgroundColor: GymiesColors.primary.withOpacity(0.2),
       child: Text(
         initial,
         style: GoogleFonts.sora(

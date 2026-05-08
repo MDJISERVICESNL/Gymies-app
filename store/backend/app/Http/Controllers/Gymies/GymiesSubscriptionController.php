@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 final class GymiesSubscriptionController extends Controller
@@ -432,13 +433,13 @@ final class GymiesSubscriptionController extends Controller
             $webhookSecret = config('gymies.mollie_webhook_secret', env('MOLLIE_WEBHOOK_SECRET', ''));
             if ($webhookSecret !== '') {
                 // Secret is geconfigureerd maar signature ontbreekt — verdacht
-                \Log::warning('Mollie subscription webhook zonder signature terwijl secret geconfigureerd is', [
+                Log::warning('Mollie subscription webhook zonder signature terwijl secret geconfigureerd is', [
                     'ip' => $request->ip(),
                     'user_agent' => $request->userAgent(),
                     'timestamp' => now()->toIso8601String(),
                 ]);
             } else {
-                \Log::info('Mollie subscription webhook zonder signature (geen secret geconfigureerd)', [
+                Log::info('Mollie subscription webhook zonder signature (geen secret geconfigureerd)', [
                     'ip' => $request->ip(),
                 ]);
             }
@@ -465,7 +466,7 @@ final class GymiesSubscriptionController extends Controller
         $data = $response->json();
         $status = $data['status'] ?? 'unknown';
         if (!in_array($status, ['paid', 'open', 'pending', 'failed', 'canceled', 'cancelled', 'expired', 'refunded', 'charged_back', 'authorized'], true)) {
-            \Log::warning('Onbekende Mollie subscription status ontvangen', [
+            Log::warning('Onbekende Mollie subscription status ontvangen', [
                 'original_status' => $status,
                 'payment_id' => $paymentId,
             ]);

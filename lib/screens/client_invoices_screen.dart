@@ -1,20 +1,22 @@
+
+
+
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../utils/haptics.dart';
 import '../utils/safe_url_launcher.dart';
-
 import '../models/booking.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/map_utils.dart';
+import '../utils/currency_format.dart';
 import 'client_support_screen.dart';
 import 'widgets/trainer_state_views.dart';
-
 class ClientInvoicesScreen extends StatefulWidget {
   const ClientInvoicesScreen({super.key});
 
@@ -43,12 +45,12 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
   // ═══════════════════════════════════════════════════════════════════
 
   Future<void> _load() async {
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
       List<Map<String, dynamic>> list = [];
       try {
         list = await api.getClientInvoices();
@@ -60,6 +62,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
           rethrow;
         }
       }
+      if (!mounted) return;
       List<Booking> bookings = [];
       try {
         bookings = await api.getBookings();
@@ -81,7 +84,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon facturen niet laden.';
+        _error = S.of(context).konFacturenNietLaden;
         _loading = false;
       });
     }
@@ -101,7 +104,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
     final cents = _toInt(
       mapPick(invoice, ['total_cents', 'totalCents', 'amount_cents']),
     );
-    if (cents != null) return '\u20AC${(cents / 100).toStringAsFixed(2)}';
+    if (cents != null) return formatEuro(cents);
     final amount = mapStr(invoice, ['total', 'amount']);
     return amount.isEmpty ? '-' : amount;
   }
@@ -130,9 +133,9 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
 
   String _statusLabel(Map<String, dynamic> invoice) {
     final s = _status(invoice);
-    if (s == 'paid') return 'Betaald';
+    if (s == 'paid') return S.of(context).betaald;
     if (s == 'open') return 'Openstaand';
-    if (s == 'unknown') return 'Onbekend';
+    if (s == 'unknown') return S.of(context).statusOnbekend;
     return s;
   }
 
@@ -163,7 +166,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
         isSentRaw == 1 ||
         isSentRaw?.toString().toLowerCase() == 'true';
     final number = mapStr(invoice, [
-      'number', 'invoice_number', 'trainer_invoice_number', 'gymies_invoice_number',
+      'number', 'invoice_number', S.of(context).trainerinvoicenumber, 'gymies_invoice_number',
     ]);
     final link = _invoiceLink(invoice);
     return isSent || sentAt.isNotEmpty || (number.isNotEmpty && link.isNotEmpty);
@@ -201,12 +204,12 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
   Future<void> _requestInvoiceForBooking(Booking booking) async {
     final bookingId = booking.id.trim();
     if (bookingId.isEmpty) {
-      _showError('Boeking-ID ontbreekt.');
+      _showError(S.of(context).boekingidOntbreekt);
       return;
     }
     if (_requestingInvoiceBookingIds.contains(bookingId)) return;
     setState(() => _requestingInvoiceBookingIds.add(bookingId));
-    final trainerName = booking.trainerName.isEmpty ? 'trainer' : booking.trainerName;
+    final trainerName = booking.trainerName.isEmpty ? S.of(context).trainer2 : booking.trainerName;
     final message =
         'Klant vraagt factuur aan voor booking $bookingId (${booking.scheduledAt.toIso8601String()}) bij $trainerName.';
     try {
@@ -215,17 +218,17 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
         message: message,
       );
       if (!mounted) return;
-      _showSuccess('Factuurverzoek verstuurd naar trainer');
+      _showSuccess(S.of(context).factuurverzoekVerstuurdNaarTrainer);
     } on ApiException {
       try {
         await context.read<GymiesApi>().createSupportTicket(
           type: 'invoice',
-          subject: 'Factuurverzoek',
+          subject: S.of(context).factuurverzoek,
           message: 'Ik wil graag een factuur voor sessie $bookingId bij $trainerName.',
           bookingId: bookingId,
         );
         if (!mounted) return;
-        _showSuccess('Factuurverzoek geregistreerd');
+        _showSuccess(S.of(context).factuurverzoekGeregistreerd);
       } on ApiException catch (e) {
         if (!mounted) return;
         _showError(e.message);
@@ -264,21 +267,21 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
     if (link.isEmpty || _openingLink) return;
     final uri = Uri.tryParse(link);
     if (uri == null) {
-      _showError('Factuurlink is ongeldig.');
+      _showError(S.of(context).factuurlinkIsOngeldig);
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Download de PDF direct na openen.'),
+        content: Text(S.of(context).downloadDePdfDirectNaOpenen),
         backgroundColor: GymiesColors.darkBlue,
       ),
     );
     setState(() => _openingLink = true);
     try {
       final launched = await SafeUrlLauncher.launchSafeUrl(context, uri.toString());
-      if (!launched) _showError('Kon link niet openen.');
+      if (!launched) _showError(S.of(context).konLinkNietOpenen);
     } catch (_) {
-      _showError('Kon link niet openen.');
+      _showError(S.of(context).konLinkNietOpenen);
     } finally {
       if (mounted) setState(() => _openingLink = false);
     }
@@ -305,12 +308,12 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
   Future<void> _showInvoiceDetail(Map<String, dynamic> invoice) async {
     final number =
         mapStr(invoice, [
-          'number', 'invoice_number', 'trainer_invoice_number', 'gymies_invoice_number',
+          'number', 'invoice_number', S.of(context).trainerinvoicenumber, 'gymies_invoice_number',
         ]).isNotEmpty
         ? mapStr(invoice, [
-            'number', 'invoice_number', 'trainer_invoice_number', 'gymies_invoice_number',
+            'number', 'invoice_number', S.of(context).trainerinvoicenumber, 'gymies_invoice_number',
           ])
-        : 'Factuur';
+        : S.of(context).factuur2;
     final date = mapStr(invoice, ['date', 'issued_at', 'created_at']);
     final dueDate = mapStr(invoice, ['due_date', 'expires_at']);
     final amount = _moneyFromAny(invoice);
@@ -340,7 +343,10 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
               ? amount
               : mapStr(loaded, ['amount', 'amount_label']),
         };
-      } catch (_) {}
+      } catch (e) {
+        // Fail-open: Payment receipt retrieval optional, show available data
+        if (kDebugMode) debugPrint('[ClientInvoices] Payment receipt fetch failed: $e');
+      }
     }
     if (!mounted) return;
     await showDialog<void>(
@@ -405,7 +411,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                   ),
                   if (status.toLowerCase() == 'betaald') ...[
                     const SizedBox(height: 16),
-                    Text('Betaalbewijs', style: GoogleFonts.sora(fontSize: 16, color: GymiesColors.darkBlue)),
+                    Text(S.of(context).betaalbewijs, style: GoogleFonts.sora(fontSize: 16, color: GymiesColors.darkBlue)),
                     const SizedBox(height: 8),
                     Container(
                       width: double.infinity,
@@ -418,13 +424,13 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _DetailRow(label: 'Betaald op', value: receipt['paid_at'].toString().isEmpty ? '-' : receipt['paid_at']),
+                          _DetailRow(label: S.of(context).betaaldOp, value: receipt['paid_at'].toString().isEmpty ? '-' : receipt['paid_at']),
                           _DetailRow(label: 'Methode', value: receipt['method'].toString().isEmpty ? '-' : receipt['method']),
                           _DetailRow(label: 'Referentie', value: receipt['reference'].toString().isEmpty ? '-' : receipt['reference']),
                           if (receipt['booking_id'].toString().isNotEmpty)
-                            _DetailRow(label: 'Boeking-ID', value: receipt['booking_id'].toString()),
+                            _DetailRow(label: S.of(context).boekingid, value: receipt['booking_id'].toString()),
                           if (receipt['referral_credit'].toString().isNotEmpty)
-                            _DetailRow(label: 'Referraltegoed', value: receipt['referral_credit'].toString()),
+                            _DetailRow(label: S.of(context).referraltegoed, value: receipt['referral_credit'].toString()),
                           if (receipt['promo_code'].toString().isNotEmpty)
                             _DetailRow(label: 'Promocode', value: receipt['promo_code'].toString()),
                         ],
@@ -433,10 +439,10 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                   ],
                   if (link.isNotEmpty) ...[
                     const SizedBox(height: 16),
-                    Text('PDF downloaden', style: GoogleFonts.sora(fontSize: 16, color: GymiesColors.darkBlue)),
+                    Text(S.of(context).pdfDownloaden, style: GoogleFonts.sora(fontSize: 16, color: GymiesColors.darkBlue)),
                     const SizedBox(height: 8),
                     Text(
-                      'Download de factuur direct als PDF. De link kan na verloop van tijd verlopen.',
+                      S.of(context).downloadDeFactuurDirectAlsPdfDeLinkKanNaVerloopVanTijdVerlopen,
                       style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade600),
                     ),
                     const SizedBox(height: 12),
@@ -450,7 +456,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                         icon: const Icon(Icons.download_rounded),
-                        label: const Text('Download PDF'),
+                        label: const Text(S.of(context).downloadPdf),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -465,13 +471,13 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                           _showSuccess('Link gekopieerd');
                         },
                         icon: const Icon(Icons.copy_rounded),
-                        label: const Text('Kopieer link'),
+                        label: const Text(S.of(context).kopieerLink),
                       ),
                     ),
                   ],
                   if (link.isEmpty) ...[
                     const SizedBox(height: 16),
-                    Text('Geen downloadlink beschikbaar.', style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade600)),
+                    Text(S.of(context).geenDownloadlinkBeschikbaar, style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade600)),
                   ],
                 ],
               ),
@@ -515,6 +521,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
   @override
   Widget build(BuildContext context) {
     final filtered = _filteredInvoices();
+    // ignore: unused_local_variable
     final sentInvoices = _invoices.where(_isSentInvoice).toList();
     final sessionRecords = _sessionRecords();
     final receipts = _receiptRecords();
@@ -531,8 +538,8 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                   children: [
                     _buildHeader(),
                     const _EmptyView(
-                      title: 'Nog geen facturen',
-                      subtitle: 'Na een sessie kun je hier je factuur bekijken en downloaden. Boekingen en facturen verschijnen automatisch.',
+                      title: S.of(context).nogGeenFacturen,
+                      subtitle: S.of(context).naEenSessieKunJeHier,
                     ),
                   ],
                 )
@@ -589,7 +596,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
               ),
               const SizedBox(width: 12),
               Text(
-                'Mijn facturen',
+                S.of(context).mijnFacturen,
                 style: GoogleFonts.sora(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
@@ -606,7 +613,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                 },
                 child: Icon(
                   Icons.support_agent_rounded,
-                  color: Colors.white.withValues(alpha: 0.7),
+                  color: Colors.white.withOpacity(0.7),
                   size: 22,
                 ),
               ),
@@ -618,15 +625,15 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
             padding: const EdgeInsets.only(top: 14),
             decoration: BoxDecoration(
               border: Border(
-                top: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                top: BorderSide(color: Colors.white.withOpacity(0.12)),
               ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _HeaderStat(value: _totalPaid(), label: 'Betaald'),
+                _HeaderStat(value: _totalPaid(), label: S.of(context).betaald),
                 _HeaderStat(value: _totalOpen(), label: 'Openstaand'),
-                _HeaderStat(value: '${sentInvoices.length}', label: 'Facturen'),
+                _HeaderStat(value: '${sentInvoices.length}', label: S.of(context).facturen),
               ],
             ),
           ),
@@ -646,12 +653,12 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(
           children: [
-            _FilterPill(label: 'Alles', selected: _statusFilter == 'all', onTap: () {
+            _FilterPill(label: S.of(context).allLabel, selected: _statusFilter == 'all', onTap: () {
               Haptics.light();
               setState(() => _statusFilter = 'all');
             }),
             const SizedBox(width: 6),
-            _FilterPill(label: 'Betaald', selected: _statusFilter == 'paid', onTap: () {
+            _FilterPill(label: S.of(context).betaald, selected: _statusFilter == 'paid', onTap: () {
               Haptics.light();
               setState(() => _statusFilter = 'paid');
             }),
@@ -666,17 +673,17 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
       const SizedBox(height: 14),
       if (filtered.isEmpty)
         const _EmptyView(
-          title: 'Geen facturen',
-          subtitle: 'Facturen verschijnen hier zodra je trainer ze verstuurt.',
+          title: S.of(context).geenFacturen,
+          subtitle: S.of(context).facturenVerschijnenHierZodraJeTrainer,
         )
       else
         ...List.generate(filtered.length, (idx) {
           final invoice = filtered[idx];
           final number = mapStr(invoice, [
-            'number', 'invoice_number', 'trainer_invoice_number', 'gymies_invoice_number',
+            'number', 'invoice_number', S.of(context).trainerinvoicenumber, 'gymies_invoice_number',
           ]).isNotEmpty
-              ? mapStr(invoice, ['number', 'invoice_number', 'trainer_invoice_number', 'gymies_invoice_number'])
-              : 'Factuur';
+              ? mapStr(invoice, ['number', 'invoice_number', S.of(context).trainerinvoicenumber, 'gymies_invoice_number'])
+              : S.of(context).factuur2;
           final date = mapStr(invoice, ['date', 'issued_at', 'created_at']);
           final status = _statusLabel(invoice);
           final amount = _moneyFromAny(invoice);
@@ -700,7 +707,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
+                      color: Colors.black.withOpacity(0.04),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -719,7 +726,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: _statusColor(invoice).withValues(alpha: 0.12),
+                            color: _statusColor(invoice).withOpacity(0.12),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Icon(
@@ -759,7 +766,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
-                                color: _statusColor(invoice).withValues(alpha: 0.12),
+                                color: _statusColor(invoice).withOpacity(0.12),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
@@ -794,8 +801,8 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
     if (sessionRecords.isEmpty) {
       return [
         const _EmptyView(
-          title: 'Nog geen sessies',
-          subtitle: 'Zodra een sessie is geweest zie je hier het overzicht.',
+          title: S.of(context).nogGeenSessies,
+          subtitle: S.of(context).zodraEenSessieIsGeweestZie,
         ),
       ];
     }
@@ -806,8 +813,8 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
       final time =
           '${b.scheduledAt.hour.toString().padLeft(2, '0')}:${b.scheduledAt.minute.toString().padLeft(2, '0')}';
       final amount = b.amountCents == null
-          ? 'Onbekend bedrag'
-          : '\u20AC${(b.amountCents! / 100).toStringAsFixed(2)}';
+          ? S.of(context).onbekendBedrag
+          : formatEuro(b.amountCents);
       final sentInvoice = _sentInvoiceForBooking(b.id);
       final requestBusy = _requestingInvoiceBookingIds.contains(b.id);
 
@@ -830,7 +837,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
+                  color: Colors.black.withOpacity(0.04),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -843,7 +850,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.12),
+                      color: GymiesColors.primary.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(Icons.event_note_rounded, color: GymiesColors.darkBlue, size: 22),
@@ -854,14 +861,14 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          b.trainerName.isEmpty ? 'Trainer' : b.trainerName,
+                          b.trainerName.isEmpty ? S.of(context).trainer : b.trainerName,
                           style: GoogleFonts.sora(fontSize: 14, color: GymiesColors.darkBlue),
                         ),
                         const SizedBox(height: 3),
                         Text('$date om $time', style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600)),
                         const SizedBox(height: 2),
                         Text(
-                          sentInvoice == null ? 'Factuur nog niet verstuurd' : 'Factuur beschikbaar',
+                          sentInvoice == null ? S.of(context).factuurNogNietVerstuurd : S.of(context).factuurBeschikbaar,
                           style: GoogleFonts.sora(
                             fontSize: 11,
                             color: sentInvoice == null ? Colors.orange.shade700 : Colors.green.shade700,
@@ -883,7 +890,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                                 _showInvoiceDetail(sentInvoice);
                               },
                               icon: const Icon(Icons.receipt_long_rounded, size: 16),
-                              label: const Text('Bekijk'),
+                              label: const Text(S.of(context).bekijk),
                               style: FilledButton.styleFrom(
                                 backgroundColor: GymiesColors.primary,
                                 foregroundColor: GymiesColors.darkBlue,
@@ -898,7 +905,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                                 Haptics.light();
                                 _requestInvoiceForBooking(b);
                               },
-                                  child: const Text('Vraag aan'),
+                                  child: const Text(S.of(context).vraagAan),
                                 ),
                     ],
                   ),
@@ -919,8 +926,8 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
     if (receipts.isEmpty) {
       return [
         const _EmptyView(
-          title: 'Nog geen betaalbewijzen',
-          subtitle: 'Betaalde facturen verschijnen hier met betaalmethode en referentie.',
+          title: S.of(context).nogGeenBetaalbewijzen,
+          subtitle: S.of(context).betaaldeFacturenVerschijnenHierMetBetaalmethode,
         ),
       ];
     }
@@ -928,10 +935,10 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
       final r = receipts[idx];
       final invoice = (r['invoice'] as Map<String, dynamic>?) ?? <String, dynamic>{};
       final number = mapStr(invoice, [
-        'number', 'invoice_number', 'trainer_invoice_number', 'gymies_invoice_number',
+        'number', 'invoice_number', S.of(context).trainerinvoicenumber, 'gymies_invoice_number',
       ]).isEmpty
-          ? 'Factuur'
-          : mapStr(invoice, ['number', 'invoice_number', 'trainer_invoice_number', 'gymies_invoice_number']);
+          ? S.of(context).factuur2
+          : mapStr(invoice, ['number', 'invoice_number', S.of(context).trainerinvoicenumber, 'gymies_invoice_number']);
       final paidAt = r['paid_at'].toString().isEmpty ? '-' : r['paid_at'];
       final method = r['method'].toString().isEmpty ? '-' : r['method'];
       final ref = r['reference'].toString().isEmpty ? '-' : r['reference'];
@@ -955,7 +962,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
+                  color: Colors.black.withOpacity(0.04),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -986,7 +993,7 @@ class _ClientInvoicesScreenState extends State<ClientInvoicesScreen> {
                         children: [
                           Text(number, style: GoogleFonts.sora(fontSize: 14, color: GymiesColors.darkBlue)),
                           const SizedBox(height: 4),
-                          _ReceiptRow(label: 'Betaald op', value: paidAt),
+                          _ReceiptRow(label: S.of(context).betaaldOp, value: paidAt),
                           _ReceiptRow(label: 'Methode', value: method),
                           if (ref != '-') _ReceiptRow(label: 'Referentie', value: ref),
                         ],
@@ -1039,7 +1046,7 @@ class _HeaderStat extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           label,
-          style: GoogleFonts.sora(fontSize: 11, color: Colors.white.withValues(alpha: 0.55)),
+          style: GoogleFonts.sora(fontSize: 11, color: Colors.white.withOpacity(0.55)),
         ),
       ],
     );
@@ -1094,9 +1101,9 @@ class _ViewModeTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: _TabChip(label: 'Facturen', icon: Icons.receipt_long_rounded, isSelected: selected == 'invoices', onTap: () => onChanged('invoices'))),
+        Expanded(child: _TabChip(label: S.of(context).facturen, icon: Icons.receipt_long_rounded, isSelected: selected == 'invoices', onTap: () => onChanged('invoices'))),
         const SizedBox(width: 8),
-        Expanded(child: _TabChip(label: 'Sessies', icon: Icons.event_note_rounded, isSelected: selected == 'sessions', onTap: () => onChanged('sessions'))),
+        Expanded(child: _TabChip(label: S.of(context).sessionsCountLabel, icon: Icons.event_note_rounded, isSelected: selected == 'sessions', onTap: () => onChanged('sessions'))),
         const SizedBox(width: 8),
         Expanded(child: _TabChip(label: 'Bewijzen', icon: Icons.verified_rounded, isSelected: selected == 'receipts', onTap: () => onChanged('receipts'))),
       ],
@@ -1120,7 +1127,7 @@ class _TabChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: isSelected
-          ? GymiesColors.primary.withValues(alpha: 0.2)
+          ? GymiesColors.primary.withOpacity(0.2)
           : Colors.grey.shade200,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
@@ -1216,7 +1223,7 @@ class _EmptyView extends StatelessWidget {
             width: 64,
             height: 64,
             decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.15),
+              color: GymiesColors.primary.withOpacity(0.15),
               borderRadius: BorderRadius.circular(16),
             ),
             child: const Icon(Icons.receipt_long_rounded, size: 32, color: GymiesColors.primary),

@@ -3,6 +3,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../config/app_config.dart';
 import '../theme/gymies_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// WebView voor Mollie Connect OAuth.
 /// Onderschept gymies://mollie-connect/success en sluit met result true.
@@ -36,7 +37,7 @@ class _MollieConnectWebViewScreenState extends State<MollieConnectWebViewScreen>
       appBar: AppBar(
         backgroundColor: GymiesColors.darkBlue,
         foregroundColor: GymiesColors.primary,
-        title: const Text('Mollie koppelen'),
+        title: const Text(S.of(context).mollieKoppelen),
       ),
       body: Stack(
         children: [
@@ -61,7 +62,7 @@ class _MollieConnectWebViewScreenState extends State<MollieConnectWebViewScreen>
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Fout: ${e.description}'),
+                  content: Text(S.of(context).foutMsg(e.description ?? '')),
                   backgroundColor: Colors.red,
                 ),
               );

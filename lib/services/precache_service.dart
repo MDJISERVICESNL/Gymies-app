@@ -177,11 +177,13 @@ class PrecacheService extends ChangeNotifier {
     }
   }
 
+  @override
   void dispose() {
     for (final t in _debounceTimers.values) {
       t.cancel();
     }
     _debounceTimers.clear();
+    super.dispose();
   }
 }
 

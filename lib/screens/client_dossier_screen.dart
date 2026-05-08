@@ -1,16 +1,17 @@
+
+
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
-
+import '../l10n/generated/app_localizations.dart';
 import '../utils/haptics.dart';
-
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 import '../utils/map_utils.dart';
 import 'widgets/trainer_state_views.dart';
-
 /// Klant-scherm voor dossier, doelen en gedeelde coach-notes.
 /// Pro/Elite-trainers delen deze info met hun klanten.
 class ClientDossierScreen extends StatefulWidget {
@@ -99,12 +100,12 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
 
   Future<void> _load() async {
     if (!mounted) return;
+    final api = context.read<GymiesApi>();
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final api = context.read<GymiesApi>();
       Map<String, dynamic> sharedDossier = {};
       Map<String, dynamic> progress = {};
       List<Map<String, dynamic>> notes = [];
@@ -154,7 +155,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon dossier niet laden.';
+        _error = S.of(context).konDossierNietLaden;
         _loading = false;
       });
     }
@@ -197,7 +198,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Mijn dossier',
+                        S.of(context).mijnDossier,
                         style: GoogleFonts.sora(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -252,7 +253,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 12,
             offset: const Offset(0, 3),
           ),
@@ -268,14 +269,14 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                    color: GymiesColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(Icons.trending_up_rounded, color: GymiesColors.darkBlue, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  'Progressie & ritme',
+                  S.of(context).progressieRitme,
                   style: GoogleFonts.sora(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -287,7 +288,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
             const SizedBox(height: 12),
             if (!hasAny && nextAction.isEmpty)
               Text(
-                'Je trainer deelt nog geen progressie. Bij Pro-trainers zie je hier je streak, doelen en ontwikkeling.',
+                S.of(context).jeTrainerDeeltNogGeenProgressieBijProtrainersZieJeHierJeStreakDoelenEnOntwikkeling,
                 style: GoogleFonts.sora(color: Colors.grey.shade700, fontSize: 14),
               )
             else ...[
@@ -300,7 +301,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
               if (goalsTotal > 0)
                 _Line(
                   icon: Icons.flag_outlined,
-                  label: 'Doelen',
+                  label: S.of(context).doelen,
                   value: '$goalsDone / $goalsTotal voltooid',
                 ),
               if (weight.isNotEmpty)
@@ -314,7 +315,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.1),
+                    color: GymiesColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -338,9 +339,9 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
               const SizedBox(height: 12),
               SegmentedButton<String>(
                 segments: const [
-                  ButtonSegment(value: _metricWeight, label: Text('Gewicht')),
-                  ButtonSegment(value: _metricPerformance, label: Text('Prestatie')),
-                  ButtonSegment(value: _metricAttendance, label: Text('Aanwezigheid')),
+                  ButtonSegment(value: _metricWeight, label: Text(S.of(context).gewicht)),
+                  ButtonSegment(value: _metricPerformance, label: Text(S.of(context).prestatie)),
+                  ButtonSegment(value: _metricAttendance, label: Text(S.of(context).aanwezigheid)),
                 ],
                 selected: {_selectedMetric},
                 onSelectionChanged: (v) {
@@ -364,7 +365,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       child: Text(
-                        'Geen grafiekdata voor deze metriek. Je trainer kan dit invullen via het dossier.',
+                        S.of(context).geenGrafiekdataVoorDezeMetriekJeTrainerKanDitInvullenViaHetDossier,
                         style: GoogleFonts.sora(
                           color: Colors.grey.shade600,
                           fontSize: 13,
@@ -395,7 +396,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 12,
             offset: const Offset(0, 3),
           ),
@@ -411,14 +412,14 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                    color: GymiesColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(Icons.flag_rounded, color: GymiesColors.darkBlue, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  'Doelen',
+                  S.of(context).doelen,
                   style: GoogleFonts.sora(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -430,7 +431,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
             const SizedBox(height: 12),
             if (goals.isEmpty)
               Text(
-                'Nog geen doelen ingesteld door je trainer. Doelen verschijnen hier zodra je trainer ze voor je invult.',
+                S.of(context).nogGeenDoelenIngesteldDoorJeTrainerDoelenVerschijnenHierZodraJeTrainerZeVoorJeInvult,
                 style: GoogleFonts.sora(color: Colors.grey.shade700, fontSize: 14),
               )
             else
@@ -441,7 +442,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
                     contentPadding: EdgeInsets.zero,
                     leading: CircleAvatar(
                       radius: 20,
-                      backgroundColor: GymiesColors.primary.withValues(alpha: 0.2),
+                      backgroundColor: GymiesColors.primary.withOpacity(0.2),
                       child: Icon(
                         Icons.flag_outlined,
                         color: GymiesColors.darkBlue,
@@ -484,7 +485,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 12,
             offset: const Offset(0, 3),
           ),
@@ -500,14 +501,14 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                    color: GymiesColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(Icons.videocam_rounded, color: GymiesColors.darkBlue, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  'Video\'s van je trainer',
+                  S.of(context).videos van je trainer',
                   style: GoogleFonts.sora(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -518,7 +519,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Instructievideo\'s die je trainer speciaal voor jou heeft toegevoegd.',
+              S.of(context).instructievideos die je trainer speciaal voor jou heeft toegevoegd.',
               style: GoogleFonts.sora(color: Colors.grey.shade600, fontSize: 13),
             ),
             const SizedBox(height: 12),
@@ -533,7 +534,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: CircleAvatar(
                     radius: 20,
-                    backgroundColor: GymiesColors.primary.withValues(alpha: 0.2),
+                    backgroundColor: GymiesColors.primary.withOpacity(0.2),
                     child: Icon(
                       Icons.play_circle_outline,
                       color: GymiesColors.darkBlue,
@@ -573,7 +574,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 12,
             offset: const Offset(0, 3),
           ),
@@ -589,14 +590,14 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                    color: GymiesColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(Icons.note_rounded, color: GymiesColors.darkBlue, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  'Coach notes',
+                  S.of(context).coachNotes,
                   style: GoogleFonts.sora(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -607,13 +608,13 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Feedback en notities van je trainer na een sessie.',
+              S.of(context).feedbackEnNotitiesVanJeTrainerNaEenSessie,
               style: GoogleFonts.sora(color: Colors.grey.shade600, fontSize: 13),
             ),
             const SizedBox(height: 12),
             if (notes.isEmpty)
               Text(
-                'Nog geen coach notes. Je trainer kan na een sessie notities met je delen.',
+                S.of(context).nogGeenCoachNotesJeTrainerKanNaEenSessieNotitiesMetJeDelen,
                 style: GoogleFonts.sora(color: Colors.grey.shade700, fontSize: 14),
               )
             else
@@ -621,7 +622,7 @@ class _ClientDossierScreenState extends State<ClientDossierScreen> {
                 final title = mapStr(n, ['title', 'type', 'session_type']);
                 final body = mapStr(n, ['body', 'note', 'text', 'message']);
                 final created = _dateFrom(n, ['created_at', 'createdAt', 'date']);
-                final trainer = mapStr(n, ['trainer_name', 'trainerName']);
+                final trainer = mapStr(n, [S.of(context).trainername, S.of(context).trainername2]);
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(14),
@@ -726,8 +727,8 @@ class _ProgressMiniChart extends StatelessWidget {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: isLast
-                              ? [GymiesColors.primary, GymiesColors.primary.withValues(alpha: 0.7)]
-                              : [GymiesColors.primary.withValues(alpha: 0.6), GymiesColors.primary.withValues(alpha: 0.3)],
+                              ? [GymiesColors.primary, GymiesColors.primary.withOpacity(0.7)]
+                              : [GymiesColors.primary.withOpacity(0.6), GymiesColors.primary.withOpacity(0.3)],
                         ),
                         borderRadius: BorderRadius.circular(8),
                       ),

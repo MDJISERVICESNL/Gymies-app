@@ -69,6 +69,21 @@ class GymiesClientVideosController
 
         $trainerId = (int) $user->id;
         $clientId = (int) $clientUserId;
+
+        // FIX-SEC-001: Verify trainer has working relationship with this client before allowing video upload
+        if (!Schema::hasTable('gymies_bookings')) {
+            return response()->json(['message' => 'Geen relatie met deze klant.'], 403);
+        }
+
+        $hasRelation = DB::table('gymies_bookings')
+            ->where('trainer_user_id', $trainerId)
+            ->where('client_user_id', $clientId)
+            ->exists();
+
+        if (!$hasRelation) {
+            return response()->json(['message' => 'Geen relatie met deze klant.'], 403);
+        }
+
         $title = trim((string) ($request->input('title') ?? 'Video'));
 
         $path = $file->store(

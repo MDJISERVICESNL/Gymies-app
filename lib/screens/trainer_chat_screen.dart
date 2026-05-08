@@ -5,9 +5,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/timing_constants.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/booking.dart';
 import '../models/trainer_models.dart';
 import '../services/api_client.dart';
@@ -73,7 +75,12 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
     WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     _wsSubscription?.cancel();
-    _wsChannel?.sink.close();
+    try {
+      _wsChannel?.sink.close();
+    } catch (e) {
+      // WebSocket may already be closed
+      if (kDebugMode) debugPrint('[TrainerChat] WebSocket close error: $e');
+    }
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -116,10 +123,11 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
         _error = e.message;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e, st) {
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': S.of(context).trainerchat, 'action': 'load'}));
       if (!mounted) return;
       setState(() {
-        _error = 'Kon chat niet laden.';
+        _error = S.of(context).konChatNietLaden;
         _loading = false;
       });
     }
@@ -175,8 +183,10 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
       if (_messages.length != previousLength) {
         _jumpToBottom();
       }
-    } catch (e) {
+    } catch (e, st) {
       if (kDebugMode) debugPrint('[TrainerChat] Silent refresh fout: $e');
+      Sentry.addBreadcrumb(Breadcrumb(message: 'TrainerChat silent refresh failed: $e', category: 'chat'));
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': S.of(context).trainerchat, 'action': 'refreshSilently'}));
     }
   }
 
@@ -222,6 +232,9 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
     final candidates = _wsCandidates();
     if (candidates.isEmpty) return;
     _connectingWs = true;
+    // Cache localization strings to avoid context issues in callbacks
+    final wsConnectedMsg = '[TrainerChat] WebSocket connected';
+    final wsClosedMsg = '[TrainerChat] WebSocket connection closed';
     for (final uri in candidates) {
       try {
         final channel = WebSocketChannel.connect(uri);
@@ -231,7 +244,7 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
             if (!_wsConnected) {
               _wsConnected = true;
               _wsReconnectAttempts = 0;
-              if (kDebugMode) debugPrint('[TrainerChat] WebSocket verbonden');
+              if (kDebugMode) debugPrint(wsConnectedMsg);
             }
             final parsed = _parseIncomingWsMessage(event);
             if (parsed == null) return;
@@ -240,14 +253,15 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
             });
             _jumpToBottom();
           },
-          onError: (error) {
+          onError: (error, [StackTrace? stackTrace]) {
             if (kDebugMode) debugPrint('[TrainerChat] WebSocket error: $error');
+            Sentry.addBreadcrumb(Breadcrumb(message: 'TrainerChat WS error: $error', category: 'websocket', level: SentryLevel.warning));
             _wsConnected = false;
             _scheduleReconnect();
           },
           onDone: () {
             _wsConnected = false;
-            if (kDebugMode) debugPrint('[TrainerChat] WebSocket verbinding gesloten');
+            if (kDebugMode) debugPrint(wsClosedMsg);
             _scheduleReconnect();
           },
           cancelOnError: false,
@@ -256,8 +270,10 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
         _wsSubscription = sub;
         _connectingWs = false;
         return;
-      } catch (e) {
+      } catch (e, st) {
         if (kDebugMode) debugPrint('[TrainerChat] WebSocket verbinding poging fout: $e');
+        Sentry.addBreadcrumb(Breadcrumb(message: 'TrainerChat WS connect attempt failed: $e', category: 'websocket'));
+        Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': S.of(context).trainerchat, 'action': 'wsConnect', 'uri': uri.toString()}));
       }
     }
     _connectingWs = false;
@@ -287,8 +303,9 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
     if (rawEvent is String) {
       try {
         decoded = jsonDecode(rawEvent);
-      } catch (e) {
+      } catch (e, st) {
         if (kDebugMode) debugPrint('[TrainerChat] JSON decode websocket fout: $e');
+        Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': S.of(context).trainerchat, 'action': 'wsJsonDecode'}));
         // Platte tekst → behandel als berichtbody
         return TrainerMessage(
           id: '',
@@ -318,8 +335,9 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
     if (json == null) return null;
     try {
       return TrainerMessage.fromJson(json);
-    } catch (e) {
+    } catch (e, st) {
       if (kDebugMode) debugPrint('[TrainerChat] WS message parse fout: $e');
+      final jsonStr = json.toString(); Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': S.of(context).trainerchat, 'action': 'wsMessageParse', 'json': jsonStr.length > 200 ? jsonStr.substring(0, 200) : jsonStr}));
       return null;
     }
   }
@@ -371,12 +389,13 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
       }
       setState(() {});
       Haptics.error();
-    } catch (_) {
+    } catch (e, st) {
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': S.of(context).trainerchat, 'action': 'sendMessage'}));
       if (!mounted) return;
       final idx = _pendingMessages.indexWhere((p) => p['id'] == tempId);
       if (idx >= 0) {
         _pendingMessages[idx]['status'] = 'failed';
-        _pendingMessages[idx]['error'] = 'Versturen mislukt';
+        _pendingMessages[idx]['error'] = S.of(context).errorSendFailed;
       }
       setState(() {});
       Haptics.error();
@@ -412,12 +431,13 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
         await _load(background: true);
       }
       Haptics.success();
-    } catch (_) {
+    } catch (e, st) {
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': S.of(context).trainerchat, 'action': 'retryPending'}));
       if (!mounted) return;
       final i = _pendingMessages.indexWhere((p) => p['id'] == tempId);
       if (i >= 0) {
         _pendingMessages[i]['status'] = 'failed';
-        _pendingMessages[i]['error'] = 'Versturen mislukt';
+        _pendingMessages[i]['error'] = S.of(context).errorSendFailed;
       }
       setState(() {});
     }
@@ -451,11 +471,12 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
         return matchesClient && isValid;
       }).toList()
         ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
-    } catch (e) {
+    } catch (e, st) {
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': S.of(context).trainerchat, 'action': 'loadBookingsForReschedule'}));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Kon boekingen niet laden'),
+          content: const Text(S.of(context).konBoekingenNietLaden),
           backgroundColor: Colors.red.shade600,
         ),
       );
@@ -467,7 +488,7 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
     if (bookings.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Geen verplaatsbare sessies met ${widget.conversation.clientName}'),
+          content: Text(S.of(context).geenVerplaatsbareSessiesMet(widget.conversation.clientName)),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -508,7 +529,7 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Sessie begint zo',
+                  S.of(context).sessieBegintZo,
                   style: GoogleFonts.sora(fontSize: 17, fontWeight: FontWeight.w700),
                 ),
               ),
@@ -516,14 +537,14 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
           ),
           content: Text(
             hoursUntil < 1
-                ? 'Deze sessie begint over minder dan een uur. Weet je zeker dat je wilt verplaatsen?'
-                : 'Deze sessie is vandaag. Weet je zeker dat je wilt verplaatsen?',
+                ? S.of(context).dezeSessieBegintOverMinderDan
+                : S.of(context).dezeSessieIsVandaagWeetJe,
             style: GoogleFonts.sora(fontSize: 14, color: Colors.grey.shade700),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Annuleren'),
+              child: const Text(S.of(context).annuleren),
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
@@ -531,7 +552,7 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
                 backgroundColor: Colors.orange.shade700,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Toch verplaatsen'),
+              child: const Text(S.of(context).tochVerplaatsen),
             ),
           ],
         ),
@@ -545,8 +566,8 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
       initialDate: selected.scheduledAt.add(const Duration(days: 1)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      helpText: 'Kies een nieuwe datum',
-      cancelText: 'Annuleren',
+      helpText: S.of(context).kiesEenNieuweDatum,
+      cancelText: S.of(context).annuleren,
       confirmText: 'Verder',
     );
     if (pickedDate == null || !mounted) return;
@@ -554,8 +575,8 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
     final pickedTime = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(selected.scheduledAt),
-      helpText: 'Kies een nieuw tijdstip',
-      cancelText: 'Annuleren',
+      helpText: S.of(context).kiesEenNieuwTijdstip,
+      cancelText: S.of(context).annuleren,
       confirmText: 'Verplaatsen',
     );
     if (pickedTime == null || !mounted) return;
@@ -585,7 +606,7 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
           'booking_id': selected.id,
           'scheduled_at': selected.scheduledAt.toIso8601String(),
           'requested_at': newDateTime.toIso8601String(),
-          'trainer_name': selected.trainerName,
+          S.of(context).trainername: selected.trainerName,
           'client_name': selected.clientName ?? widget.conversation.clientName,
           'session_type': selected.sessionType,
           'duration_minutes': selected.durationMinutes,
@@ -614,14 +635,15 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
           );
           await CalendarService.instance.addBookingToTrainerCalendar(updatedBooking);
         }
-      } catch (_) {
+      } catch (e) {
         // Kalender sync mag nooit de flow breken
+        Sentry.addBreadcrumb(Breadcrumb(message: 'Calendar sync failed (non-blocking): $e', category: 'chat'));
       }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Verplaatsingsverzoek verstuurd'),
+          content: const Text(S.of(context).verplaatsingsverzoekVerstuurd),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -631,12 +653,13 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message), backgroundColor: Colors.red),
       );
-    } catch (_) {
+    } catch (e, st) {
+      Sentry.captureException(e, stackTrace: st, hint: Hint.withMap({'screen': S.of(context).trainerchat, 'action': 'rescheduleFlow'}));
       if (!mounted) return;
       Haptics.error();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Verplaatsen mislukt. Probeer het opnieuw.'),
+          content: const Text(S.of(context).verplaatsenMisluktProbeerHetOpnieuw),
           backgroundColor: Colors.red.shade600,
         ),
       );
@@ -753,7 +776,11 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
               await CalendarService.instance.addBookingToTrainerCalendar(booking);
             }
           }
-        } catch (_) {}
+        } catch (e) {
+          // Fail-open: Calendar sync optional, rescheduling completes anyway
+          if (kDebugMode) debugPrint('[TrainerChat] Add to calendar failed: $e');
+          Sentry.addBreadcrumb(Breadcrumb(message: 'Calendar sync after reschedule failed: $e', category: 'chat'));
+        }
       }
 
       await _load(background: true);
@@ -765,8 +792,8 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
               action == 'accept'
                   ? 'Verplaatsing geaccepteerd'
                   : action == 'reject'
-                      ? 'Verzoek afgewezen'
-                      : 'Tegenvoorstel verstuurd',
+                      ? S.of(context).verzoekAfgewezen
+                      : S.of(context).tegenvoorstelVerstuurd,
             ),
             backgroundColor: GymiesColors.darkBlue,
           ),
@@ -819,68 +846,68 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
 
     // ── 1. Reactief: reageer op wat de klant zei ──
 
-    if (clientText.contains('afzeg') || clientText.contains('kan niet') ||
+    if (clientText.contains('afzeg') || clientText.contains(S.of(context).kanNiet) ||
         clientText.contains('lukt niet') || clientText.contains('annul')) {
-      chips.add(_TrainerQuickReplyChip(label: 'Geen probleem', icon: Icons.check_rounded, onTap: () => _send('Geen probleem! Laat me weten wanneer het je wel schikt.')));
-      chips.add(_TrainerQuickReplyChip(label: 'Verplaats sessie', icon: Icons.event_repeat_rounded, onTap: _openRescheduleFlow));
+      chips.add(_TrainerQuickReplyChip(label: S.of(context).geenProbleem, icon: Icons.check_rounded, onTap: () => _send(S.of(context).geenProbleemLaatMeWetenWanneer)));
+      chips.add(_TrainerQuickReplyChip(label: S.of(context).verplaatsSessie, icon: Icons.event_repeat_rounded, onTap: _openRescheduleFlow));
     }
     else if (clientText.contains('verplaats') || clientText.contains('verzet') ||
              clientText.contains('ander tijdstip') || clientText.contains('andere dag')) {
-      chips.add(_TrainerQuickReplyChip(label: 'Verplaats sessie', icon: Icons.event_repeat_rounded, onTap: _openRescheduleFlow));
-      chips.add(_TrainerQuickReplyChip(label: 'Kan!', icon: Icons.check_circle_outline_rounded, onTap: () => _send('Kan! Ik stuur je een verplaatsingsverzoek.')));
+      chips.add(_TrainerQuickReplyChip(label: S.of(context).verplaatsSessie, icon: Icons.event_repeat_rounded, onTap: _openRescheduleFlow));
+      chips.add(_TrainerQuickReplyChip(label: 'Kan!', icon: Icons.check_circle_outline_rounded, onTap: () => _send(S.of(context).kanIkStuurJeEenVerplaatsingsverzoek)));
     }
     else if (clientText.contains('bedankt') || clientText.contains('dankje') ||
              clientText.contains('thanks') || clientText.contains('top')) {
-      chips.add(_TrainerQuickReplyChip(label: 'Graag gedaan!', icon: Icons.favorite_outline_rounded, onTap: () => _send('Graag gedaan!')));
-      chips.add(_TrainerQuickReplyChip(label: 'Goed bezig!', icon: Icons.thumb_up_outlined, onTap: () => _send('Goed bezig $firstName! Ga zo door 💪')));
+      chips.add(_TrainerQuickReplyChip(label: S.of(context).graagGedaan, icon: Icons.favorite_outline_rounded, onTap: () => _send('Graag gedaan!')));
+      chips.add(_TrainerQuickReplyChip(label: S.of(context).goedBezig, icon: Icons.thumb_up_outlined, onTap: () => _send('Goed bezig $firstName! Ga zo door 💪')));
     }
     else if (clientText.contains('super') || clientText.contains('geweldig') ||
              clientText.contains('goed') && clientText.contains('les')) {
-      chips.add(_TrainerQuickReplyChip(label: 'Blij te horen!', icon: Icons.star_rounded, onTap: () => _send('Blij dat te horen! Je maakt goede progressie.')));
-      chips.add(_TrainerQuickReplyChip(label: 'Volgende keer', icon: Icons.trending_up_rounded, onTap: () => _send('Mooi! Volgende keer gaan we een stapje verder.')));
+      chips.add(_TrainerQuickReplyChip(label: S.of(context).blijTeHoren, icon: Icons.star_rounded, onTap: () => _send(S.of(context).blijDatTeHorenJeMaakt)));
+      chips.add(_TrainerQuickReplyChip(label: 'Volgende keer', icon: Icons.trending_up_rounded, onTap: () => _send(S.of(context).mooiVolgendeKeerGaanWeEen)));
     }
     else if (clientText.contains('pittig') || clientText.contains('zwaar') ||
              clientText.contains('moeilijk') || clientText.contains('pijn')) {
-      chips.add(_TrainerQuickReplyChip(label: 'Goed gedaan!', icon: Icons.emoji_events_outlined, onTap: () => _send('Goed gedaan dat je hebt doorgezet! Het wordt makkelijker.')));
-      chips.add(_TrainerQuickReplyChip(label: 'Neem rust', icon: Icons.self_improvement_rounded, onTap: () => _send('Neem voldoende rust, je lichaam heeft het nodig na zo\'n sessie.')));
+      chips.add(_TrainerQuickReplyChip(label: 'Goed gedaan!', icon: Icons.emoji_events_outlined, onTap: () => _send(S.of(context).goedGedaanDatJeHebtDoorgezet)));
+      chips.add(_TrainerQuickReplyChip(label: 'Neem rust', icon: Icons.self_improvement_rounded, onTap: () => _send(S.of(context).neemVoldoendeRustJeLichaamHeeft)));
     }
     else if (clientText.contains('vraag') || clientText.contains('hoe') ||
-             clientText.contains('wat moet') || clientText.contains('uitleg')) {
-      chips.add(_TrainerQuickReplyChip(label: 'Goeie vraag!', icon: Icons.lightbulb_outline_rounded, onTap: () => _send('Goeie vraag! Ik leg het even uit...')));
-      chips.add(_TrainerQuickReplyChip(label: 'Even bellen?', icon: Icons.phone_outlined, onTap: () => _send('Zal ik het even telefonisch uitleggen? Dat gaat sneller.')));
+             clientText.contains(S.of(context).watMoet) || clientText.contains('uitleg')) {
+      chips.add(_TrainerQuickReplyChip(label: 'Goeie vraag!', icon: Icons.lightbulb_outline_rounded, onTap: () => _send(S.of(context).goeieVraagIkLegHetEven)));
+      chips.add(_TrainerQuickReplyChip(label: 'Even bellen?', icon: Icons.phone_outlined, onTap: () => _send(S.of(context).zalIkHetEvenTelefonischUitleggen)));
     }
     else if (clientText.contains('ik ben er') || clientText.contains('onderweg') ||
              clientText.contains('tot zo') || clientText.contains('kom eraan')) {
-      chips.add(_TrainerQuickReplyChip(label: 'Tot zo!', icon: Icons.waving_hand_outlined, onTap: () => _send('Top, tot zo!')));
-      chips.add(_TrainerQuickReplyChip(label: 'Ik sta klaar', icon: Icons.check_circle_outline_rounded, onTap: () => _send('Mooi, ik sta klaar!')));
+      chips.add(_TrainerQuickReplyChip(label: S.of(context).totZoChat, icon: Icons.waving_hand_outlined, onTap: () => _send('Top, tot zo!')));
+      chips.add(_TrainerQuickReplyChip(label: S.of(context).ikStaKlaar, icon: Icons.check_circle_outline_rounded, onTap: () => _send('Mooi, ik sta klaar!')));
     }
-    else if (clientText.contains('factuur') || clientText.contains('betaal') ||
+    else if (clientText.contains(S.of(context).factuur) || clientText.contains('betaal') ||
              clientText.contains('prijs') || clientText.contains('kosten')) {
-      chips.add(_TrainerQuickReplyChip(label: 'Ik check het', icon: Icons.search_rounded, onTap: () => _send('Ik check het even voor je en laat het weten.')));
-      chips.add(_TrainerQuickReplyChip(label: 'Factuur verstuurd', icon: Icons.receipt_long_rounded, onTap: () => _send('De factuur is verstuurd naar je e-mail.')));
+      chips.add(_TrainerQuickReplyChip(label: 'Ik check het', icon: Icons.search_rounded, onTap: () => _send(S.of(context).ikCheckHetEvenVoorJe)));
+      chips.add(_TrainerQuickReplyChip(label: S.of(context).factuurVerstuurd, icon: Icons.receipt_long_rounded, onTap: () => _send(S.of(context).deFactuurIsVerstuurdNaarJe)));
     }
 
     // ── 2. Tijdsgebonden chips (als er geen reactieve match was) ──
 
     if (chips.isEmpty) {
       if (hour >= 6 && hour < 12) {
-        chips.add(_TrainerQuickReplyChip(label: 'Reminder sessie', icon: Icons.alarm_outlined, onTap: () => _send('Vergeet je sessie niet vandaag! Tot zo.')));
-        chips.add(_TrainerQuickReplyChip(label: 'Hoe gaat het?', icon: Icons.waving_hand_outlined, onTap: () => _send('Goedemorgen $firstName! Hoe gaat het?')));
+        chips.add(_TrainerQuickReplyChip(label: S.of(context).reminderSessie, icon: Icons.alarm_outlined, onTap: () => _send(S.of(context).vergeetJeSessieNietVandaagTot)));
+        chips.add(_TrainerQuickReplyChip(label: S.of(context).hoeGaatHet, icon: Icons.waving_hand_outlined, onTap: () => _send('Goedemorgen $firstName! Hoe gaat het?')));
       } else if (hour >= 12 && hour < 18) {
-        chips.add(_TrainerQuickReplyChip(label: 'Hoe was de les?', icon: Icons.star_outline_rounded, onTap: () => _send('Hoe was de les vandaag?')));
-        chips.add(_TrainerQuickReplyChip(label: 'Schema klaar', icon: Icons.assignment_outlined, onTap: () => _send('Je nieuwe trainingsschema is klaar!')));
+        chips.add(_TrainerQuickReplyChip(label: S.of(context).hoeWasDeLes, icon: Icons.star_outline_rounded, onTap: () => _send(S.of(context).hoeWasDeLesVandaag)));
+        chips.add(_TrainerQuickReplyChip(label: 'Schema klaar', icon: Icons.assignment_outlined, onTap: () => _send(S.of(context).jeNieuweTrainingsschemaIsKlaar)));
       } else {
-        chips.add(_TrainerQuickReplyChip(label: 'Goed bezig!', icon: Icons.thumb_up_outlined, onTap: () => _send('Goed bezig $firstName! Ga zo door 💪')));
-        chips.add(_TrainerQuickReplyChip(label: 'Tot morgen!', icon: Icons.nightlight_outlined, onTap: () => _send('Goed getraind vandaag. Tot de volgende!')));
+        chips.add(_TrainerQuickReplyChip(label: S.of(context).goedBezig, icon: Icons.thumb_up_outlined, onTap: () => _send('Goed bezig $firstName! Ga zo door 💪')));
+        chips.add(_TrainerQuickReplyChip(label: S.of(context).totMorgen, icon: Icons.nightlight_outlined, onTap: () => _send('Goed getraind vandaag. Tot de volgende!')));
       }
     }
 
     // ── 3. Universele trainer-chips achteraan ──
     final existingLabels = chips.whereType<_TrainerQuickReplyChip>().map((c) => c.label).toSet();
     // Voeg "Verplaats sessie" toe als universele chip (opent flow, stuurt geen tekst)
-    if (!existingLabels.contains('Verplaats sessie')) {
+    if (!existingLabels.contains(S.of(context).verplaatsSessie)) {
       chips.add(_TrainerQuickReplyChip(
-        label: 'Verplaats sessie',
+        label: S.of(context).verplaatsSessie,
         icon: Icons.event_repeat_rounded,
         onTap: _openRescheduleFlow,
       ));
@@ -927,8 +954,8 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final dateOnly = DateTime(date.year, date.month, date.day);
-    if (dateOnly == today) return 'Vandaag';
-    if (dateOnly == today.subtract(const Duration(days: 1))) return 'Gisteren';
+    if (dateOnly == today) return S.of(context).vandaag;
+    if (dateOnly == today.subtract(const Duration(days: 1))) return S.of(context).gisteren;
     const months = [
       'jan', 'feb', 'mrt', 'apr', 'mei', 'jun',
       'jul', 'aug', 'sep', 'okt', 'nov', 'dec',
@@ -952,7 +979,7 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
               onPressed: _openRescheduleFlow,
               icon: const Icon(Icons.event_repeat_rounded, size: 16),
               label: Text(
-                'Verplaats',
+                S.of(context).verplaats,
                 style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600),
               ),
               style: TextButton.styleFrom(
@@ -987,7 +1014,7 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
                                 size: 56, color: Colors.grey),
                             const SizedBox(height: 10),
                             Text(
-                              'Nog geen berichten',
+                              S.of(context).nogGeenBerichten,
                               style: GoogleFonts.sora(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w700,
@@ -1069,6 +1096,12 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
                           );
                         }
 
+                        // Verberg lege berichten (body is leeg of alleen whitespace/dash)
+                        final bodyText = m.body.trim();
+                        if (bodyText.isEmpty || bodyText == '-' || bodyText == '–') {
+                          return const SizedBox.shrink();
+                        }
+
                         final mine = m.isFromTrainer;
                         final ts =
                             '${m.createdAt.hour.toString().padLeft(2, '0')}:${m.createdAt.minute.toString().padLeft(2, '0')}';
@@ -1118,7 +1151,7 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
                       minLines: 1,
                       maxLines: 4,
                       decoration: InputDecoration(
-                        hintText: 'Typ een bericht...',
+                        hintText: S.of(context).typEenBericht,
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
@@ -1126,12 +1159,11 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
                           borderSide: BorderSide.none,
                         ),
                       ),
-                      onSubmitted: (_) => _send(),
                     ),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: _sending ? null : () => _send(),
+                    onPressed: (_sending || _controller.text.trim().isEmpty) ? null : () => _send(),
                     style: FilledButton.styleFrom(
                       backgroundColor: GymiesColors.primary,
                       foregroundColor: GymiesColors.darkBlue,
@@ -1233,7 +1265,7 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
                 border: mine ? null : Border.all(color: Colors.grey.shade200),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 4,
                     offset: const Offset(0, 1),
                   ),
@@ -1245,7 +1277,7 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      body.isEmpty ? '-' : body,
+                      body,
                       style: GoogleFonts.sora(
                         color: isFailed
                             ? Colors.red.shade700
@@ -1299,7 +1331,7 @@ class _TrainerChatScreenState extends State<TrainerChatScreen>
                         Icon(Icons.refresh_rounded, size: 12, color: Colors.red.shade500),
                         const SizedBox(width: 4),
                         Text(
-                          'Tik om opnieuw te versturen',
+                          S.of(context).tikOmOpnieuwTeVersturen,
                           style: GoogleFonts.sora(fontSize: 10, color: Colors.red.shade500, fontWeight: FontWeight.w600),
                         ),
                       ],
@@ -1340,14 +1372,14 @@ class _RescheduleBookingPicker extends StatelessWidget {
         '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
   }
 
-  String _formatSessionType(String? type) {
-    if (type == null || type.isEmpty) return 'Sessie';
+  String _formatSessionType(String? type, BuildContext ctx) {
+    if (type == null || type.isEmpty) return S.of(ctx).sessionSingle;
     switch (type.toLowerCase()) {
       case 'duo':
-        return 'Duo sessie';
+        return S.of(ctx).duoSessie;
       case 'groepsles':
       case 'group':
-        return 'Groepsles';
+        return S.of(ctx).groepsles;
       case '1-op-1':
       case '1op1':
       case 'personal':
@@ -1376,7 +1408,7 @@ class _RescheduleBookingPicker extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: GymiesColors.primary.withValues(alpha: 0.15),
+                    color: GymiesColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
@@ -1391,7 +1423,7 @@ class _RescheduleBookingPicker extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Sessie verplaatsen',
+                        S.of(context).sessieVerplaatsen,
                         style: GoogleFonts.sora(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
@@ -1432,10 +1464,10 @@ class _RescheduleBookingPicker extends StatelessWidget {
               shrinkWrap: true,
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
               itemCount: bookings.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (ctx, i) {
                 final b = bookings[i];
-                final typeLabel = _formatSessionType(b.sessionType);
+                final typeLabel = _formatSessionType(b.sessionType, ctx);
                 return Material(
                   color: Colors.transparent,
                   child: InkWell(
@@ -1455,7 +1487,7 @@ class _RescheduleBookingPicker extends StatelessWidget {
                             width: 48,
                             height: 48,
                             decoration: BoxDecoration(
-                              color: GymiesColors.primary.withValues(alpha: 0.15),
+                              color: GymiesColors.primary.withOpacity(0.15),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Column(
@@ -1551,10 +1583,10 @@ class _TrainerQuickReplyChip extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: GymiesColors.primary.withValues(alpha: 0.4)),
+              border: Border.all(color: GymiesColors.primary.withOpacity(0.4)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
+                  color: Colors.black.withOpacity(0.03),
                   blurRadius: 4,
                   offset: const Offset(0, 1),
                 ),

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../config/app_config.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
@@ -36,7 +37,7 @@ class _ReferralScreenState extends State<ReferralScreen>
   String _referralCode = '';
   int _invitesSent = 0;
   int _invitesAccepted = 0;
-  String _rewardLabel = 'Gratis sessie';
+  String _rewardLabel = S.of(context).gratisSessie;
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
 
@@ -83,7 +84,7 @@ class _ReferralScreenState extends State<ReferralScreen>
         _rewardLabel = (data['reward_label'] ??
                 data['reward'] ??
                 data['incentive'] ??
-                'Gratis sessie')
+                S.of(context).gratisSessie)
             .toString();
         _loading = false;
       });
@@ -116,9 +117,9 @@ class _ReferralScreenState extends State<ReferralScreen>
   }
 
   String get _shareText {
-    return 'Ik train met GYMIES en vind het top! '
-        'Meld je aan via mijn persoonlijke link en '
-        'we krijgen allebei een beloning 💪\n\n'
+    return S.of(context).ikTrainMetGymiesEnVind
+        S.of(context).meldJeAanViaMijnPersoonlijke
+        S.of(context).weKrijgenAllebeiEenBeloningNn
         '$_referralLink';
   }
 
@@ -126,10 +127,10 @@ class _ReferralScreenState extends State<ReferralScreen>
     Haptics.light();
     Clipboard.setData(ClipboardData(text: _referralLink));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Link gekopieerd!'),
+      SnackBar(
+        content: Text(S.of(context).linkCopied),
         backgroundColor: GymiesColors.darkBlue,
-        duration: Duration(seconds: 2),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -138,16 +139,18 @@ class _ReferralScreenState extends State<ReferralScreen>
     Haptics.selection();
     switch (method) {
       case 'email':
-        Share.share(_shareText, subject: 'Probeer GYMIES — mijn tip!');
+        SharePlus.instance.share(
+          ShareParams(text: _shareText, title: S.of(context).probeerGymiesMijnTip),
+        );
         break;
       case 'whatsapp':
-        Share.share(_shareText);
+        SharePlus.instance.share(ShareParams(text: _shareText));
         break;
       case 'message':
-        Share.share(_shareText);
+        SharePlus.instance.share(ShareParams(text: _shareText));
         break;
       default:
-        Share.share(_shareText);
+        SharePlus.instance.share(ShareParams(text: _shareText));
     }
   }
 
@@ -158,24 +161,27 @@ class _ReferralScreenState extends State<ReferralScreen>
       appBar: const GymiesAppBar(title: 'Vrienden uitnodigen'),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : FadeTransition(
-              opacity: _fadeAnim,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildHeroCard(),
-                  const SizedBox(height: 16),
-                  _buildShareButtons(),
-                  const SizedBox(height: 16),
-                  _buildStatsRow(),
-                  const SizedBox(height: 16),
-                  _buildReferralLinkCard(),
-                  const SizedBox(height: 16),
-                  _buildQrCard(),
-                  const SizedBox(height: 24),
-                  _buildHowItWorks(),
-                  const SizedBox(height: 32),
-                ],
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: FadeTransition(
+                opacity: _fadeAnim,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _buildHeroCard(),
+                    const SizedBox(height: 16),
+                    _buildShareButtons(),
+                    const SizedBox(height: 16),
+                    _buildStatsRow(),
+                    const SizedBox(height: 16),
+                    _buildReferralLinkCard(),
+                    const SizedBox(height: 16),
+                    _buildQrCard(),
+                    const SizedBox(height: 24),
+                    _buildHowItWorks(),
+                    const SizedBox(height: 32),
+                  ],
+                ),
               ),
             ),
     );
@@ -195,7 +201,7 @@ class _ReferralScreenState extends State<ReferralScreen>
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: GymiesColors.darkBlue.withValues(alpha: 0.3),
+            color: GymiesColors.darkBlue.withOpacity(0.3),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -207,7 +213,7 @@ class _ReferralScreenState extends State<ReferralScreen>
             width: 64,
             height: 64,
             decoration: BoxDecoration(
-              color: GymiesColors.primary.withValues(alpha: 0.2),
+              color: GymiesColors.primary.withOpacity(0.2),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -218,7 +224,7 @@ class _ReferralScreenState extends State<ReferralScreen>
           ),
           const SizedBox(height: 16),
           Text(
-            'Deel de kracht van fitness',
+            S.of(context).shareThePower,
             style: GoogleFonts.sora(
               fontSize: 22,
               fontWeight: FontWeight.bold,
@@ -228,11 +234,11 @@ class _ReferralScreenState extends State<ReferralScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            'Nodig vrienden uit voor GYMIES en ontvang '
-            'allebei een beloning wanneer zij starten!',
+            S.of(context).nodigVriendenUitVoorGymiesEn // Keep dynamic based on localization
+            S.of(context).allebeiEenBeloningWanneerZijStarten,
             style: TextStyle(
               fontSize: 14,
-              color: Colors.white.withValues(alpha: 0.85),
+              color: Colors.white.withOpacity(0.85),
               height: 1.5,
             ),
             textAlign: TextAlign.center,
@@ -275,7 +281,7 @@ class _ReferralScreenState extends State<ReferralScreen>
         child: Column(
           children: [
             Text(
-              'Deel via',
+              S.of(context).shareVia,
               style: GoogleFonts.sora(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -300,7 +306,7 @@ class _ReferralScreenState extends State<ReferralScreen>
                 ),
                 _ShareCircle(
                   icon: Icons.message_rounded,
-                  label: 'Bericht',
+                  label: S.of(context).bericht,
                   color: Colors.orange.shade600,
                   onTap: () => _shareVia('message'),
                 ),
@@ -326,7 +332,7 @@ class _ReferralScreenState extends State<ReferralScreen>
           child: _StatCard(
             icon: Icons.send_rounded,
             value: _invitesSent.toString(),
-            label: 'Verstuurd',
+            label: S.of(context).verstuurd,
             color: Colors.blue.shade600,
           ),
         ),
@@ -370,7 +376,7 @@ class _ReferralScreenState extends State<ReferralScreen>
                     color: GymiesColors.darkBlue, size: 20),
                 const SizedBox(width: 8),
                 Text(
-                  'Jouw persoonlijke link',
+                  S.of(context).yourPersonalLink,
                   style: GoogleFonts.sora(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
@@ -396,7 +402,7 @@ class _ReferralScreenState extends State<ReferralScreen>
                       style: TextStyle(
                         fontSize: 13,
                         fontFamily: 'monospace',
-                        color: GymiesColors.darkBlue.withValues(alpha: 0.8),
+                        color: GymiesColors.darkBlue.withOpacity(0.8),
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -411,7 +417,7 @@ class _ReferralScreenState extends State<ReferralScreen>
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.15),
+                        color: GymiesColors.primary.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Icon(Icons.copy_rounded,
@@ -454,7 +460,7 @@ class _ReferralScreenState extends State<ReferralScreen>
         child: Column(
           children: [
             Text(
-              'Of deel via QR',
+              S.of(context).orShareViaQr,
               style: GoogleFonts.sora(
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
@@ -463,7 +469,7 @@ class _ReferralScreenState extends State<ReferralScreen>
             ),
             const SizedBox(height: 4),
             Text(
-              'Laat vrienden deze QR-code scannen',
+              S.of(context).letFriendsScanQr,
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 16),
@@ -474,7 +480,7 @@ class _ReferralScreenState extends State<ReferralScreen>
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
+                    color: Colors.black.withOpacity(0.06),
                     blurRadius: 10,
                     offset: const Offset(0, 3),
                   ),
@@ -511,7 +517,7 @@ class _ReferralScreenState extends State<ReferralScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Hoe werkt het?',
+              S.of(context).howDoesItWork,
               style: GoogleFonts.sora(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -521,18 +527,18 @@ class _ReferralScreenState extends State<ReferralScreen>
             const SizedBox(height: 16),
             _HowItWorksStep(
               step: '1',
-              title: 'Deel je link',
+              title: S.of(context).deelJeLink,
               description:
-                  'Stuur je persoonlijke link naar vrienden via WhatsApp, e-mail of deel de QR-code.',
+                  S.of(context).stuurJePersoonlijkeLinkNaarVrienden,
               icon: Icons.share_rounded,
               color: Colors.blue.shade600,
             ),
             const SizedBox(height: 14),
             _HowItWorksStep(
               step: '2',
-              title: 'Vriend meldt zich aan',
+              title: S.of(context).vriendMeldtZichAan,
               description:
-                  'Je vriend maakt een account aan via jouw link en boekt een sessie.',
+                  S.of(context).jeVriendMaaktEenAccountAan,
               icon: Icons.person_add_alt_1_rounded,
               color: Colors.green.shade600,
             ),
@@ -541,7 +547,7 @@ class _ReferralScreenState extends State<ReferralScreen>
               step: '3',
               title: 'Jullie worden beloond',
               description:
-                  'Jullie krijgen allebei een beloning zodra de eerste sessie voltooid is!',
+                  S.of(context).jullieKrijgenAllebeiEenBeloningZodra,
               icon: Icons.celebration_rounded,
               color: Colors.orange.shade600,
             ),
@@ -581,7 +587,7 @@ class _ShareCircle extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
+              color: color.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: color, size: 26),
@@ -674,7 +680,7 @@ class _HowItWorksStep extends StatelessWidget {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
+            color: color.withOpacity(0.12),
             shape: BoxShape.circle,
           ),
           child: Center(

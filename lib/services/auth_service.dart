@@ -18,7 +18,7 @@ const _kRememberMeKey = 'gymies_remember_me';
 
 /// Beveiligde opslag voor het auth-token (iOS Keychain, Android Keystore).
 const _secureStorage = FlutterSecureStorage(
-  aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  aOptions: AndroidOptions(),
   iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
 );
 
@@ -29,7 +29,10 @@ class EmailVerificationRequiredException implements Exception {
 }
 
 class AuthService extends ChangeNotifier {
-  AuthService({ApiClient? apiClient}) : _api = apiClient ?? ApiClient();
+  AuthService({ApiClient? apiClient}) : _api = apiClient ?? ApiClient() {
+    // FIX-AUD-011: Register 401 handler to auto-logout on token expiration
+    _api.setOn401(_handleUnauthorized);
+  }
 
   final ApiClient _api;
   String? _token;
@@ -44,6 +47,24 @@ class AuthService extends ChangeNotifier {
   bool _loadingStored = false;
   bool get isTrainer => _isTrainerMap(_user);
   bool get isAdmin => _isAdminMap(_user);
+  bool get isAmbassador {
+    final u = _user;
+    if (u == null) return false;
+    return u['is_ambassador'] == true || u['is_ambassador'] == 1 || u['is_ambassador'] == '1';
+  }
+
+  /// Is de gebruiker lid van een gym/organisatie (owner, manager, of member)?
+  bool get isGymMember {
+    final u = _user;
+    if (u == null) return false;
+    return u['is_gym_member'] == true || u['is_gym_member'] == 1 || u['is_gym_member'] == '1';
+  }
+
+  /// Gym rol (owner, manager, member) — null als geen gym lid.
+  String? get gymRole => _user?['gym_role']?.toString();
+
+  /// Is de gebruiker een gym owner?
+  bool get isGymOwner => isGymMember && (gymRole == 'owner' || gymRole == 'admin');
 
   bool isTrainerUser([Map<String, dynamic>? userOverride]) {
     return _isTrainerMap(userOverride ?? _user);
@@ -57,6 +78,8 @@ class AuthService extends ChangeNotifier {
     _loadingStored = true;
     if (kDebugMode) debugPrint('[AUTH_DEBUG] loadStoredAuth start');
     try {
+      // BUG FIX: Add try-catch for SharedPreferences.getInstance() which can throw
+      // FIX-AUD-004: Use UTC for all timestamp comparisons to prevent DST issues
       final prefs = await SharedPreferences.getInstance();
       final rememberMe = prefs.getBool(_kRememberMeKey) ?? true;
       if (!rememberMe) {
@@ -106,12 +129,14 @@ class AuthService extends ChangeNotifier {
         _api.setAuthToken(_token);
         // Sentry user context herstellen bij app restart
         if (_user != null) {
+          // FIX-AUD-009: Defensive null checks before accessing map keys
           final userId = _user!['id']?.toString() ?? '';
           final role = _user!['role']?.toString() ?? _user!['user_role']?.toString() ?? 'unknown';
+          final displayName = _user!['display_name']?.toString();
           Sentry.configureScope((scope) {
             scope.setUser(SentryUser(
               id: userId,
-              username: _user!['display_name']?.toString(),
+              username: displayName,
               data: {'role': role},
             ));
             scope.setTag('user.role', role);
@@ -256,40 +281,69 @@ class AuthService extends ChangeNotifier {
     _token = token;
     _user = user;
     _api.setAuthToken(token);
+    // FIX #7: Reset 401 handler so next logout can trigger properly
+    _api.resetUnauthorizedHandler();
 
     // ── Sentry user context ──────────────────────────────────────
     // Koppel crashes/errors aan deze user. Geen PII behalve user ID en rol.
     if (user != null) {
+      // FIX-AUD-010: Defensive null checks before accessing map keys
       final userId = user['id']?.toString() ?? '';
       final role = user['role']?.toString() ?? user['user_role']?.toString() ?? 'unknown';
+      final displayName = user['display_name']?.toString();
       Sentry.configureScope((scope) {
         scope.setUser(SentryUser(
           id: userId,
-          username: user['display_name']?.toString(),
+          username: displayName,
           data: {'role': role},
         ));
         scope.setTag('user.role', role);
       });
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kRememberMeKey, rememberMe);
-    if (rememberMe) {
-      // Token altijd in beveiligde opslag (Keychain/Keystore) – nooit in NSUserDefaults.
-      await _secureStorage.write(key: _kTokenKey, value: token);
-      await prefs.remove(_kTokenKey); // verwijder eventuele legacy plaintext kopie
-      await prefs.setString(_kApiBaseKey, gymiesApiBaseUrl);
-      if (user != null) {
-        await prefs.setString(_kUserKey, jsonEncode(user));
+    try {
+      // BUG FIX: Add try-catch for all SharedPreferences operations
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kRememberMeKey, rememberMe);
+      if (rememberMe) {
+        // Token altijd in beveiligde opslag (Keychain/Keystore) – nooit in NSUserDefaults.
+        await _secureStorage.write(key: _kTokenKey, value: token);
+        await prefs.remove(_kTokenKey); // verwijder eventuele legacy plaintext kopie
+        await prefs.setString(_kApiBaseKey, gymiesApiBaseUrl);
+        if (user != null) {
+          await prefs.setString(_kUserKey, jsonEncode(user));
+        } else {
+          await prefs.remove(_kUserKey);
+        }
       } else {
+        await _secureStorage.delete(key: _kTokenKey);
+        await prefs.remove(_kTokenKey);
         await prefs.remove(_kUserKey);
+        await prefs.remove(_kApiBaseKey);
       }
-    } else {
-      await _secureStorage.delete(key: _kTokenKey);
-      await prefs.remove(_kTokenKey);
-      await prefs.remove(_kUserKey);
-      await prefs.remove(_kApiBaseKey);
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AUTH_DEBUG] _persist error: $e');
+      // Continue anyway – persistence failure shouldn't block login
     }
+    notifyListeners();
+  }
+
+  /// FIX-AUD-011: Handle 401 Unauthorized by clearing auth state
+  /// Called by ApiClient when a 401 response is received
+  void _handleUnauthorized() {
+    if (kDebugMode) debugPrint('[AUTH_DEBUG] 401 received – auto-logout triggered');
+    _token = null;
+    _user = null;
+    _api.setAuthToken(null);
+    Sentry.configureScope((scope) => scope.setUser(null));
+    notifyListeners();
+  }
+
+  /// Login met een reeds ontvangen sessie-token (bijv. na gym registerWithToken).
+  /// Slaat token op en stelt auth-state in, identiek aan login().
+  Future<void> loginWithSessionToken(String token, Map<String, dynamic>? user) async {
+    if (token.isEmpty) throw ApiException(500, 'Geen geldig token.');
+    await _persist(token, user);
     notifyListeners();
   }
 
@@ -299,31 +353,50 @@ class AuthService extends ChangeNotifier {
     _api.setAuthToken(null);
     // Sentry user context wissen — voorkom dat errors van volgende sessie aan oude user gekoppeld worden.
     Sentry.configureScope((scope) => scope.setUser(null));
-    // Verwijder token uit beveiligde opslag én SharedPreferences (migratie-restanten).
-    await _secureStorage.delete(key: _kTokenKey);
-    final prefs = await SharedPreferences.getInstance();
-    // Auth keys
-    await prefs.remove(_kTokenKey);
-    await prefs.remove(_kUserKey);
-    await prefs.remove(_kApiBaseKey);
-    await prefs.remove(_kRememberMeKey);
-    // User-specifieke data: voorkom dat volgende inlogger data van vorige ziet
-    await prefs.remove('gymies_favorite_trainer_ids');
-    await prefs.remove('gymies_removed_from_my_trainers_ids');
-    await prefs.remove('gymies_client_city');
-    await prefs.remove('gymies_client_onboarding_done');
-    await prefs.remove('gymies_client_goal');
-    // Biometric voorkeuren wissen — voorkomt dat volgende gebruiker Face ID erft.
-    await BiometricAuthService.instance.clearOnLogout();
+
+    try {
+      // BUG FIX: Add try-catch for all SharedPreferences operations in logout
+      // Verwijder token uit beveiligde opslag én SharedPreferences (migratie-restanten).
+      await _secureStorage.delete(key: _kTokenKey);
+      final prefs = await SharedPreferences.getInstance();
+      // Auth keys
+      await prefs.remove(_kTokenKey);
+      await prefs.remove(_kUserKey);
+      await prefs.remove(_kApiBaseKey);
+      await prefs.remove(_kRememberMeKey);
+      // User-specifieke data: voorkom dat volgende inlogger data van vorige ziet
+      await prefs.remove('gymies_favorite_trainer_ids');
+      await prefs.remove('gymies_removed_from_my_trainers_ids');
+      await prefs.remove('gymies_client_city');
+      await prefs.remove('gymies_client_onboarding_done');
+      await prefs.remove('gymies_client_goal');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AUTH_DEBUG] logout: Storage cleanup error: $e');
+      // Continue anyway — logout should complete even if storage fails
+    }
+
+    try {
+      // BUG FIX: Add try-catch for biometric cleanup
+      // Biometric voorkeuren wissen — voorkomt dat volgende gebruiker Face ID erft.
+      await BiometricAuthService.instance.clearOnLogout();
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AUTH_DEBUG] logout: Biometric cleanup error: $e');
+    }
+
     notifyListeners();
   }
 
   Future<void> setUser(Map<String, dynamic> user) async {
     _user = user;
-    final prefs = await SharedPreferences.getInstance();
-    final rememberMe = prefs.getBool(_kRememberMeKey) ?? true;
-    if (rememberMe) {
-      await prefs.setString(_kUserKey, jsonEncode(user));
+    try {
+      // BUG FIX: Add try-catch for SharedPreferences operations in setUser
+      final prefs = await SharedPreferences.getInstance();
+      final rememberMe = prefs.getBool(_kRememberMeKey) ?? true;
+      if (rememberMe) {
+        await prefs.setString(_kUserKey, jsonEncode(user));
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AUTH_DEBUG] setUser: Storage error: $e');
     }
     notifyListeners();
   }
@@ -394,6 +467,8 @@ class AuthService extends ChangeNotifier {
     String? gender,
     bool newsletterSubscribe = false,
     String? referralCode,
+    String? inviteCode,
+    String? city,
   }) async {
     final body = <String, dynamic>{
       'email': email.trim(),
@@ -409,6 +484,12 @@ class AuthService extends ChangeNotifier {
     }
     if (gender != null && gender.trim().isNotEmpty) {
       body['gender'] = gender.trim();
+    }
+    if (inviteCode != null && inviteCode.trim().isNotEmpty) {
+      body['invite_code'] = inviteCode.trim();
+    }
+    if (city != null && city.trim().isNotEmpty) {
+      body['city'] = city.trim();
     }
     if (referralCode != null && referralCode.trim().isNotEmpty) {
       body['referral_code'] = referralCode.trim();

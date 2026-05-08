@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/action_retry_queue_service.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
@@ -48,7 +49,7 @@ class _ActionHistoryScreenState extends State<ActionHistoryScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Retry klaar: $sent actie(s) verstuurd')),
+        SnackBar(content: Text(S.of(context).retryKlaarActies(sent.toString()))),
       );
       await _load();
     } finally {
@@ -86,10 +87,10 @@ class _ActionHistoryScreenState extends State<ActionHistoryScreen> {
       appBar: AppBar(
         backgroundColor: GymiesColors.darkBlue,
         foregroundColor: GymiesColors.primary,
-        title: Text('Actiegeschiedenis', style: GoogleFonts.sora()),
+        title: Text(S.of(context).actionHistoryTitle, style: GoogleFonts.sora()),
         actions: [
           IconButton(
-            tooltip: 'Retry wachtrij',
+            tooltip: S.of(context).retryWachtrij,
             onPressed: _flushing ? null : () {
               Haptics.light();
               _flushNow();
@@ -114,8 +115,8 @@ class _ActionHistoryScreenState extends State<ActionHistoryScreen> {
                   Card(
                     child: ListTile(
                       leading: const Icon(Icons.pending_actions_rounded),
-                      title: const Text('Wachtrij'),
-                      subtitle: Text('${_queue.length} actie(s) in retry queue'),
+                      title: Text(S.of(context).queueLabel),
+                      subtitle: Text(S.of(context).actiesInRetryQueue(_queue.length.toString())),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -124,7 +125,7 @@ class _ActionHistoryScreenState extends State<ActionHistoryScreen> {
                               Haptics.light();
                               _flushNow();
                             },
-                            child: const Text('Retry nu'),
+                            child: Text(S.of(context).retryNow),
                           ),
                           const SizedBox(width: 6),
                           if (_queue.any(
@@ -141,7 +142,7 @@ class _ActionHistoryScreenState extends State<ActionHistoryScreen> {
                                 backgroundColor: Colors.orange.shade700,
                                 foregroundColor: Colors.white,
                               ),
-                              child: const Text('Escaleren'),
+                              child: Text(S.of(context).escalateAction),
                             ),
                         ],
                       ),
@@ -149,7 +150,7 @@ class _ActionHistoryScreenState extends State<ActionHistoryScreen> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'Recente events',
+                    S.of(context).recentEvents,
                     style: GoogleFonts.sora(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -158,10 +159,10 @@ class _ActionHistoryScreenState extends State<ActionHistoryScreen> {
                   ),
                   const SizedBox(height: 8),
                   if (_history.isEmpty)
-                    const Card(
+                    Card(
                       child: ListTile(
-                        title: Text('Nog geen events'),
-                        subtitle: Text('Uitgevoerde en gequeue-de acties verschijnen hier.'),
+                        title: Text(S.of(context).noEventsYet),
+                        subtitle: Text(S.of(context).executedActionsAppear),
                       ),
                     )
                   else

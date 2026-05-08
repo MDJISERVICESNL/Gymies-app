@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/gymies_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// SmartScheduleCard
 /// ─────────────────
@@ -132,7 +133,7 @@ class SmartScheduleCard extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  'Plan sessie',
+                  S.of(context).planSessie,
                   style: GoogleFonts.sora(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,

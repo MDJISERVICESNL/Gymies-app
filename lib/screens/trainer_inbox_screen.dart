@@ -14,13 +14,13 @@ import '../utils/map_utils.dart';
 import '../utils/haptics.dart';
 import '../utils/notification_display_helper.dart';
 import '../utils/url_launcher_utils.dart';
+import '../l10n/generated/app_localizations.dart';
 import 'trainer_chat_screen.dart';
 import 'trainer_newsletter_compose_screen.dart';
 import 'trainer_finance_screen.dart';
 import 'trainer_sessions_screen.dart';
 import 'widgets/gymies_app_bar.dart';
 import 'widgets/gymies_segment_tab_bar.dart';
-import 'widgets/gymies_dialog.dart';
 import 'widgets/gymies_upgrade_prompt.dart';
 import 'widgets/trainer_state_views.dart';
 
@@ -57,16 +57,18 @@ class _TrainerInboxScreenState extends State<TrainerInboxScreen>
         actions: [
           GymiesAppBarAction(
             icon: Icons.edit_outlined,
-            tooltip: 'Nieuw bericht',
+            tooltip: S.of(context).nieuwBericht,
             onTap: () {
-              // TODO: open new conversation picker
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text(S.of(context).nieuwGesprekStartenKomtBinnenkort)),
+              );
             },
           ),
           const SizedBox(width: 8),
         ],
         bottom: GymiesSegmentTabBar(
           controller: _tabController,
-          tabs: const ['Gesprekken', 'Meldingen', 'Nieuwsbrief'],
+          tabs: const ['Gesprekken', 'Meldingen', S.of(context).nieuwsbrief],
         ),
       ),
       body: TabBarView(
@@ -174,7 +176,7 @@ class _ConversationsTabState extends State<_ConversationsTab>
     } catch (_) {
       if (mounted) {
         setState(() {
-          _error = 'Kon berichten niet laden.';
+          _error = S.of(context).errorLoadFailed;
           _loading = false;
         });
       }
@@ -191,7 +193,7 @@ class _ConversationsTabState extends State<_ConversationsTab>
     if (dateOnly == today) {
       return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     }
-    if (dateOnly == today.subtract(const Duration(days: 1))) return 'gisteren';
+    if (dateOnly == today.subtract(const Duration(days: 1))) return S.of(context).gisterenLower;
     if (now.difference(dt).inDays < 7) {
       const days = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
       return days[dt.weekday - 1];
@@ -219,10 +221,10 @@ class _ConversationsTabState extends State<_ConversationsTab>
               children: [
                 TrainerEmptyState(
                   icon: Icons.chat_bubble_outline,
-                  title: 'Geen berichten',
+                  title: S.of(context).noMessages,
                   subtitle:
-                      'Nieuwe chats van klanten verschijnen hier zodra er een bericht binnenkomt.',
-                  actionLabel: 'Ververs berichten',
+                      S.of(context).nieuweChatsVanKlantenVerschijnenHier,
+                  actionLabel: S.of(context).verversBerichten,
                   onAction: _load,
                   padding: const EdgeInsets.all(32),
                 ),
@@ -239,7 +241,7 @@ class _ConversationsTabState extends State<_ConversationsTab>
                         onChanged: (v) => setState(() => _query = v),
                         style: GoogleFonts.sora(fontSize: 13, color: GymiesColors.darkBlue),
                         decoration: InputDecoration(
-                          hintText: 'Zoek gesprekken...',
+                          hintText: S.of(context).zoekGesprekken,
                           hintStyle: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade400),
                           prefixIcon: Icon(Icons.search_rounded, color: Colors.grey.shade400, size: 20),
                           filled: true,
@@ -271,7 +273,7 @@ class _ConversationsTabState extends State<_ConversationsTab>
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
                           color: _unreadOnly
-                              ? GymiesColors.primary.withValues(alpha: 0.12)
+                              ? GymiesColors.primary.withOpacity(0.12)
                               : Colors.grey.shade50,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
@@ -280,7 +282,7 @@ class _ConversationsTabState extends State<_ConversationsTab>
                           ),
                         ),
                         child: Text(
-                          'Ongelezen',
+                          S.of(context).ongelezen,
                           style: GoogleFonts.sora(
                             fontSize: 11,
                             fontWeight: _unreadOnly ? FontWeight.w600 : FontWeight.w400,
@@ -295,8 +297,8 @@ class _ConversationsTabState extends State<_ConversationsTab>
                 if (filtered.isEmpty)
                   const TrainerEmptyState(
                     icon: Icons.search_off_rounded,
-                    title: 'Geen resultaten',
-                    subtitle: 'Pas je zoekterm of filter aan.',
+                    title: S.of(context).noResults,
+                    subtitle: S.of(context).pasJeZoektermOfFilterAan,
                     padding: EdgeInsets.fromLTRB(0, 24, 0, 8),
                   )
                 else
@@ -339,7 +341,7 @@ class _ConversationsTabState extends State<_ConversationsTab>
                                     color: Colors.white,
                                     border: Border.all(
                                       color: hasUnread
-                                          ? GymiesColors.primary.withValues(alpha: 0.3)
+                                          ? GymiesColors.primary.withOpacity(0.3)
                                           : Colors.grey.shade200,
                                       width: 0.5,
                                     ),
@@ -526,7 +528,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Kon meldingen niet laden.';
+        _error = S.of(context).errorLoadFailed;
         _loading = false;
       });
     }
@@ -555,14 +557,14 @@ class _NotificationsTabState extends State<_NotificationsTab> {
     final body = mapStr(item, ['body', 'message', 'text']).toLowerCase();
     final all = '$type $title $body';
     if (all.contains('booking') ||
-        all.contains('boeking') ||
+        all.contains(S.of(context).boeking) ||
         all.contains('session') ||
-        all.contains('sessie')) { return 'bookings'; }
+        all.contains(S.of(context).sessie3)) { return 'bookings'; }
     if (all.contains('message') ||
         all.contains('bericht') ||
         all.contains('chat')) { return 'messages'; }
     if (all.contains('invoice') ||
-        all.contains('factuur') ||
+        all.contains(S.of(context).factuur) ||
         all.contains('payment') ||
         all.contains('payout') ||
         all.contains('revenue') ||
@@ -639,7 +641,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
         }
         _filter = 'all';
       });
-      _showSuccess('Meldingen gemarkeerd als gelezen');
+      _showSuccess(S.of(context).meldingenGemarkeerdAlsGelezen);
     } on ApiException catch (e) {
       _showError(e.message);
     } finally {
@@ -658,7 +660,10 @@ class _NotificationsTabState extends State<_NotificationsTab> {
           .markNotificationsRead(notificationId: id);
       if (!mounted) return;
       await _load();
-    } catch (_) {}
+    } catch (e) {
+      // Fail-open: Decline booking optional, state refreshed anyway
+      if (kDebugMode) debugPrint('[TrainerInbox] Decline booking failed: $e');
+    }
   }
 
   Future<void> _onNotificationTap(Map<String, dynamic> item) async {
@@ -695,9 +700,9 @@ class _NotificationsTabState extends State<_NotificationsTab> {
       if (uri != null) {
         // Valideer domein en schema vóór openen (voorkomt open-redirect via server-gecontroleerde URLs).
         final opened = await safeLaunchUrl(actionUrl);
-        if (!opened && mounted) _showError('Meldingslink kan niet worden geopend (onbekend domein).');
+        if (!opened && mounted) _showError(S.of(context).meldingslinkKanNietWordenGeopendOnbekend2);
       } else {
-        _showError('Link in melding is ongeldig.');
+        _showError(S.of(context).linkInMeldingIsOngeldig);
       }
       return;
     }
@@ -736,7 +741,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.15),
+                      color: GymiesColors.primary.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
@@ -786,8 +791,8 @@ class _NotificationsTabState extends State<_NotificationsTab> {
 
   String _labelFromKey(String key) {
     final normalized = key.toLowerCase();
-    if (normalized == 'reminder_t24h_push') return 'Reminder 24 uur vooraf';
-    if (normalized == 'reminder_t2h_push') return 'Reminder 2 uur vooraf';
+    if (normalized == 'reminder_t24h_push') return S.of(context).reminder24UurVooraf;
+    if (normalized == 'reminder_t2h_push') return S.of(context).reminder2UurVooraf;
     if (normalized == 'reminder_check_in_window_push') {
       return 'Reminder check-in venster open';
     }
@@ -824,7 +829,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
       ..sort();
 
     if (keys.isEmpty) {
-      _showError('Geen wijzigbare voorkeurvelden gevonden.');
+      _showError(S.of(context).geenWijzigbareVoorkeurveldenGevonden);
       return;
     }
     final draft = <String, dynamic>{...seeded};
@@ -844,7 +849,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: GymiesColors.primary.withValues(alpha: 0.15),
+                        color: GymiesColors.primary.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(
@@ -856,7 +861,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Melding voorkeuren',
+                        S.of(context).meldingVoorkeuren,
                         style: GoogleFonts.sora(
                           fontSize: 18,
                           color: GymiesColors.darkBlue,
@@ -909,7 +914,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                                     updated.isEmpty ? draft : updated;
                               });
                               nav.pop();
-                              _showSuccess('Voorkeuren opgeslagen');
+                              _showSuccess(S.of(context).voorkeurenOpgeslagen);
                             } on ApiException catch (e) {
                               _showError(e.message);
                             } finally {
@@ -922,7 +927,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                       backgroundColor: GymiesColors.primary,
                       foregroundColor: GymiesColors.darkBlue,
                     ),
-                    child: const Text('Opslaan'),
+                    child: Text(S.of(context).save),
                   ),
                 ),
               ],
@@ -951,7 +956,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                 fontSize: 9,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.6,
-                color: color.withValues(alpha: 0.8),
+                color: color.withOpacity(0.8),
               ),
             ),
             const SizedBox(height: 2),
@@ -978,12 +983,12 @@ class _NotificationsTabState extends State<_NotificationsTab> {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
           color: active
-              ? GymiesColors.primary.withValues(alpha: 0.15)
+              ? GymiesColors.primary.withOpacity(0.15)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: active
-                ? GymiesColors.primary.withValues(alpha: 0.3)
+                ? GymiesColors.primary.withOpacity(0.3)
                 : Colors.grey.shade300,
             width: 0.5,
           ),
@@ -1013,8 +1018,8 @@ class _NotificationsTabState extends State<_NotificationsTab> {
               children: const [
                 TrainerEmptyState(
                   icon: Icons.notifications_none_rounded,
-                  title: 'Geen meldingen',
-                  subtitle: 'Nieuwe updates verschijnen hier.',
+                  title: S.of(context).noNotifications,
+                  subtitle: S.of(context).nieuweUpdatesVerschijnenHier,
                 ),
               ],
             )
@@ -1026,9 +1031,9 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                   children: [
                     _stripeStatCard('Actie', '${_countBy('action')}', Colors.red.shade600),
                     const SizedBox(width: 6),
-                    _stripeStatCard('Boekingen', '${_countBy('bookings')}', GymiesColors.primary),
+                    _stripeStatCard(S.of(context).bookings, '${_countBy('bookings')}', GymiesColors.primary),
                     const SizedBox(width: 6),
-                    _stripeStatCard('Berichten', '${_countBy('messages')}', GymiesColors.darkBlue),
+                    _stripeStatCard(S.of(context).messages, '${_countBy('messages')}', GymiesColors.darkBlue),
                     const SizedBox(width: 6),
                     _stripeStatCard('Financieel', '${_countBy('financial')}', Colors.green.shade700),
                   ],
@@ -1042,13 +1047,13 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
-                            _notifFilterChip('Alles', 'all'),
+                            _notifFilterChip(S.of(context).allLabel, 'all'),
                             const SizedBox(width: 4),
                             _notifFilterChip('Actie', 'action'),
                             const SizedBox(width: 4),
-                            _notifFilterChip('Boekingen', 'bookings'),
+                            _notifFilterChip(S.of(context).bookings, 'bookings'),
                             const SizedBox(width: 4),
-                            _notifFilterChip('Berichten', 'messages'),
+                            _notifFilterChip(S.of(context).messages, 'messages'),
                             const SizedBox(width: 4),
                             _notifFilterChip('Financieel', 'financial'),
                           ],
@@ -1074,11 +1079,11 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                         decoration: BoxDecoration(
-                          color: GymiesColors.darkBlue.withValues(alpha: 0.06),
+                          color: GymiesColors.darkBlue.withOpacity(0.06),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          'Gelezen',
+                          S.of(context).gelezen,
                           style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue),
                         ),
                       ),
@@ -1089,8 +1094,8 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                 if (visible.isEmpty)
                   const TrainerEmptyState(
                     icon: Icons.filter_alt_off_outlined,
-                    title: 'Geen meldingen in dit filter',
-                    subtitle: 'Probeer een andere categorie.',
+                    title: S.of(context).geenMeldingenInDitFilter,
+                    subtitle: S.of(context).probeerEenAndereCategorie,
                     padding: EdgeInsets.symmetric(vertical: 36),
                   )
                 else
@@ -1121,7 +1126,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     color: unread
-                                        ? GymiesColors.primary.withValues(alpha: 0.04)
+                                        ? GymiesColors.primary.withOpacity(0.04)
                                         : Colors.white,
                                     borderRadius: const BorderRadius.only(
                                       topRight: Radius.circular(10),
@@ -1136,7 +1141,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                                         width: 34,
                                         height: 34,
                                         decoration: BoxDecoration(
-                                          color: (unread ? GymiesColors.primary : GymiesColors.darkBlue).withValues(alpha: 0.1),
+                                          color: (unread ? GymiesColors.primary : GymiesColors.darkBlue).withOpacity(0.1),
                                           shape: BoxShape.circle,
                                         ),
                                         child: Icon(
@@ -1187,11 +1192,11 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                                               Container(
                                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                                 decoration: BoxDecoration(
-                                                  color: GymiesColors.primary.withValues(alpha: 0.1),
+                                                  color: GymiesColors.primary.withOpacity(0.1),
                                                   borderRadius: BorderRadius.circular(6),
                                                 ),
                                                 child: Text(
-                                                  'Actie vereist →',
+                                                  S.of(context).actieVereist,
                                                   style: GoogleFonts.sora(
                                                     fontSize: 10,
                                                     fontWeight: FontWeight.w600,
@@ -1268,7 +1273,7 @@ class _NewsletterTabState extends State<_NewsletterTab> {
       if (mounted) setState(() { _error = e.message; _loading = false; });
     } catch (e) {
       if (kDebugMode) debugPrint('[Newsletter] Laden fout: $e');
-      if (mounted) setState(() { _error = 'Kon nieuwsbrieven niet laden.'; _loading = false; });
+      if (mounted) setState(() { _error = S.of(context).errorLoadFailed; _loading = false; });
     }
   }
 
@@ -1310,7 +1315,7 @@ class _NewsletterTabState extends State<_NewsletterTab> {
                 Icon(Icons.newspaper_rounded, size: 40, color: Colors.grey.shade300),
                 const SizedBox(height: 10),
                 Text(
-                  'Nieuwsbrief',
+                  S.of(context).nieuwsbrief,
                   style: GoogleFonts.sora(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -1319,7 +1324,7 @@ class _NewsletterTabState extends State<_NewsletterTab> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Bereik al je klanten met één druk op de knop. Deel tips, aanbiedingen en updates.',
+                  S.of(context).bereikAlJeKlantenMetnDrukOpDeKnopDeelTipsAanbiedingenEnUpdates,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade600),
                 ),
@@ -1327,7 +1332,7 @@ class _NewsletterTabState extends State<_NewsletterTab> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _FeatureChip(icon: Icons.send_rounded, label: 'Bulk versturen'),
+                    _FeatureChip(icon: Icons.send_rounded, label: S.of(context).bulkVersturen),
                     const SizedBox(width: 8),
                     _FeatureChip(icon: Icons.analytics_outlined, label: 'Open rate'),
                     const SizedBox(width: 8),
@@ -1340,11 +1345,11 @@ class _NewsletterTabState extends State<_NewsletterTab> {
           const SizedBox(height: 16),
           const GymiesUpgradePrompt(
             icon: Icons.newspaper_rounded,
-            feature: 'Nieuwsbrief',
+            feature: S.of(context).nieuwsbrief,
             tier: 'Pro+',
             description:
-                'Stuur nieuwsbrieven naar al je klanten tegelijk. Houd ze '
-                'op de hoogte van nieuwe lessen, aanbiedingen en tips.',
+                S.of(context).stuurNieuwsbrievenNaarAlJeKlanten
+                S.of(context).opDeHoogteVanNieuweLessen,
           ),
         ],
       );
@@ -1366,7 +1371,7 @@ class _NewsletterTabState extends State<_NewsletterTab> {
             OutlinedButton.icon(
               onPressed: _load,
               icon: const Icon(Icons.refresh),
-              label: const Text('Opnieuw proberen'),
+              label: const Text(S.of(context).opnieuwProberen),
             ),
           ],
         ),
@@ -1379,9 +1384,9 @@ class _NewsletterTabState extends State<_NewsletterTab> {
         children: [
           TrainerEmptyState(
             icon: Icons.newspaper_rounded,
-            title: 'Nog geen nieuwsbrieven',
+            title: S.of(context).nogGeenNieuwsbrieven,
             subtitle:
-                'Stuur je eerste nieuwsbrief naar al je klanten. Deel tips, aanbiedingen of updates.',
+                S.of(context).stuurJeEersteNieuwsbriefNaarAl,
             actionLabel: 'Nieuwsbrief schrijven',
             actionIcon: Icons.edit_rounded,
             onAction: _compose,
@@ -1400,7 +1405,7 @@ class _NewsletterTabState extends State<_NewsletterTab> {
             itemCount: _newsletters.length,
             itemBuilder: (_, i) {
               final nl = _newsletters[i];
-              final subject = (nl['subject'] ?? nl['title'] ?? 'Nieuwsbrief').toString();
+              final subject = (nl['subject'] ?? nl['title'] ?? S.of(context).nieuwsbrief).toString();
               final sentAt = nl['sent_at'] ?? nl['created_at'] ?? '';
               final recipientCount = nl['recipient_count'] ?? nl['recipients'] ?? '?';
               final openRateRaw = nl['open_rate'];
@@ -1442,7 +1447,7 @@ class _NewsletterTabState extends State<_NewsletterTab> {
                                 width: 36,
                                 height: 36,
                                 decoration: BoxDecoration(
-                                  color: GymiesColors.primary.withValues(alpha: 0.12),
+                                  color: GymiesColors.primary.withOpacity(0.12),
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(Icons.email_rounded, color: GymiesColors.darkBlue, size: 17),
@@ -1498,7 +1503,7 @@ class _NewsletterTabState extends State<_NewsletterTab> {
             heroTag: 'fab_newsletter',
             onPressed: _compose,
             backgroundColor: GymiesColors.darkBlue,
-            tooltip: 'Nieuwe nieuwsbrief',
+            tooltip: S.of(context).nieuweNieuwsbrief,
             child: const Icon(Icons.edit_rounded, color: GymiesColors.primary, size: 20),
           ),
         ),
@@ -1517,7 +1522,7 @@ class _FeatureChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: GymiesColors.primary.withValues(alpha: 0.08),
+        color: GymiesColors.primary.withOpacity(0.08),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(

@@ -1,8 +1,13 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../utils/currency_format.dart';
+import '../l10n/generated/app_localizations.dart';
 
 import '../models/trainer_models.dart';
 import '../services/api_client.dart';
@@ -33,7 +38,14 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
   TrainerRevenue? _revenue;
   Map<String, String> _liveStatusByItemId = const {};
   List<Map<String, dynamic>> _invoices = [];
+  List<Map<String, dynamic>> _payoutInvoices = [];
   Map<String, dynamic> _forecast = {};
+  int? _downloadingInvoiceId;
+
+  // ── Payout request state ──
+  bool _requestingPayout = false;
+  bool _hasPendingPayout = false;
+  Map<String, dynamic> _payoutBalance = {};
 
   // ── Filters (Overzicht tab) ──
   String _statusFilter = 'all';
@@ -94,7 +106,10 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
             if (resolved != null && resolved.isNotEmpty) {
               live[item.id] = resolved;
             }
-          } catch (_) {}
+          } catch (e) {
+            // Fail-open: Payout status resolution optional
+            if (kDebugMode) debugPrint('[TrainerFinance] Resolve payout failed: $e');
+          }
         }),
         eagerError: false,
       );
@@ -107,12 +122,36 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
         if (kDebugMode) debugPrint('[Financiën] forecast fout: $e');
       }
 
-      // ── Facturen ──
+      // ── Sessie-facturen ──
       List<Map<String, dynamic>> invoices = [];
       try {
         invoices = await api.getTrainerInvoices();
       } catch (e) {
         if (kDebugMode) debugPrint('[Financiën] invoices fout: $e');
+      }
+
+      // ── Payout (self-billing) facturen ──
+      List<Map<String, dynamic>> payoutInvoices = [];
+      try {
+        final res = await api.getPayoutInvoices();
+        final raw = res['invoices'];
+        if (raw is List) {
+          payoutInvoices = raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
+        }
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Financiën] payout invoices fout: $e');
+      }
+
+      // ── Payout saldo + pending check ──
+      Map<String, dynamic> payoutBalance = {};
+      bool hasPending = false;
+      try {
+        payoutBalance = await api.getPayoutBalance();
+        // Check of er al een pending payout request is
+        final requests = await api.getPayoutRequests();
+        hasPending = requests.any((r) => (r['status'] ?? '') == 'pending');
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Financiën] payout balance fout: $e');
       }
 
       if (!mounted) return;
@@ -121,6 +160,9 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
         _liveStatusByItemId = live;
         _forecast = forecast;
         _invoices = invoices;
+        _payoutInvoices = payoutInvoices;
+        _payoutBalance = payoutBalance;
+        _hasPendingPayout = hasPending;
         _visibleItems = 20;
         _loading = false;
       });
@@ -133,6 +175,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
           _liveStatusByItemId = const {};
           _forecast = {};
           _invoices = [];
+          _payoutInvoices = [];
           _loading = false;
           _error = null;
         });
@@ -150,6 +193,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
         _liveStatusByItemId = const {};
         _forecast = {};
         _invoices = [];
+        _payoutInvoices = [];
         _loading = false;
         _error = null;
       });
@@ -165,10 +209,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
   }
 
   String _currency(dynamic cents) {
-    final v = _toInt(cents);
-    if (v == null) return '€0,00';
-    final euros = v / 100.0;
-    return '€${euros.toStringAsFixed(2).replaceAll('.', ',')}';
+    return formatEuroAlways(cents);
   }
 
   bool _matchesStatusFilter(String resolvedStatus) {
@@ -240,7 +281,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
       Haptics.success();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(url == null || url.isEmpty ? 'ZIP export gestart' : 'ZIP klaar voor download'),
+          content: Text(url == null || url.isEmpty ? 'ZIP export gestart' : S.of(context).zipKlaarVoorDownload),
           backgroundColor: GymiesColors.darkBlue,
         ),
       );
@@ -265,7 +306,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
         title: 'Financiën',
         bottom: GymiesSegmentTabBar(
           controller: _tabController,
-          tabs: const ['Overzicht', 'Facturen'],
+          tabs: const ['Overzicht', S.of(context).payouts],
         ),
       ),
       body: GymiesListBody(
@@ -293,7 +334,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
 
     // Omzet verdeling uit forecast
     final revenueByType = _forecast['revenue_by_type'] ?? {};
-    final sessiesCents = _toInt(revenueByType is Map ? (revenueByType['sessies']?['cents'] ?? revenueByType['sessies']?['amount'] ?? 0) : 0) ?? 0;
+    final sessiesCents = _toInt(revenueByType is Map ? (revenueByType[S.of(context).sessies]?['cents'] ?? revenueByType[S.of(context).sessies]?['amount'] ?? 0) : 0) ?? 0;
     final pakkettenCents = _toInt(revenueByType is Map ? (revenueByType['pakketten']?['cents'] ?? revenueByType['pakketten']?['amount'] ?? 0) : 0) ?? 0;
     final groepslessenCents = _toInt(revenueByType is Map ? (revenueByType['groepslessen']?['cents'] ?? revenueByType['groepslessen']?['amount'] ?? 0) : 0) ?? 0;
     final breakdownTotal = sessiesCents + pakkettenCents + groepslessenCents;
@@ -323,7 +364,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
             const SizedBox(width: 8),
             Expanded(
               child: _StatCard(
-                label: 'Ontvangen',
+                label: S.of(context).ontvangen2,
                 value: _currency(rev?.paidRevenueCents ?? 0),
                 icon: Icons.check_circle_rounded,
                 color: Colors.green.shade700,
@@ -332,7 +373,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
             const SizedBox(width: 8),
             Expanded(
               child: _StatCard(
-                label: 'Openstaand',
+                label: S.of(context).openstaand,
                 value: _currency(rev?.pendingPayoutCents ?? 0),
                 icon: Icons.schedule_rounded,
                 color: Colors.orange.shade700,
@@ -340,13 +381,17 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
             ),
           ],
         ),
+        const SizedBox(height: 12),
+
+        // ── Uitbetaling aanvragen knop ──
+        _buildPayoutRequestCard(),
         const SizedBox(height: 16),
 
         // ── Weekgrafiek ──
         if (weekBars.isNotEmpty) ...[
           _SectionCard(
             icon: Icons.bar_chart_rounded,
-            title: 'Omzet deze maand',
+            title: S.of(context).omzetDezeMaand,
             child: _WeekChart(bars: weekBars, currencyFn: _currency),
           ),
           const SizedBox(height: 12),
@@ -361,7 +406,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
               children: [
                 if (sessiesCents > 0)
                   _BreakdownBar(
-                    label: 'Sessies',
+                    label: S.of(context).sessionsCountLabel,
                     cents: sessiesCents,
                     total: breakdownTotal,
                     color: const Color(0xFF3B82F6),
@@ -380,7 +425,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
                 if (groepslessenCents > 0) ...[
                   const SizedBox(height: 10),
                   _BreakdownBar(
-                    label: 'Groepslessen',
+                    label: S.of(context).groepslessen,
                     cents: groepslessenCents,
                     total: breakdownTotal,
                     color: Colors.orange.shade600,
@@ -396,7 +441,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
         // ── Filters ──
         _SectionCard(
           icon: Icons.filter_list_rounded,
-          title: 'Transacties',
+          title: S.of(context).transacties,
           child: Column(
             children: [
               Row(
@@ -415,11 +460,11 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
                           isExpanded: true,
                           style: GoogleFonts.sora(fontSize: 13, color: GymiesColors.darkBlue),
                           items: const [
-                            DropdownMenuItem(value: 'all', child: Text('Alle statussen')),
-                            DropdownMenuItem(value: 'paid', child: Text('Betaald (online)')),
-                            DropdownMenuItem(value: 'cash', child: Text('Contant')),
-                            DropdownMenuItem(value: 'open', child: Text('Openstaand')),
-                            DropdownMenuItem(value: 'cancelled', child: Text('Geannuleerd')),
+                            DropdownMenuItem(value: 'all', child: Text(S.of(context).alleStatussen)),
+                            DropdownMenuItem(value: 'paid', child: Text(S.of(context).betaaldonline)),
+                            DropdownMenuItem(value: 'cash', child: Text(S.of(context).contant)),
+                            DropdownMenuItem(value: 'open', child: Text(S.of(context).openstaand)),
+                            DropdownMenuItem(value: 'cancelled', child: Text(S.of(context).geannuleerd)),
                           ],
                           onChanged: (v) {
                             if (v == null) return;
@@ -445,6 +490,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
                         initialDateRange: _range,
                       );
                       if (picked == null) return;
+                      if (!mounted) return;
                       Haptics.light();
                       setState(() => _range = picked);
                       _load();
@@ -461,7 +507,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
                         children: [
                           Icon(Icons.date_range_rounded, size: 16, color: GymiesColors.darkBlue),
                           const SizedBox(width: 4),
-                          Text('Periode', style: GoogleFonts.sora(fontSize: 13, color: GymiesColors.darkBlue)),
+                          Text(S.of(context).periode, style: GoogleFonts.sora(fontSize: 13, color: GymiesColors.darkBlue)),
                         ],
                       ),
                     ),
@@ -484,7 +530,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
                         });
                         _load();
                       },
-                      child: Text('Wis', style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600, color: GymiesColors.primary)),
+                      child: Text(S.of(context).wis, style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w600, color: GymiesColors.primary)),
                     ),
                   ],
                 ),
@@ -500,10 +546,10 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
             padding: const EdgeInsets.all(24),
             child: TrainerEmptyState(
               icon: Icons.payments_outlined,
-              title: 'Geen transacties',
+              title: S.of(context).geenTransacties,
               subtitle: _statusFilter == 'all'
-                  ? 'Transacties verschijnen na bevestigde sessies.'
-                  : 'Geen transacties met deze status.',
+                  ? S.of(context).transactiesVerschijnenNaBevestigdeSessies
+                  : S.of(context).geenTransactiesMetDezeStatus,
               actionLabel: 'Ververs',
               onAction: _load,
               padding: EdgeInsets.zero,
@@ -532,7 +578,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
                 });
               },
               icon: const Icon(Icons.expand_more_rounded),
-              label: const Text('Toon meer'),
+              label: const Text(S.of(context).toonMeer),
             ),
           ),
 
@@ -544,6 +590,297 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
   // ══════════════════════════════════════════════════════════════
   // TAB 2: FACTUREN
   // ══════════════════════════════════════════════════════════════
+
+  // ══════════════════════════════════════════════════════════════
+  // PAYOUT REQUEST
+  // ══════════════════════════════════════════════════════════════
+
+  Widget _buildPayoutRequestCard() {
+    final balanceCents = _toInt(_payoutBalance['balance_cents']) ?? 0;
+    final frequency = (_payoutBalance['payout_frequency'] ?? 'monthly').toString();
+    final mode = (_payoutBalance['payout_mode'] ?? 'gymies').toString();
+
+    // Niet tonen als trainer eigen Mollie gebruikt
+    if (mode != 'gymies') return const SizedBox.shrink();
+
+    // Fee berekenen
+    int feeCents = 0;
+    if (frequency == 'daily') {
+      feeCents = 149;
+    } else if (frequency == 'weekly') {
+      feeCents = 99;
+    }
+    final netCents = balanceCents - feeCents;
+    final isEligible = netCents > 0 && balanceCents >= 500; // minimum €5
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.account_balance_rounded, size: 20, color: GymiesColors.darkBlue),
+              const SizedBox(width: 8),
+              Text(
+                'Uitbetaling',
+                style: GoogleFonts.sora(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: GymiesColors.darkBlue,
+                ),
+              ),
+              const Spacer(),
+              if (_hasPendingPayout)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'In behandeling',
+                    style: GoogleFonts.sora(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.orange.shade800),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Text('Beschikbaar saldo:', style: GoogleFonts.sora(fontSize: 13, color: Colors.grey.shade600)),
+              const Spacer(),
+              Text(
+                _currency(balanceCents),
+                style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue),
+              ),
+            ],
+          ),
+          if (feeCents > 0) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Text('Uitbetaalfee ($frequency):', style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade500)),
+                const Spacer(),
+                Text('- ${_currency(feeCents)}', style: GoogleFonts.sora(fontSize: 12, color: Colors.red.shade400)),
+              ],
+            ),
+          ],
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: (!isEligible || _hasPendingPayout || _requestingPayout)
+                  ? null
+                  : () => _showPayoutConfirmation(balanceCents, feeCents, netCents, frequency),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: GymiesColors.primary,
+                foregroundColor: Colors.black,
+                disabledBackgroundColor: Colors.grey.shade200,
+                disabledForegroundColor: Colors.grey.shade500,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              icon: _requestingPayout
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black54))
+                  : const Icon(Icons.send_rounded, size: 18),
+              label: Text(
+                _hasPendingPayout
+                    ? 'Uitbetaling in behandeling'
+                    : !isEligible
+                        ? 'Minimum saldo niet bereikt (€5,00)'
+                        : 'Uitbetaling aanvragen',
+                style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          if (!_hasPendingPayout && isEligible) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Wordt de volgende werkdag op je rekening gestort',
+              style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showPayoutConfirmation(int balanceCents, int feeCents, int netCents, String frequency) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.account_balance_rounded, color: GymiesColors.darkBlue, size: 22),
+            const SizedBox(width: 8),
+            Text('Uitbetaling bevestigen', style: GoogleFonts.sora(fontSize: 17, fontWeight: FontWeight.w600)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _confirmRow('Saldo', _currency(balanceCents)),
+            if (feeCents > 0) _confirmRow('Fee ($frequency)', '- ${_currency(feeCents)}'),
+            const Divider(height: 20),
+            _confirmRow('Netto uitbetaling', _currency(netCents), bold: true),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline_rounded, size: 16, color: Colors.blue.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Het bedrag wordt de volgende werkdag op je IBAN gestort.',
+                      style: GoogleFonts.sora(fontSize: 12, color: Colors.blue.shade800),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Annuleren', style: GoogleFonts.sora(color: Colors.grey.shade600)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: GymiesColors.primary,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
+            ),
+            child: Text('Bevestigen', style: GoogleFonts.sora(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _requestingPayout = true);
+    try {
+      final api = context.read<GymiesApi>();
+      await api.requestTrainerPayoutNow();
+      Haptics.success();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Uitbetaling van ${_currency(netCents)} aangevraagd!'),
+          backgroundColor: Colors.green.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      _load(); // Refresh data
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Fout bij aanvragen uitbetaling. Probeer het opnieuw.'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _requestingPayout = false);
+    }
+  }
+
+  Widget _confirmRow(String label, String value, {bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: GoogleFonts.sora(fontSize: 14, color: Colors.grey.shade700)),
+          Text(
+            value,
+            style: GoogleFonts.sora(
+              fontSize: bold ? 16 : 14,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
+              color: GymiesColors.darkBlue,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Download payout factuur PDF en deel via share sheet.
+  Future<void> _downloadPayoutInvoice(Map<String, dynamic> inv) async {
+    final id = inv['id'];
+    if (id == null) return;
+    final invoiceId = id is int ? id : int.tryParse(id.toString());
+    if (invoiceId == null) return;
+
+    setState(() => _downloadingInvoiceId = invoiceId);
+    try {
+      final api = context.read<GymiesApi>();
+      final bytes = await api.downloadPayoutInvoiceBytes(invoiceId);
+
+      // Opslaan in temp directory
+      final dir = await getTemporaryDirectory();
+      final invoiceNumber = (inv['invoice_number'] ?? 'factuur-$invoiceId').toString();
+      // Detecteer of het HTML is (fallback) of PDF
+      final isHtml = bytes.length > 5 &&
+          (String.fromCharCodes(bytes.take(20)).trimLeft().startsWith('<!DOC') ||
+           String.fromCharCodes(bytes.take(20)).trimLeft().startsWith('<html'));
+      final ext = isHtml ? 'html' : 'pdf';
+      final file = File('${dir.path}/$invoiceNumber.$ext');
+      await file.writeAsBytes(bytes);
+
+      if (!mounted) return;
+
+      // Deel via share sheet (iOS/Android)
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          subject: 'Factuur $invoiceNumber',
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: Colors.red.shade700),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Download mislukt: $e'), backgroundColor: Colors.red.shade700),
+      );
+    } finally {
+      if (mounted) setState(() => _downloadingInvoiceId = null);
+    }
+  }
 
   Widget _buildInvoicesTab() {
     return ListView(
@@ -564,7 +901,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
                 const Icon(Icons.archive_outlined, size: 18, color: GymiesColors.darkBlue),
                 const SizedBox(width: 8),
                 Text(
-                  'Kwartaal ZIP export',
+                  S.of(context).kwartaalZipExport,
                   style: GoogleFonts.sora(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -575,15 +912,133 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
+
+        // ════════════════════════════════════════════════════
+        // UITBETALINGSFACTUREN (self-billing payout invoices)
+        // ════════════════════════════════════════════════════
+        Text(
+          'Uitbetalingsfacturen',
+          style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Facturen van uitbetaalde bedragen door Gymies (self-billing).',
+          style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600),
+        ),
+        const SizedBox(height: 12),
+
+        if (_payoutInvoices.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: TrainerEmptyState(
+              icon: Icons.description_outlined,
+              title: 'Nog geen uitbetalingsfacturen',
+              subtitle: 'Zodra je een uitbetaling hebt ontvangen verschijnt hier de factuur.',
+              padding: EdgeInsets.zero,
+            ),
+          )
+        else
+          ..._payoutInvoices.map((inv) {
+            final invoiceId = inv['id'] is int ? inv['id'] as int : int.tryParse(inv['id']?.toString() ?? '') ?? 0;
+            final isDownloading = _downloadingInvoiceId == invoiceId;
+            final hasPdf = inv['has_pdf'] == true;
+            final invoiceNumber = (inv['invoice_number'] ?? '').toString();
+            final paidAt = (inv['paid_at'] ?? '').toString();
+            final totalFormatted = (inv['net_amount_formatted'] ?? '').toString();
+            final feeFormatted = (inv['fee_formatted'] ?? '').toString();
+            final frequency = (inv['frequency'] ?? '').toString();
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                ),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2d8a4e).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.account_balance_wallet_outlined, size: 20, color: Color(0xFF2d8a4e)),
+                  ),
+                  title: Text(
+                    invoiceNumber.isNotEmpty ? invoiceNumber : 'Factuur #$invoiceId',
+                    style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (paidAt.isNotEmpty)
+                        Text(paidAt, style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade600)),
+                      Row(
+                        children: [
+                          Text(totalFormatted, style: GoogleFonts.sora(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF2d8a4e))),
+                          if (feeFormatted.isNotEmpty && feeFormatted != '€0,00') ...[
+                            const SizedBox(width: 6),
+                            Text('fee: $feeFormatted', style: GoogleFonts.sora(fontSize: 11, color: Colors.grey.shade500)),
+                          ],
+                          if (frequency.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: GymiesColors.primary.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                frequency == 'monthly' ? 'maandelijks' : frequency == 'weekly' ? 'wekelijks' : frequency == 'daily' ? 'dagelijks' : frequency,
+                                style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                  trailing: hasPdf
+                      ? IconButton(
+                          onPressed: isDownloading ? null : () => _downloadPayoutInvoice(inv),
+                          icon: isDownloading
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.download_rounded, color: GymiesColors.darkBlue),
+                          tooltip: 'Download PDF',
+                        )
+                      : const Icon(Icons.hourglass_empty_rounded, size: 18, color: Colors.grey),
+                ),
+              ),
+            );
+          }),
+
+        const SizedBox(height: 24),
+
+        // ════════════════════════════════════════════════════
+        // SESSIE-FACTUREN (trainer → client invoices)
+        // ════════════════════════════════════════════════════
+        Text(
+          'Sessiefacturen',
+          style: GoogleFonts.sora(fontSize: 16, fontWeight: FontWeight.w700, color: GymiesColors.darkBlue),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Facturen voor voltooide sessies.',
+          style: GoogleFonts.sora(fontSize: 12, color: Colors.grey.shade600),
+        ),
+        const SizedBox(height: 12),
 
         if (_invoices.isEmpty)
           Padding(
             padding: const EdgeInsets.all(24),
             child: TrainerEmptyState(
               icon: Icons.receipt_long_rounded,
-              title: 'Geen facturen',
-              subtitle: 'Facturen worden automatisch aangemaakt bij voltooide sessies.',
+              title: S.of(context).geenFacturen,
+              subtitle: S.of(context).facturenWordenAutomatischAangemaaktBijVoltooide,
               padding: EdgeInsets.zero,
             ),
           )
@@ -595,7 +1050,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
                 ),
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -603,7 +1058,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: GymiesColors.primary.withValues(alpha: 0.12),
+                      color: GymiesColors.primary.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(9),
                     ),
                     child: const Icon(Icons.receipt_outlined, size: 18, color: GymiesColors.darkBlue),
@@ -611,7 +1066,7 @@ class _TrainerFinanceScreenState extends State<TrainerFinanceScreen>
                   title: Text(
                     mapStr(e, ['number', 'invoice_number']).isNotEmpty
                         ? mapStr(e, ['number', 'invoice_number'])
-                        : 'Factuur',
+                        : S.of(context).factuur2,
                     style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue),
                   ),
                   subtitle: Text(
@@ -652,7 +1107,7 @@ class _StatCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -662,7 +1117,7 @@ class _StatCard extends StatelessWidget {
               Container(
                 width: 22,
                 height: 22,
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
+                decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
                 child: Icon(icon, size: 12, color: color),
               ),
               const SizedBox(width: 6),
@@ -701,7 +1156,7 @@ class _SectionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -712,7 +1167,7 @@ class _SectionCard extends StatelessWidget {
                 width: 26,
                 height: 26,
                 decoration: BoxDecoration(
-                  color: GymiesColors.darkBlue.withValues(alpha: 0.1),
+                  color: GymiesColors.darkBlue.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(7),
                 ),
                 child: Icon(icon, size: 14, color: GymiesColors.darkBlue),
@@ -781,7 +1236,7 @@ class _WeekChart extends StatelessWidget {
                     curve: Curves.easeOutCubic,
                     height: 100 * normalized,
                     decoration: BoxDecoration(
-                      color: isHighest ? GymiesColors.primary : GymiesColors.primary.withValues(alpha: 0.4),
+                      color: isHighest ? GymiesColors.primary : GymiesColors.primary.withOpacity(0.4),
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
@@ -876,7 +1331,7 @@ class _TransactionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))],
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
@@ -884,7 +1339,7 @@ class _TransactionCard extends StatelessWidget {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
+            color: color.withOpacity(0.1),
             borderRadius: BorderRadius.circular(9),
           ),
           child: Icon(_statusIcon(resolvedStatus), size: 18, color: color),
@@ -949,12 +1404,12 @@ class _TransactionCard extends StatelessWidget {
       case 'pending':
       case 'open':
       case 'unpaid':
-        return 'Openstaand';
+        return S.of(context).openstaand;
       case 'cancelled':
       case 'canceled':
-        return 'Geannuleerd';
+        return S.of(context).geannuleerd;
       case 'refunded':
-        return 'Terugbetaald';
+        return S.of(context).terugbetaald;
       default:
         return status;
     }
@@ -988,7 +1443,7 @@ class _TransactionCard extends StatelessWidget {
     final parts = <String>[];
     if ((item.paymentMethod ?? '').trim().isNotEmpty) {
       final method = item.paymentMethod!.trim().toLowerCase();
-      parts.add(method == 'cash' ? 'Contant' : method == 'ideal' ? 'iDEAL' : method.toUpperCase());
+      parts.add(method == 'cash' ? S.of(context).contant : method == 'ideal' ? 'iDEAL' : method.toUpperCase());
     }
     if ((item.paymentReference ?? '').trim().isNotEmpty) {
       parts.add('Ref ${item.paymentReference}');

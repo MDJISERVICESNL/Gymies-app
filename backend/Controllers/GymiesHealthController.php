@@ -19,11 +19,16 @@ use Throwable;
  * Routes om toe te voegen aan routes_gymies_full.php:
  *
  *   // Public health check (voor uptime monitoring)
- *   Route::get('health',        [GymiesHealthController::class, 'ping']);
+ *   Route::get('health',        [GymiesHealthController::class, 'ping'])
+ *       ->middleware('gymies.rate.limit:health');
  *
  *   // Uitgebreide status (alleen voor cyber/admin)
  *   Route::get('health/status', [GymiesHealthController::class, 'status'])
  *       ->middleware(['gymies.auth', 'gymies.cyber:cyber.access']);
+ *
+ *   // Master cron runner (voert alle cron jobs uit)
+ *   Route::post('cron/run-all', [GymiesHealthController::class, 'runAllCrons'])
+ *       ->middleware('gymies.rate.limit:cron');
  */
 final class GymiesHealthController extends Controller
 {
@@ -266,5 +271,46 @@ final class GymiesHealthController extends Controller
         } catch (Throwable $e) {
             return ['ok' => false, 'critical' => false, 'error' => $e->getMessage()];
         }
+    }
+
+    /**
+     * POST /api/gymies/cron/run-all
+     *
+     * Master cron endpoint: voert alle critical cron jobs uit in sequentie.
+     * Geschikt voor external cron runners (curl, webhook, uptime monitor).
+     * Vereist GYMIES_CRON_KEY.
+     */
+    public function runAllCrons(Request $request): JsonResponse
+    {
+        $cronController = new \App\Http\Controllers\Gymies\GymiesCronController();
+        $results = [];
+
+        $jobs = [
+            'expirePendingBookings' => fn() => $cronController->expirePendingBookings($request),
+            'expireReservedBookings' => fn() => $cronController->expireReservedBookings($request),
+            'bookingReminders' => fn() => $cronController->bookingReminders($request),
+            'autoCompletePastSessions' => fn() => $cronController->autoCompletePastSessions($request),
+            'refreshProClientHealth' => fn() => $cronController->refreshProClientHealth($request),
+            'subscriptionReminders' => fn() => $cronController->subscriptionReminders($request),
+        ];
+
+        $startTime = hrtime(true);
+        foreach ($jobs as $jobName => $jobFn) {
+            try {
+                $response = $jobFn();
+                $results[$jobName] = json_decode($response->getContent(), true) ?? ['error' => 'Could not decode response'];
+            } catch (Throwable $e) {
+                $results[$jobName] = ['error' => $e->getMessage()];
+                \Log::error("Cron job {$jobName} failed: " . $e->getMessage());
+            }
+        }
+        $duration = (int) round((hrtime(true) - $startTime) / 1_000_000);
+
+        return response()->json([
+            'status' => 'completed',
+            'jobs' => $results,
+            'total_time_ms' => $duration,
+            'timestamp' => now()->toIso8601String(),
+        ]);
     }
 }

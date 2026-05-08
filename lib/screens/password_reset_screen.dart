@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_client.dart';
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
@@ -46,16 +47,22 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
     final password = _passwordController.text.trim();
     final confirm = _confirmController.text.trim();
     if (password != confirm) {
-      setState(() => _error = 'Wachtwoorden komen niet overeen.');
+      setState(() => _error = S.of(context).wachtwoordenKomenNietOvereen);
       return;
     }
+    if (password.length < 8) {
+      setState(() => _error = S.of(context).minimaal8Tekens);
+      return;
+    }
+    FocusScope.of(context).unfocus();
     Haptics.light();
     setState(() {
       _loading = true;
       _error = null;
     });
+    final api = context.read<GymiesApi>();
     try {
-      await context.read<GymiesApi>().resetPassword(
+      await api.resetPassword(
             token: widget.token,
             newPassword: password,
             email: widget.email,
@@ -74,7 +81,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Er ging iets mis. Probeer opnieuw.';
+        _error = S.of(context).erGingIetsMisProbeerOpnieuw;
         _loading = false;
       });
     }
@@ -88,7 +95,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
         backgroundColor: GymiesColors.darkBlue,
         foregroundColor: GymiesColors.primary,
         title: Text(
-          'Wachtwoord resetten',
+          S.of(context).resetPasswordTitle,
           style: GoogleFonts.sora(
             fontSize: 20,
             fontWeight: FontWeight.bold,
@@ -116,7 +123,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                     children: [
                       const SizedBox(height: 24),
                       Text(
-                        'Stel een nieuw wachtwoord in',
+                        S.of(context).setNewPassword,
                         style: GoogleFonts.sora(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -125,7 +132,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Kies een sterk wachtwoord van minimaal 8 tekens.',
+                        S.of(context).chooseStrongPassword,
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey.shade700,
@@ -162,8 +169,8 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                         controller: _passwordController,
                         obscureText: _obscurePassword,
                         decoration: InputDecoration(
-                          labelText: 'Nieuw wachtwoord',
-                          hintText: 'Minimaal 8 tekens',
+                          labelText: S.of(context).newPassword,
+                          hintText: S.of(context).minimum8Characters,
                           suffixIcon: IconButton(
                             icon: Icon(
                               _obscurePassword
@@ -178,7 +185,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                             },
                           ),
                           filled: true,
-                          fillColor: GymiesColors.primary.withValues(alpha: 0.08),
+                          fillColor: GymiesColors.primary.withOpacity(0.08),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -186,10 +193,10 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                         ),
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) {
-                            return 'Vul een wachtwoord in';
+                            return S.of(context).vulEenWachtwoordIn;
                           }
                           if (v.trim().length < 8) {
-                            return 'Minimaal 8 tekens';
+                            return S.of(context).minimaal8Tekens;
                           }
                           return null;
                         },
@@ -199,7 +206,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                         controller: _confirmController,
                         obscureText: _obscureConfirm,
                         decoration: InputDecoration(
-                          labelText: 'Herhaal wachtwoord',
+                          labelText: S.of(context).repeatPassword,
                           suffixIcon: IconButton(
                             icon: Icon(
                               _obscureConfirm
@@ -214,7 +221,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                             },
                           ),
                           filled: true,
-                          fillColor: GymiesColors.primary.withValues(alpha: 0.08),
+                          fillColor: GymiesColors.primary.withOpacity(0.08),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -222,10 +229,10 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                         ),
                         validator: (v) {
                           if (v == null || v.trim().isEmpty) {
-                            return 'Herhaal je wachtwoord';
+                            return S.of(context).herhaalJeWachtwoord;
                           }
                           if (v.trim() != _passwordController.text.trim()) {
-                            return 'Wachtwoorden komen niet overeen';
+                            return S.of(context).passwordsDoNotMatch;
                           }
                           return null;
                         },
@@ -251,7 +258,7 @@ class _PasswordResetScreenState extends State<PasswordResetScreen> {
                                 ),
                               )
                             : Text(
-                                'Wachtwoord opslaan',
+                                S.of(context).savePassword,
                                 style: GoogleFonts.sora(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w700,
@@ -285,7 +292,7 @@ class _SuccessView extends StatelessWidget {
         ),
         const SizedBox(height: 24),
         Text(
-          'Wachtwoord gewijzigd',
+          S.of(context).passwordChanged,
           style: GoogleFonts.sora(
             fontSize: 24,
             fontWeight: FontWeight.bold,
@@ -295,7 +302,7 @@ class _SuccessView extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Text(
-          'Je kunt nu inloggen met je nieuwe wachtwoord.',
+          S.of(context).canNowLoginNewPassword,
           style: TextStyle(
             fontSize: 16,
             color: Colors.grey.shade700,
@@ -317,7 +324,7 @@ class _SuccessView extends StatelessWidget {
             ),
           ),
           child: Text(
-            'Naar inloggen',
+            S.of(context).goToLogin,
             style: GoogleFonts.sora(
               fontSize: 18,
               fontWeight: FontWeight.w700,
