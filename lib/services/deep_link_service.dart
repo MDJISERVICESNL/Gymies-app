@@ -13,6 +13,7 @@ import '../screens/trainer_subscription_screen.dart';
 import '../screens/trainer_onboarding_screen.dart';
 import '../screens/client_my_group_sessions_screen.dart';
 import '../screens/gym_finance_screen.dart';
+import '../screens/gym_register_screen.dart';
 import '../services/auth_service.dart';
 import 'deep_link_validator.dart';
 
@@ -158,6 +159,14 @@ class DeepLinkService {
       }
       if (bookingId != null && bookingId.isNotEmpty) {
         return ClientSessionsScreen(paymentReturnBookingId: bookingId);
+      }
+    }
+
+    // Gym registratie: gymies://gym/register?token=X
+    if (host == 'gym' && path == 'register') {
+      final token = uri.queryParameters['token']?.trim();
+      if (token != null && token.isNotEmpty) {
+        return GymRegisterScreen(token: token);
       }
     }
 

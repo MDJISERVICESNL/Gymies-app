@@ -169,7 +169,9 @@ class _LaunchGateBottomSheetState extends State<LaunchGateBottomSheet> {
       child: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-          children: [
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             // Drag handle
             Center(
               child: Container(
@@ -307,6 +309,7 @@ class _LaunchGateBottomSheetState extends State<LaunchGateBottomSheet> {
               ),
             ],
           ],
+          ),
         ),
       ),
     );
