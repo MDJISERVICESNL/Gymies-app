@@ -1,15 +1,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../services/gymies_api.dart';
 import '../theme/gymies_theme.dart';
 
-/// Live activity heatmap — Google Maps met gekleurde cirkels per regio.
+/// Live activity heatmap — OpenStreetMap met gekleurde cirkels per regio.
 /// Drukte-score: groen (rustig) → oranje → rood → paars (piek).
 /// Auto-refresh elke 60 seconden.
+/// Gebruikt flutter_map + OpenStreetMap — gratis, geen API key nodig.
 class StaffActivityHeatmapScreen extends StatefulWidget {
   const StaffActivityHeatmapScreen({super.key});
 
@@ -20,7 +22,7 @@ class StaffActivityHeatmapScreen extends StatefulWidget {
 class _StaffActivityHeatmapScreenState extends State<StaffActivityHeatmapScreen>
     with SingleTickerProviderStateMixin {
 
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
   Timer? _refreshTimer;
   late AnimationController _pulseController;
 
@@ -28,11 +30,9 @@ class _StaffActivityHeatmapScreenState extends State<StaffActivityHeatmapScreen>
   List<Map<String, dynamic>> _regions = [];
   bool _loading = true;
   String? _error;
-  DateTime _lastUpdated = DateTime.now();
 
   // Nederland center
-  static const LatLng _nlCenter = LatLng(52.1326, 5.2913);
-  static const double _defaultZoom = 7.5;
+  static final LatLng _nlCenter = LatLng(52.1326, 5.2913);
 
   // Color scale
   static const Color _greenColor  = Color(0xFF4CAF50);
@@ -57,7 +57,7 @@ class _StaffActivityHeatmapScreenState extends State<StaffActivityHeatmapScreen>
     _refreshTimer?.cancel();
     _refreshTimer = null;
     _pulseController.dispose();
-    _mapController?.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -78,7 +78,6 @@ class _StaffActivityHeatmapScreenState extends State<StaffActivityHeatmapScreen>
         _regions = regionsList;
         _loading = false;
         _error = null;
-        _lastUpdated = DateTime.now();
       });
     } catch (e) {
       if (!mounted) return;
@@ -110,8 +109,8 @@ class _StaffActivityHeatmapScreenState extends State<StaffActivityHeatmapScreen>
     return Icons.check_circle_outline;
   }
 
-  Set<Circle> _buildCircles() {
-    final circles = <Circle>{};
+  List<CircleMarker> _buildCircles() {
+    final circles = <CircleMarker>[];
     for (final region in _regions) {
       final lat = (region['latitude'] as num?)?.toDouble();
       final lng = (region['longitude'] as num?)?.toDouble();
@@ -121,54 +120,56 @@ class _StaffActivityHeatmapScreenState extends State<StaffActivityHeatmapScreen>
       final color = region['status'] == 'closed' ? _grayColor : _scoreToColor(score);
       final radius = _scoreToRadius(score);
 
-      circles.add(Circle(
-        circleId: CircleId(region['slug'] ?? ''),
-        center: LatLng(lat, lng),
+      circles.add(CircleMarker(
+        point: LatLng(lat, lng),
         radius: radius,
-        fillColor: color.withOpacity(0.35),
-        strokeColor: color.withOpacity(0.8),
-        strokeWidth: 3,
-        consumeTapEvents: true,
-        onTap: () => _showRegionDetail(region),
+        useRadiusInMeter: true,
+        color: color.withOpacity(0.35),
+        borderColor: color.withOpacity(0.8),
+        borderStrokeWidth: 3,
       ));
     }
     return circles;
   }
 
   double _scoreToRadius(double score) {
-    // Base 4000m, max 12000m based on activity
     return 4000 + (score * 8000);
   }
 
-  Set<Marker> _buildMarkers() {
-    final markers = <Marker>{};
+  List<Marker> _buildMarkers() {
+    final markers = <Marker>[];
     for (final region in _regions) {
       final lat = (region['latitude'] as num?)?.toDouble();
       final lng = (region['longitude'] as num?)?.toDouble();
       if (lat == null || lng == null) continue;
 
       final score = (region['current_score'] as num?)?.toDouble() ?? 0.0;
-      final color = region['status'] == 'closed' ? BitmapDescriptor.hueYellow : _scoreToHue(score);
+      final color = region['status'] == 'closed' ? _grayColor : _scoreToColor(score);
 
       markers.add(Marker(
-        markerId: MarkerId(region['slug'] ?? ''),
-        position: LatLng(lat, lng),
-        icon: BitmapDescriptor.defaultMarkerWithHue(color),
-        onTap: () => _showRegionDetail(region),
-        infoWindow: InfoWindow(
-          title: region['city'] ?? '',
-          snippet: '${_scoreToDutchLabel(score)} — ${(score * 100).toInt()}%',
+        point: LatLng(lat, lng),
+        width: 36,
+        height: 36,
+        child: GestureDetector(
+          onTap: () => _showRegionDetail(region),
+          child: Container(
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 6, spreadRadius: 1)],
+            ),
+            child: Center(
+              child: Text(
+                '${(score * 100).toInt()}',
+                style: GoogleFonts.sora(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white),
+              ),
+            ),
+          ),
         ),
       ));
     }
     return markers;
-  }
-
-  double _scoreToHue(double score) {
-    if (score > 0.75) return BitmapDescriptor.hueViolet;
-    if (score > 0.50) return BitmapDescriptor.hueRed;
-    if (score > 0.25) return BitmapDescriptor.hueOrange;
-    return BitmapDescriptor.hueGreen;
   }
 
   void _showRegionDetail(Map<String, dynamic> region) {
@@ -267,7 +268,6 @@ class _StaffActivityHeatmapScreenState extends State<StaffActivityHeatmapScreen>
       ),
       child: Row(
         children: [
-          // Live indicator
           AnimatedBuilder(
             animation: _pulseController,
             builder: (_, __) => Container(
@@ -316,25 +316,32 @@ class _StaffActivityHeatmapScreenState extends State<StaffActivityHeatmapScreen>
   }
 
   Widget _buildMap() {
-    return GoogleMap(
-      initialCameraPosition: const CameraPosition(target: _nlCenter, zoom: _defaultZoom),
-      onMapCreated: (controller) => _mapController = controller,
-      circles: _buildCircles(),
-      markers: _buildMarkers(),
-      mapType: MapType.normal,
-      myLocationEnabled: false,
-      myLocationButtonEnabled: false,
-      zoomControlsEnabled: true,
-      mapToolbarEnabled: false,
-      compassEnabled: false,
-      // Restrict camera to Netherlands bounds roughly
-      cameraTargetBounds: CameraTargetBounds(
-        LatLngBounds(
-          southwest: const LatLng(50.75, 3.35),
-          northeast: const LatLng(53.55, 7.22),
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: _nlCenter,
+        initialZoom: 7.5,
+        minZoom: 6.5,
+        maxZoom: 14,
+        // Begrens camera tot Nederland
+        cameraConstraint: CameraConstraint.contain(
+          bounds: LatLngBounds(
+            LatLng(50.75, 3.35),
+            LatLng(53.55, 7.22),
+          ),
         ),
       ),
-      minMaxZoomPreference: const MinMaxZoomPreference(6.5, 14),
+      children: [
+        // OpenStreetMap tiles — gratis, geen API key
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.Gymies.nl',
+        ),
+        // Activity circles
+        CircleLayer(circles: _buildCircles()),
+        // City markers met score
+        MarkerLayer(markers: _buildMarkers()),
+      ],
     );
   }
 
@@ -427,7 +434,6 @@ class _RegionDetailSheet extends StatelessWidget {
           controller: scrollController,
           padding: const EdgeInsets.all(20),
           children: [
-            // Handle bar
             Center(
               child: Container(
                 width: 40,
@@ -439,7 +445,6 @@ class _RegionDetailSheet extends StatelessWidget {
                 ),
               ),
             ),
-            // Header
             Row(
               children: [
                 Container(
@@ -480,8 +485,6 @@ class _RegionDetailSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-
-            // Current hour stats
             Text('Nu (${currentHour.toString().padLeft(2, '0')}:00)', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
             const SizedBox(height: 8),
             Row(
@@ -494,8 +497,6 @@ class _RegionDetailSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-
-            // Day totals
             Text('Vandaag totaal', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
             const SizedBox(height: 8),
             Row(
@@ -508,8 +509,6 @@ class _RegionDetailSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-
-            // Trainers & Clients
             Row(
               children: [
                 _statBox('Trainers', '$trainers', Icons.fitness_center, GymiesColors.primary),
@@ -520,8 +519,6 @@ class _RegionDetailSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-
-            // 24h activity chart
             Text('24-uurs overzicht', style: GoogleFonts.sora(fontSize: 14, fontWeight: FontWeight.w600, color: GymiesColors.darkBlue)),
             const SizedBox(height: 12),
             SizedBox(
@@ -604,14 +601,13 @@ class _HourlyChart extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (_, constraints) {
-        final barWidth = (constraints.maxWidth - 23) / 24; // 23 gaps of 1px
         return Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: List.generate(24, (h) {
             final entry = h < hourlyScores.length ? hourlyScores[h] : null;
             final score = entry is Map ? (entry['score'] as num?)?.toDouble() ?? 0.0 : 0.0;
             final isCurrent = h == currentHour;
-            final maxHeight = constraints.maxHeight - 16; // reserve space for label
+            final maxHeight = constraints.maxHeight - 16;
 
             return Expanded(
               child: Padding(
